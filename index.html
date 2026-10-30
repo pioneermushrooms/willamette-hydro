@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111315">
+  <meta name="description" content="Willamette Valley Hydro Dispatch: an illustrative, non-official dashboard of South Willamette Valley reservoirs and rivers. Illustrative data, not live.">
+  <title>Willamette Valley Hydro Dispatch · Illustrative data</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111315'/%3E%3Cpath d='M2 11c2-2 4 2 6 0s4 2 6 0' stroke='%2339d0e0' stroke-width='2' fill='none'/%3E%3Ccircle cx='8' cy='5' r='2' fill='%23ffb000'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="1" y="1" width="30" height="30" rx="4" />
+        <path d="M5 21c3-3 6 3 11 0s8 3 11 0" />
+        <path d="M5 26c3-3 6 3 11 0s8 3 11 0" />
+        <path class="bolt" d="M17 4l-6 10h5l-2 6 7-10h-5z" />
+      </svg>
+      <div>
+        <h1>Willamette Valley Hydro Dispatch</h1>
+        <p class="sub">South Willamette Basin · Reservoir &amp; River Operations Console</p>
+      </div>
+    </div>
+    <div class="notice" role="note">
+      <span class="notice-icon" aria-hidden="true">!</span>
+      <span><strong>Illustrative data, not live.</strong> Not an official or agency site.</span>
+    </div>
+    <div class="clocks">
+      <div class="readout">
+        <span class="readout-label">Pacific Time</span>
+        <span class="readout-value mono" id="clock">--:--:--</span>
+        <span class="readout-sub mono" id="clock-date">---</span>
+      </div>
+      <div class="readout">
+        <span class="readout-label">Last updated</span>
+        <span class="readout-value mono" id="last-updated">--:--</span>
+        <span class="readout-sub mono" id="next-refresh">next cycle --:--</span>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Sections">
+    <a href="#overview">Overview</a>
+    <a href="#trends">Trends</a>
+    <a href="#reservoirs">Reservoirs</a>
+    <a href="#rivers">Rivers</a>
+  </nav>
+
+  <main id="main">
+    <section class="totals" id="totals" aria-label="Basin totals"></section>
+
+    <section class="grid-overview" id="overview">
+      <div class="panel map-panel">
+        <div class="panel-head">
+          <h2>Basin Schematic</h2>
+          <span class="panel-tag mono">SCHEMATIC · NOT TO SCALE</span>
+        </div>
+        <div class="map-wrap scan">
+          <svg id="basin-map" role="group" aria-label="Schematic basin map. Select a dam or station for details."></svg>
+        </div>
+        <ul class="map-legend">
+          <li><span class="lg-dam" aria-hidden="true"></span>Dam / reservoir</li>
+          <li><span class="lg-station" aria-hidden="true"></span>River station</li>
+          <li><span class="light normal" aria-hidden="true"></span>Normal</li>
+          <li><span class="light watch" aria-hidden="true"></span>Watch</li>
+          <li><span class="light low" aria-hidden="true"></span>Low</li>
+        </ul>
+      </div>
+      <aside class="panel detail-panel" id="details" aria-live="polite"></aside>
+    </section>
+
+    <section class="panel" id="trends">
+      <div class="panel-head">
+        <h2>Trend Recorder</h2>
+        <span class="panel-tag mono" id="trend-tag">15-MIN SAMPLES</span>
+      </div>
+      <div class="trend-controls">
+        <label class="field">
+          <span class="field-label">Point</span>
+          <select id="trend-select"></select>
+        </label>
+        <div class="seg" role="group" aria-label="Time range">
+          <button type="button" data-range="24h" aria-pressed="false">24 H</button>
+          <button type="button" data-range="7d" aria-pressed="true">7 D</button>
+        </div>
+      </div>
+      <h3 class="chart-title" id="chart-title"></h3>
+      <div class="chart-wrap" id="chart-wrap">
+        <svg id="chart" aria-hidden="true"></svg>
+        <div class="tooltip mono" id="tooltip" hidden></div>
+      </div>
+      <div class="chart-legend" id="chart-legend"></div>
+      <dl class="chart-stats mono" id="chart-stats"></dl>
+      <details class="table-view">
+        <summary>Show data table</summary>
+        <div class="table-scroll" id="chart-table"></div>
+      </details>
+    </section>
+
+    <section id="reservoirs">
+      <div class="section-head">
+        <h2>Reservoirs</h2>
+        <span class="panel-tag mono">POOL · CONSERVATION GAUGE · FLOWS</span>
+      </div>
+      <div class="card-grid" id="reservoir-cards"></div>
+    </section>
+
+    <section id="rivers">
+      <div class="section-head">
+        <h2>River Stations</h2>
+        <span class="panel-tag mono">FLOW · STAGE · TEMP · 24 H</span>
+      </div>
+      <div class="card-grid" id="river-cards"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="notice" role="note">
+      <span class="notice-icon" aria-hidden="true">!</span>
+      <span><strong>Illustrative data, not live.</strong> All values are generated for demonstration and must not be used for safety, navigation, recreation or operational decisions.</span>
+    </div>
+    <p>Willamette Valley Hydro Dispatch is an independent demo project. It is not affiliated with, endorsed by, or operated by the U.S. Army Corps of Engineers, USGS, Bonneville Power Administration, or any government agency or utility. For real conditions, consult official sources.</p>
+    <p class="mono small">MIT License · static build · seed <span id="seed"></span></p>
+  </footer>
+
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
