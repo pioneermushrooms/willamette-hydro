@@ -67,7 +67,7 @@ a { color: var(--cyan); }
 
 .site-header {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px 20px;
   align-items: center;
   padding: 12px 20px;
@@ -76,6 +76,7 @@ a { color: var(--cyan); }
   box-shadow: inset 0 -1px 0 var(--bezel-hi), 0 4px 18px rgba(0,0,0,0.5);
 }
 
+.site-header > .notice { grid-column: 1 / -1; grid-row: 2; }
 .brand { display: flex; gap: 12px; align-items: center; min-width: 0; }
 .brand h1 { font-size: 19px; text-transform: uppercase; color: var(--text); }
 .brand .sub { margin: 2px 0 0; color: var(--text-2); font-size: 12.5px; letter-spacing: 0.03em; }
@@ -170,7 +171,7 @@ main > * { min-width: 0; }
 
 .totals {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 10px;
 }
 .tile {
@@ -379,7 +380,7 @@ select {
 #chart .axis text { fill: var(--muted); font: 10.5px var(--mono); }
 #chart .series { fill: none; stroke: var(--cyan); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 #chart .area { fill: url(#chart-grad); }
-#chart .ref { stroke: var(--amber); stroke-width: 1.5; stroke-dasharray: 5 4; }
+#chart .ref-line { fill: none; stroke: var(--amber); stroke-width: 1.5; stroke-dasharray: 5 4; }
 #chart .ref-label { fill: var(--text-2); font: 10px var(--mono); }
 #chart .now { fill: var(--cyan); stroke: #0a0c0e; stroke-width: 2; }
 #chart .cross { stroke: #6b737b; stroke-width: 1; }
@@ -425,6 +426,73 @@ select {
 
 /* ---- Responsive -------------------------------------------------------- */
 
+/* ---- Live-data states -------------------------------------------------- */
+
+.live-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; background: #6b737b; }
+.live-dot.normal { background: var(--ok); box-shadow: 0 0 8px var(--ok); animation: pulse 2s ease-in-out infinite; }
+.live-dot.watch { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.live-dot.low { background: var(--crit); box-shadow: 0 0 8px var(--crit); }
+
+.light.pending { background: #5b6168; box-shadow: 0 0 0 2px #0a0b0c; animation: none; }
+.status.pending .icon { color: #8b939b; }
+.node .core.pending, .node .halo.pending { fill: #5b6168; }
+.node .halo.pending { animation: none; }
+
+.feed {
+  display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between;
+  padding: 8px 12px; background: #0b0c0e; border: 1px solid var(--bezel-lo); border-radius: var(--radius);
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.8);
+}
+.feed-badges { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.badge {
+  display: inline-flex; align-items: center; min-height: 26px; padding: 2px 9px;
+  font: 600 11.5px var(--mono); letter-spacing: 0.04em; border-radius: 3px;
+  border: 1px solid var(--line); color: var(--text-2); background: var(--bg-2);
+  overflow-wrap: anywhere;
+}
+.badge.ok { color: var(--ok); border-color: rgba(61,220,132,0.35); }
+.badge.warn { color: var(--warn); border-color: var(--amber-dim); }
+.badge.err { color: var(--crit); border-color: rgba(255,82,82,0.45); }
+.btn:disabled { opacity: 0.6; cursor: progress; }
+
+.tag { display: inline-block; padding: 0 5px; border-radius: 3px; font: 700 10px/1.6 var(--mono); letter-spacing: 0.08em; vertical-align: 1px; }
+.tag.watch { color: #000; background: var(--warn); }
+.tag.low { color: #fff; background: var(--crit); }
+
+.hint { color: var(--muted); font-size: 0.85em; font-weight: 400; letter-spacing: 0.02em; text-transform: none; }
+.na { color: var(--muted); font-weight: 400; font-size: 12.5px; }
+.na.loading { animation: pulse 1.4s ease-in-out infinite; }
+.kv dd.sub { font: 10.5px/1.3 var(--sans); color: var(--muted); margin-top: 2px; }
+.kv dd.neg { color: #ff8a80; }
+.kv dd.watchtext { color: var(--warn); font-size: 13px; }
+
+.tile.wide { grid-column: span 2; }
+.tile .tile-label .hint { display: block; text-transform: none; letter-spacing: 0.02em; font-size: 11px; margin-top: 1px; }
+.tile .spark { height: 30px; margin-top: 6px; }
+.tile-sub a { color: var(--cyan); }
+
+.reading { margin: 0; font-size: 11.5px; color: var(--text-2); }
+.src { margin: 0; font-size: 12px; color: var(--muted); }
+.src a { display: inline-flex; align-items: center; min-height: 32px; color: var(--cyan); }
+.legend-note { margin: 8px 4px 0; font-size: 11.5px; color: var(--muted); }
+
+.readings { width: 100%; border-collapse: collapse; font-size: 12px; }
+.readings th, .readings td { padding: 5px 6px; border-bottom: 1px solid #1e2226; text-align: left; vertical-align: top; }
+.readings th { color: var(--muted); font-weight: 600; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+
+.card-select {
+  all: unset; cursor: pointer; display: inline-flex; align-items: center; min-height: 32px;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--text);
+}
+.card-select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+.gauge .val.small { font-size: 13px; }
+
+.chart-msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-2); font-size: 13px; padding: 12px; text-align: center; }
+.chart-msg[hidden] { display: none; }
+.chart-src { margin: 8px 6px 0; font-size: 11.5px; color: var(--muted); }
+#chart:empty { min-height: 230px; }
+
 @media (max-width: 1100px) {
   .site-header { grid-template-columns: 1fr auto; }
   .site-header .notice { grid-column: 1 / -1; grid-row: 2; }
@@ -450,7 +518,9 @@ select {
   main { padding: 12px 10px 24px; }
   .totals { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .tile { padding: 8px 10px; }
-  .tile:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .tile.wide, .tile:last-child { grid-column: 1 / -1; }
+  .feed { padding: 8px 10px; }
+  .feed .btn { width: 100%; }
   .tile-value { font-size: 23px; }
   .panel, .card { padding: 12px 10px; }
   .card-grid { grid-template-columns: minmax(0, 1fr); }
@@ -467,7 +537,7 @@ select {
   .scan::after { display: none; }
 }
 
-/* ---- Late additions ---------------------------------------------------- */
+/* ---- Map station nodes & card gauge layout ----------------------------- */
 .node.station .body { fill: #0b0c0e; stroke: #8b939b; stroke-width: 2; }
 .card .detail-gauge { grid-template-columns: minmax(0, 1fr); }
 .card .gauge { max-width: 180px; }

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#111315">
-  <meta name="description" content="Willamette Valley Hydro Dispatch: an illustrative, non-official dashboard of South Willamette Valley reservoirs and rivers. Illustrative data, not live.">
-  <title>Willamette Valley Hydro Dispatch · Illustrative data</title>
+  <meta name="description" content="Willamette Valley Hydro Dispatch: a dashboard of South Willamette Valley reservoirs and rivers using live, provisional data from USGS and USACE. Not an official agency site.">
+  <title>Willamette Valley Hydro Dispatch · Live USGS &amp; USACE data (provisional)</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111315'/%3E%3Cpath d='M2 11c2-2 4 2 6 0s4 2 6 0' stroke='%2339d0e0' stroke-width='2' fill='none'/%3E%3Ccircle cx='8' cy='5' r='2' fill='%23ffb000'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -27,7 +27,7 @@
     </div>
     <div class="notice" role="note">
       <span class="notice-icon" aria-hidden="true">!</span>
-      <span><strong>Illustrative data, not live.</strong> Not an official or agency site.</span>
+      <span><strong>Live data from USGS and USACE; provisional, not official.</strong> Not an official agency site; not affiliated with USGS, USACE or BPA.</span>
     </div>
     <div class="clocks">
       <div class="readout">
@@ -36,9 +36,9 @@
         <span class="readout-sub mono" id="clock-date">---</span>
       </div>
       <div class="readout">
-        <span class="readout-label">Last updated</span>
-        <span class="readout-value mono" id="last-updated">--:--</span>
-        <span class="readout-sub mono" id="next-refresh">next cycle --:--</span>
+        <span class="readout-label"><span class="live-dot pending" id="live-dot" aria-hidden="true"></span><span id="live-label">CONNECTING</span></span>
+        <span class="readout-value mono" id="last-fetch">--:--</span>
+        <span class="readout-sub mono" id="next-poll">last fetch · polls every 15 min</span>
       </div>
     </div>
   </header>
@@ -51,6 +51,13 @@
   </nav>
 
   <main id="main">
+    <section class="feed" aria-label="Data feed status">
+      <div class="feed-badges" id="feed-badges" aria-live="polite">
+        <span class="badge pending">Loading USGS, USACE and BPA data…</span>
+      </div>
+      <button type="button" class="btn" id="refresh">↻ Refresh</button>
+    </section>
+
     <section class="totals" id="totals" aria-label="Basin totals"></section>
 
     <section class="grid-overview" id="overview">
@@ -64,11 +71,12 @@
         </div>
         <ul class="map-legend">
           <li><span class="lg-dam" aria-hidden="true"></span>Dam / reservoir</li>
-          <li><span class="lg-station" aria-hidden="true"></span>River station</li>
-          <li><span class="light normal" aria-hidden="true"></span>Normal</li>
-          <li><span class="light watch" aria-hidden="true"></span>Watch</li>
-          <li><span class="light low" aria-hidden="true"></span>Low</li>
+          <li><span class="lg-station" aria-hidden="true"></span>USGS river gauge</li>
+          <li><span class="light normal" aria-hidden="true"></span>Reporting / near rule curve</li>
+          <li><span class="light watch" aria-hidden="true"></span>Stale &gt;3 h or off rule curve</li>
+          <li><span class="light low" aria-hidden="true"></span>No data / &gt;12 h old</li>
         </ul>
+        <p class="legend-note">Status lights are derived by this site from data age and the USACE rule curve. They are not an agency determination.</p>
       </div>
       <aside class="panel detail-panel" id="details" aria-live="polite"></aside>
     </section>
@@ -76,7 +84,7 @@
     <section class="panel" id="trends">
       <div class="panel-head">
         <h2>Trend Recorder</h2>
-        <span class="panel-tag mono" id="trend-tag">15-MIN SAMPLES</span>
+        <span class="panel-tag mono" id="trend-tag">LIVE SERIES</span>
       </div>
       <div class="trend-controls">
         <label class="field">
@@ -91,10 +99,12 @@
       <h3 class="chart-title" id="chart-title"></h3>
       <div class="chart-wrap" id="chart-wrap">
         <svg id="chart" aria-hidden="true"></svg>
+        <div class="chart-msg mono" id="chart-msg" hidden></div>
         <div class="tooltip mono" id="tooltip" hidden></div>
       </div>
       <div class="chart-legend" id="chart-legend"></div>
       <dl class="chart-stats mono" id="chart-stats"></dl>
+      <p class="chart-src" id="chart-src"></p>
       <details class="table-view">
         <summary>Show data table</summary>
         <div class="table-scroll" id="chart-table"></div>
@@ -104,7 +114,7 @@
     <section id="reservoirs">
       <div class="section-head">
         <h2>Reservoirs</h2>
-        <span class="panel-tag mono">POOL · CONSERVATION GAUGE · FLOWS</span>
+        <span class="panel-tag mono">USACE CWMS · POOL · RULE CURVE · FLOWS</span>
       </div>
       <div class="card-grid" id="reservoir-cards"></div>
     </section>
@@ -112,7 +122,7 @@
     <section id="rivers">
       <div class="section-head">
         <h2>River Stations</h2>
-        <span class="panel-tag mono">FLOW · STAGE · TEMP · 24 H</span>
+        <span class="panel-tag mono">USGS NWIS · FLOW · STAGE · TEMP</span>
       </div>
       <div class="card-grid" id="river-cards"></div>
     </section>
@@ -121,10 +131,11 @@
   <footer class="site-footer">
     <div class="notice" role="note">
       <span class="notice-icon" aria-hidden="true">!</span>
-      <span><strong>Illustrative data, not live.</strong> All values are generated for demonstration and must not be used for safety, navigation, recreation or operational decisions.</span>
+      <span><strong>Live data from USGS and USACE; provisional, not official.</strong> Not an official agency site; not affiliated with USGS, USACE or BPA.</span>
     </div>
-    <p>Willamette Valley Hydro Dispatch is an independent demo project. It is not affiliated with, endorsed by, or operated by the U.S. Army Corps of Engineers, USGS, Bonneville Power Administration, or any government agency or utility. For real conditions, consult official sources.</p>
-    <p class="mono small">MIT License · static build · seed <span id="seed"></span></p>
+    <p>River data: <a href="https://waterservices.usgs.gov/" rel="noopener">USGS NWIS Instantaneous Values</a> (provisional data subject to revision). Reservoir data: <a href="https://cwms-data.usace.army.mil/cwms-data/" rel="noopener">USACE CWMS Data API</a>, office NWDP, also viewable at <a href="https://water.sec.usace.army.mil/" rel="noopener">water.sec.usace.army.mil</a>. Regional hydro: <a href="https://transmission.bpa.gov/business/operations/Wind/baltwg.txt" rel="noopener">BPA balancing-authority totals</a>, copied every 30 minutes.</p>
+    <p>Values marked “derived” are calculated by this site. Status lights are this site’s own classification. Do not use this page for safety, navigation, recreation or operational decisions; consult the official sources.</p>
+    <p class="mono small">MIT License · static site · browser polls USGS/USACE every 15 min</p>
   </footer>
 
   <script src="js/data.js"></script>
