@@ -875,6 +875,7 @@ i.lg-livept { width: 10px !important; height: 10px !important; border-radius: 50
 .w-controls .field { flex: 0 1 220px; }
 .w-controls .hint { align-self: center; }
 .w-note { margin: 4px 6px 0; }
+.w-table td small.w-sub { display: block; margin-left: 0; }
 .w-err { color: var(--warn); }
 @media (max-width: 640px) {
   .w-current thead { display: none; }

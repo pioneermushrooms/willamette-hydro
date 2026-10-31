@@ -35,7 +35,7 @@ Willamette Valley, Oregon, built on **live public data** from USGS and USACE.
 | TDG, % saturation (Dexter, Cougar tailwater) | DEX/CGR reservoir cards and details, Teacup detail | USACE CWMS time series | `DEXO.%-Saturation-TDG.Inst.0.0.MIXED-REV`, `CGRO.%-Saturation-TDG.Inst.0.0.MIXED-REV` (`%` URL-encoded as `%25`) | **live** (CWMS reported, provisional); 110 % line is a reference only |
 | ODEQ 2006 TMDL temperature target | Jasper water-temperature chart (dashed) and Jasper details | USACE CWMS location level | `DEX.Temp-Water.Inst.0.ODEQ-2006TMDL-Target` (°C → °F; monthly steps) | **published target**; defined at the dam tailwater, shown at the nearest gauge for context |
 | Tailwater elevation (ft) | Overview → Watch list (HCR, LOP, DEX, CGR) | USACE CWMS | `<P>.Elev-Tailwater.Inst.0.0.MIXED-REV` tried first; otherwise the CWMS catalog (`^<P>\.Elev-Tailwater\..*`) is searched and the series with the latest value is used | **live**; series id in each cell's tooltip |
-| Outflow gage flow (cfs) | Overview → Watch list | USACE CWMS | HCRO, LOPO, DEXO, CGRO: `<P>O.Flow.Inst.0.0.MIXED-REV` (then `USGS-REV` variants), else catalog `^<P>O\.Flow\..*` | **live**; "not published in CWMS" when no series exists |
+| Outflow gage flow (cfs) | Overview → Watch list | USACE CWMS | HCRO, DEXO, CGRO: `<G>.Flow.Inst.0.0.MIXED-REV` (then `USGS-REV` variants), else catalog `^<G>\.Flow\..*`. There is no LOPO: Lookout Point releases into Dexter Reservoir, so its row shows the dam release (`LOP.Flow-Out…`) | **live** |
 | Pool vs rule curve: 30 d, calendar month, 12 months | Overview → Watch list | this site | daily means of `<P>.Elev-Forebay.Inst.0.0.MIXED-REV` (Pacific days) minus that day's `Elev-RuleCurve` value; ~400 days loaded once, last 2 days refreshed hourly | **derived** |
 | Snowpack: SWE, snow depth (in) | Overview → Snowpack (SNOTEL) | NRCS AWDB REST `/services/v1/data` | 8 SNOTEL stations: 388, 729, 710, 529, 719, 619, 1166, 733 (`:OR:SNTL`) | **live** (daily) |
 | Published rating tables | Tables page | CWMS ratings, USGS exsa | see Reports & Tables | **published** |
@@ -79,7 +79,7 @@ Readings older than 3 hours get a STALE tag.
 ### Watch list (top of Overview)
 
 A text/number panel for Hills Creek, Lookout Point, Dexter and Cougar, refreshed with every dashboard poll (15 min):
-pool elevation, today's rule curve, pool − rule, tailwater, and the downstream outflow gage (HCRO, LOPO, DEXO, CGRO).
+pool elevation, today's rule curve, pool − rule, tailwater, and the downstream outflow gage (HCRO, DEXO, CGRO; Lookout Point has no gage, so its dam release is shown).
 Below it, **30 D / MONTH / 12 MO** switch the pool-vs-rule-curve summary:
 
 - **30 D** and **MONTH** (any of the last 13 calendar months; the current month is to date): pool start → end, change, min/max of the daily means, pool − rule at the start, end, average and min/max, and days above the rule curve / more than 10 ft below it. A "Daily values" table lists every day.

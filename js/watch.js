@@ -1,14 +1,16 @@
 /*
  * Watch list — the text/number panel at the top of Overview for HCR, LOP, DEX and CGR:
  * pool elevation, today's rule curve, tailwater elevation and the downstream outflow
- * gage (HCRO, LOPO, DEXO, CGRO), plus pool-vs-rule-curve trends (30 d, a calendar
+ * gage (HCRO, DEXO, CGRO), plus pool-vs-rule-curve trends (30 d, a calendar
  * month, 12 months). All values from the USACE CWMS Data API, office NWDP; provisional.
  *
  * Series:
  *   pool        <P>.Elev-Forebay.Inst.0.0.MIXED-REV            (same as js/data.js)
  *   rule curve  <P>.Elev-RuleCurve.Inst.~1Day.0.CENWP-CALC      (same as js/data.js)
  *   tailwater   <P>.Elev-Tailwater.*                            (resolved at runtime)
- *   outflow gage <P>O.Flow.*                                    (resolved at runtime)
+ *   outflow gage HCRO / DEXO / CGRO .Flow.*                     (resolved at runtime)
+ * Lookout Point has no outflow gage (LOPO does not exist; it releases into Dexter
+ * Reservoir), so its row shows the dam's own release from js/data.js instead.
  * Tailwater and gage ids are tried from CANDIDATES first; if none returns data, the CWMS
  * catalog is searched and the series with the most recent value is used. The id in use
  * is shown in each cell's tooltip and in the panel footer.
@@ -32,17 +34,18 @@
   var TZ = 'America/Los_Angeles';
   var CODES = ['HCR', 'LOP', 'DEX', 'CGR'];
   var NAMES = { HCR: 'Hills Creek', LOP: 'Lookout Point', DEX: 'Dexter', CGR: 'Cougar' };
+  var GAGE = { HCR: 'HCRO', DEX: 'DEXO', CGR: 'CGRO' };   // no LOPO
   var YEAR_DAYS = 400;          // covers the current month plus the 12 before it
   var LONG_REFRESH_MS = HOUR;   // trend data refresh
   var BELOW_FT = H.SETTINGS.ruleBelowFt;
 
   var CANDIDATES = {
     tail: function (c) { return [c + '.Elev-Tailwater.Inst.0.0.MIXED-REV', c + '.Elev-Tailwater.Inst.0.0.MIXED-RAW']; },
-    gage: function (c) { return [c + 'O.Flow.Inst.0.0.MIXED-REV', c + 'O.Flow.Inst.0.0.USGS-REV', c + 'O.Flow.Inst.15Minutes.0.USGS-REV']; }
+    gage: function (c) { var g = GAGE[c]; return [g + '.Flow.Inst.0.0.MIXED-REV', g + '.Flow.Inst.0.0.USGS-REV', g + '.Flow.Inst.15Minutes.0.USGS-REV']; }
   };
   var CATALOG_LIKE = {
     tail: function (c) { return '^' + c + '\\.Elev-Tailwater\\..*'; },
-    gage: function (c) { return '^' + c + 'O\\.Flow\\..*'; }
+    gage: function (c) { return '^' + GAGE[c] + '\\.Flow\\..*'; }
   };
   var UNIT = { tail: 'ft', gage: 'cfs' };
 
@@ -250,7 +253,7 @@
     var errors = [], jobs = [];
     CODES.forEach(function (code) {
       var cur = mem.current[code] || (mem.current[code] = {});
-      ['tail', 'gage'].forEach(function (kind) {
+      (GAGE[code] ? ['tail', 'gage'] : ['tail']).forEach(function (kind) {
         jobs.push(loadPoint(kind, code, now).then(function (r) {
           // Keep the last good series if this request failed.
           if (!(r.series && r.series.t.length) && cur[kind] && cur[kind].series && cur[kind].series.t.length) return;
@@ -303,6 +306,13 @@
       '</b><small>' + unit + '</small>' + (stale ? ' <span class="tag watch">STALE</span>' : '') + '</td>';
   }
 
+  // LOP: no downstream gage; show the dam's own release (already loaded by js/data.js).
+  function noGage(code) {
+    var p = projectOf(code), snap = H.live && H.live.snap, d = snap && snap.projects[p.id], o = d && H.latest(d.out);
+    return '<td data-label="Outflow gage" title="No ' + code + 'O gage: releases into Dexter Reservoir.' + (o ? ' Dam release: ' + esc(p.series.out.name) : '') + '">' +
+      '<span class="na">no gage</span>' + (o ? '<small class="w-sub">dam release ' + fmt(o.v, 0) + ' cfs</small>' : '') + '</td>';
+  }
+
   function currentTable(now) {
     var rows = CODES.map(function (code) {
       var pn = poolNow(code), cur = mem.current[code] || {};
@@ -314,7 +324,7 @@
         '<td data-label="Rule curve">' + (pn.rule != null ? fmt(pn.rule, 2) + '<small>ft</small>' : '<span class="na">—</span>') + '</td>' +
         '<td data-label="Pool − rule" class="' + devCls(dev) + '"><b>' + signed(dev, 2) + '</b>' + (dev != null ? '<small>ft</small>' : '') + '</td>' +
         cell(cur.tail, 2, 'ft', now) +
-        cell(cur.gage, 0, 'cfs', now) +
+        (GAGE[code] ? cell(cur.gage, 0, 'cfs', now) : noGage(code)) +
         '<td class="w-time" data-label="Pool reading">' + (e ? esc(ui.stamp ? ui.stamp(e.t) : new Date(e.t).toISOString()) : '—') + '</td></tr>';
     }).join('');
     return '<div class="table-scroll w-scroll"><table class="w-table w-current">' +
@@ -443,7 +453,7 @@
   }
 
   return {
-    CODES: CODES, CANDIDATES: CANDIDATES, CATALOG_LIKE: CATALOG_LIKE,
+    CODES: CODES, GAGE: GAGE, CANDIDATES: CANDIDATES, CATALOG_LIKE: CATALOG_LIKE,
     dayKey: dayKey, monthKey: monthKey, addDays: addDays, lastDays: lastDays, monthDays: monthDays, lastMonths: lastMonths,
     aggregate: aggregate, ruleByDay: ruleByDay, dailyRows: dailyRows, spanStats: spanStats, pickCatalog: pickCatalog,
     catalogUrl: catalogUrl, refresh: refresh, mount: mount, update: update, render: render,

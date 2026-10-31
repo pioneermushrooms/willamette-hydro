@@ -374,6 +374,7 @@ console.log('watch');
   check(W.pickCatalog([{ name: 'HCRO.Flow.Ave.1Hour.1Hour.X', extents: [{ 'latest-time': '2026-10-30T00:00:00Z' }] },
     { name: 'HCRO.Flow.Inst.0.0.MIXED-REV', extents: [{ 'latest-time': '2026-10-31T00:00:00Z' }] },
     { name: 'HCRO.Flow.Inst.0.0.OLD', extents: [{ 'latest-time': '2019-01-01T00:00:00Z' }] }]) === 'HCRO.Flow.Inst.0.0.MIXED-REV', 'watch: catalog picks the most recent series');
+  check(!W.GAGE.LOP && W.GAGE.HCR === 'HCRO' && W.CANDIDATES.gage('DEX')[0] === 'DEXO.Flow.Inst.0.0.MIXED-REV', 'watch: outflow gages HCRO/DEXO/CGRO, no LOPO');
   check(W.pickCatalog([]) === null, 'watch: empty catalog -> null');
   check(W.catalogUrl(W.CATALOG_LIKE.gage('HCR')).includes('like=%5EHCRO%5C.Flow%5C.') && W.CANDIDATES.tail('LOP')[0] === 'LOP.Elev-Tailwater.Inst.0.0.MIXED-REV', 'watch: catalog regex URL-encoded; tailwater candidate');
   const html0 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
@@ -426,7 +427,7 @@ async function live() {
     console.table(rows);
     rows.forEach((x) => check(x.historyDays > 300, 'watch: ' + x.code + ' pool history covers the year (' + x.historyDays + ' days)'));
     rows.forEach((x) => check(x.tail != null, 'watch: ' + x.code + ' tailwater reporting (' + x.tailSeries + ')'));
-    rows.filter((x) => x.code !== 'LOP').forEach((x) => check(x.gage != null, 'watch: ' + x.code + 'O outflow gage reporting (' + x.gageSeries + ')'));
+    rows.filter((x) => W.GAGE[x.code]).forEach((x) => check(x.gage != null, 'watch: ' + W.GAGE[x.code] + ' outflow gage reporting (' + x.gageSeries + ')'));
   }
   console.log('\nlive (real APIs)');
   const t0 = Date.now();
