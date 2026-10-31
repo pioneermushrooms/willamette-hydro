@@ -32,6 +32,9 @@ Willamette Valley, Oregon, built on **live public data** from USGS and USACE.
 | Total reservoir release | totals bar | this site | sum of latest fresh (≤ 3 h) outflows, "N of 8 reporting" | **derived** |
 | Basin conservation storage % | totals bar | this site | Σ max(0, stor − bottom) ÷ Σ (top − bottom) over the 7 projects with storage | **derived** |
 | BPA-wide hydro (MW) | totals bar | BPA balancing-authority file `baltwg.txt` | "Hydro" column, 5-minute MW | **live, copied every 30 min** by GitHub Actions. All hydro in BPA's balancing authority, **not** Willamette-specific |
+| Hourly Snapshot: forebay elevation (HCR, LOP, DEX, CGR), Dexter tailwater (ft) | Snapshot strip, top of every page | USACE CWMS | `<P>.Elev-Forebay.Inst.0.0.MIXED-REV`, `DEX.Elev-Tailwater.Inst.0.0.MIXED-REV` (15-min) | **live**, refreshed every 5 min |
+| Hourly Snapshot: HCRO, DEXO, CGRO (cfs + stage ft) | Snapshot strip | USGS NWIS IV | 14145500 (MF Willamette abv Salt Crk = HCRO), 14150000 (MF Willamette nr Dexter = DEXO), 14159500 (SF McKenzie nr Rainbow = CGRO); 00060, 00065 | **live**, refreshed every 5 min |
+| Forebay cross-check, long-range pool history | Snapshot (USGS line), 6 MO / 1 YR charts | USGS lake gages, parameter 62614 | HCR 14145100, LOP 14149000, DEX 14149500, GPR 14186100, CGR 14159400, FRN 14168000, COT 14153000, DOR 14155000 (IV and daily values) | **live** / USGS daily (provisional) |
 | TDG, % saturation (Dexter, Cougar tailwater) | DEX/CGR reservoir cards and details, Teacup detail | USACE CWMS time series | `DEXO.%-Saturation-TDG.Inst.0.0.MIXED-REV`, `CGRO.%-Saturation-TDG.Inst.0.0.MIXED-REV` (`%` URL-encoded as `%25`) | **live** (CWMS reported, provisional); 110 % line is a reference only |
 | ODEQ 2006 TMDL temperature target | Jasper water-temperature chart (dashed) and Jasper details | USACE CWMS location level | `DEX.Temp-Water.Inst.0.ODEQ-2006TMDL-Target` (°C → °F; monthly steps) | **published target**; defined at the dam tailwater, shown at the nearest gauge for context |
 | Snowpack: SWE, snow depth (in) | Overview → Snowpack (SNOTEL) | NRCS AWDB REST `/services/v1/data` | 8 SNOTEL stations: 388, 729, 710, 529, 719, 619, 1166, 733 (`:OR:SNTL`) | **live** (daily) |
@@ -72,6 +75,35 @@ The thresholds are this site's own choices, not an agency determination.
 
 Every card shows its own last-reading time in Pacific time with an age, for example "Oct 30, 4:45 PM PDT · 23 min ago".
 Readings older than 3 hours get a STALE tag.
+
+## Hourly Snapshot (top of every page)
+
+A compact strip above the page tabs with the values recorded hourly:
+**Hills Creek** Elev · TW · HCRO, **Lookout Point** Elev, **Dexter** FB · TW · DEXO, **Cougar** FB · TW · CGRO. Code: `js/snapshot.js`.
+
+- Each value shows the **latest** reading with its own Pacific time and age, and the **hh:00 → value**, the reading stamped exactly
+  at the most recent top of the hour. Until that reading is published it shows "pending" with the previous hour's value.
+- Edge colour: green ≤ 45 min old, amber **LAG** ≤ 90 min, red **STALE** beyond.
+- Forebays also show the USGS lake gage (62614, same datum) as a cross-check; a Δ is shown in amber when CWMS and USGS differ by ≥ 0.1 ft
+  (CWMS `MIXED-REV` sometimes switches sensors).
+- **Copy** puts a group's :00 values (or latest, labelled) on the clipboard; **Copy all** copies all four lines.
+- **Refresh:** every 5 minutes on the clock (:00:40, :05:40, … so :45:40 and :50:40 run every hour), on return to the tab (phones pause timers), and with ↻.
+- **Publishing lag (measured Oct 30, 2026):** CWMS 15-minute values appear about 15–35 min after their timestamp
+  (e.g. the 20:15 reading was posted 20:36–20:38), so the :00 value is normally available by :20–:35. USGS IV readings appear 5–15 min after their timestamp.
+  At :50 the strip therefore shows the :00 value plus a latest reading from :15–:30 (CWMS) or :35–:45 (USGS).
+- **Not available publicly:** Hills Creek and Cougar tailwater. CWMS catalogues `HCR.Elev-Tailwater.*` and `CGR.Elev-Tailwater.*`
+  (and CWMS copies of HCRO/DEXO/CGRO flow), but the public API returns no values for them. The strip says so and will start showing
+  them automatically if CWMS publishes them.
+
+## Long ranges on the rule-curve views (30 D, 6 MO, 1 YR)
+
+The Trend Recorder (Overview) has **24 H · 7 D · 30 D · 6 MO · 1 YR**; the Teacup lake chart has **YEAR · 30 D · 6 MO · 1 YR**. Code: `js/history.js`.
+
+- **30 D:** CWMS 15-minute pool elevation (same series as live). Daily grid lines, Mondays labelled.
+- **6 MO / 1 YR:** USGS daily lake elevation (62614, observation at 24:00) plus live CWMS hourly means since the last daily value. Month grid lines and labels.
+  CWMS publishes no public daily or hourly pool series, and a year of 15-minute data is ~35,000 points per lake; if USGS fails, CWMS is fetched in monthly chunks and reduced to 6-hour means.
+- **Rule curve:** the CWMS daily rule curve for the whole window. Rivers use USGS IV (30 D) or USGS daily means (6 MO / 1 YR); NWS forecasts are only drawn on 24 H / 7 D.
+- History is fetched when a range is picked and cached for 30 minutes.
 
 ## Pages (hash routes)
 
