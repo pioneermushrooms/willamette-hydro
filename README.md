@@ -70,8 +70,39 @@ Readings older than 3 hours get a STALE tag.
 
 ## Pages (hash routes)
 
-`#/overview` is the live dashboard (default). `#/teacup`, `#/tables` and `#/docs` are placeholders for later stages.
+`#/overview` is the live dashboard (default). `#/teacup` is the basin teacup and lake ruler. `#/tables` and `#/docs` are placeholders for later stages.
 Plain anchors (`#trends`, `#rivers`, …) stay on Overview and scroll.
+
+## Teacup view (`#/teacup`)
+
+- **Basin teacup:** 8 cups in 2 columns on mobile and 4 on desktop.
+  - Cup height is the conservation pool, from bottom to top elevation in CWMS levels. The water line is the **live** pool elevation and the dashed line is the **live** CWMS rule curve. The number is % full, **derived** from live storage: (storage − bottom of conservation) ÷ (top − bottom).
+  - Below the conservation pool, cups say so rather than showing 0 %.
+  - Colours: below rule curve (> 10 ft under), near, above (> 2 ft over). These are this site's thresholds, the same as Overview.
+  - Dexter is a forebay gauge in its 690–695 ft power-pool band, with no conservation pool and no percent.
+  - Live pool data is shared from the Overview loader (`HYDRO.live`) and is not refetched.
+  - Why the cups use elevation geometry: a storage rule curve (`<P>.Stor-RuleCurve.Inst.~1Day.0.CENWP-CALC`) is listed in the CWMS catalog but returns no public data. So the rule curve exists only in feet, and the cup is drawn in feet so the water line and rule marker share one scale.
+- **Elevation ruler:** one lake at a time, chosen with a chip row (default Lookout Point). It shows these published CWMS levels (m → ft): streambed, bottom/top of conservation, top of flood, top of max flood, spillway crest and top of dam (Dexter: power-pool band).
+  - It also shows the live pool with its timestamp, today's rule curve (CWMS daily), and today's 30-year stats band (p25–p75, p05–p95, mean, min/max), **derived** from the published `…CENWP-30year-thru2023-STATS` levels.
+  - Scale: the scale is linear above a marked ≈ break, and the span down to the streambed is compressed.
+- **Annual chart:** shows the 30-yr bands and mean (365 daily evaluations), the full-year rule curve, the published target line (with gaps), a today line, and the **last 7 days** of pool.
+  - The full-year rule curve comes from the CWMS daily `Elev-RuleCurve` series, which is published through Dec 31.
+  - Longer pool history is not shown. The daily and hourly elevation series are empty or restricted publicly, and 90 days of 5–15-min data is too heavy.
+- **Targets:** each is shown as **"Published target — not a statement of current operations."**, with links to Docs and the USACE injunction page. Each shows the value today and the next 3 changes.
+  - **LOP, GPR, CGR:** `Elev-Forebay.Inst.0.Injunction-Target` (seasonal, latest version ≤ today).
+  - **HCR:** the seasonal elevation `Elev.Inst.0.Interim Risk Reduction Measure` (2026-01-01 version: 1,511 ft mid-Mar → Oct 11). HCR's `Stor.Inst.0.Interim_Operations` and `Stor.Inst.0.Injunction-Target` are storage-only and listed in ac-ft. They are not converted to elevation.
+- **Loading:** levels load lazily on first visit, with the selected lake first and the rest 3 at a time. They are cached for 24 h. Failures show "Levels unavailable" with a Retry button.
+
+Level availability (live, 2026-10-30):
+
+| Project | Ruler levels (of 7) | 30-yr stats | Elevation target used |
+|---|---|---|---|
+| LOP | 7 | 7/7 | Injunction-Target (828.0 ft today) |
+| HCR | 7 | 7/7 | Interim Risk Reduction Measure (none today; storage targets listed) |
+| DEX | 3: no conservation/flood levels; power band 690–695 shown | 7/7 | none |
+| GPR | 7 | 7/7 | Injunction-Target (924.7 ft today) |
+| CGR | 7 | 7/7 | Injunction-Target (1,510.6 ft today) |
+| FRN, COT, DOR | 7 | 7/7 | none published |
 
 ## NOAA NWPS (flood stages + forecasts)
 
@@ -131,7 +162,8 @@ js/app.js                       Overview rendering: clock, feed status, totals, 
 js/cwms-levels.js               CWMS location levels: fetch + 24 h cache + seasonal evaluator + unit conversion
 js/nwps.js                      NOAA NWPS flood categories + NWS forecasts
 js/router.js                    hash router (#/overview, #/teacup, #/tables, #/docs)
-js/views/*.js                   non-overview views (placeholders for now)
+js/teacup-core.js               pure Teacup helpers (percent full, rule delta, next target changes, ruler scale)
+js/views/*.js                   non-overview views (teacup.js; tables/docs placeholders)
 scripts/fetch-bpa.js            BPA download + parser (DST-aware), writes data/bpa.json
 data/bpa.json                   latest BPA balancing-authority hydro/load, last 48 h at 5-min
 .github/workflows/update-bpa.yml  scheduled BPA refresh

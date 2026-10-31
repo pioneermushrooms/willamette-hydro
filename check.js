@@ -17,6 +17,7 @@ const H = require('./js/data.js');
 const BPA = require('./scripts/fetch-bpa.js');
 const LV = require('./js/cwms-levels.js');
 const NW = require('./js/nwps.js');
+const TC = require('./js/teacup-core.js');
 
 const LIVE = process.argv.includes('--live');
 let passes = 0;
@@ -203,6 +204,54 @@ console.log('nwps');
   check(NW.gaugeUrl('HARO3') === 'https://water.noaa.gov/gauges/HARO3', 'nwps: gauge link');
 }
 
+// ---- 2d. Teacup pure helpers ---------------------------------------------------------
+console.log('teacup');
+{
+  const near = (a, b, tol) => a != null && Math.abs(a - b) <= (tol || 1e-6);
+  const pf = TC.percentFull(70838.8, 113619, 438179);
+  check(pf.below && pf.clamped === 0 && near(pf.pct, -13.18, 0.01), 'teacup: percentFull below bottom (LOP-like) clamps to 0');
+  check(near(TC.percentFull(30218.5, 2800, 97280).pct, 29.02, 0.01), 'teacup: percentFull FRN-like 29.0 %');
+  check(TC.percentFull(500, 100, 300).above && TC.percentFull(500, 100, 300).clamped === 100, 'teacup: percentFull above top clamps to 100');
+  check(TC.percentFull(null, 1, 2) === null && TC.percentFull(5, 2, 2) === null, 'teacup: percentFull guards');
+  check(TC.elevFraction(800, 825, 926) === 0 && near(TC.elevFraction(875.5, 825, 926), 0.5) && TC.elevFraction(999, 825, 926) === 1, 'teacup: elevFraction clamps');
+  check(TC.ruleDelta(800.4, 875, 10, 2).status === 'below' && near(TC.ruleDelta(800.4, 875, 10, 2).delta, -74.6, 1e-9), 'teacup: ruleDelta below');
+  check(TC.ruleDelta(693.2, 690.3, 10, 2).status === 'above', 'teacup: ruleDelta above (>2 ft)');
+  check(TC.ruleDelta(363.6, 363.8, 10, 2).status === 'near' && TC.ruleDelta(870, 875, 10, 2).status === 'near', 'teacup: ruleDelta near band');
+  check(TC.ruleDelta(null, 875, 10, 2).status === null, 'teacup: ruleDelta no data');
+
+  // next target changes on a fixture shaped like the LOP injunction target (values in ft)
+  const entry = { date: 0, unit: 'ft', s: { o: Date.parse('2023-01-01T08:00:00Z'), m: 12, i: true, p: [
+    [0, 0, null], [2, 14 * 1440, 890.5], [3, 14 * 1440, 890.5], [3, 15 * 1440, null],
+    [8, 29 * 1440, 900], [9, 30 * 1440, 825], [11, 0, 750], [11, 14 * 1440, 750], [11, 15 * 1440, null]] } };
+  const ch = TC.nextTargetChanges(entry, Date.parse('2026-10-30T12:00:00Z'), 3);
+  check(ch.length === 3 && ch[0].v === 825 && ch[0].t === Date.parse('2026-10-31T08:00:00Z'), 'teacup: next change 1 = 825 ft on Oct 31');
+  check(ch[1].v === 750 && ch[1].t === Date.parse('2026-12-01T08:00:00Z'), 'teacup: next change 2 = 750 ft on Dec 1 (Dec 15 hold skipped)');
+  check(ch[2].v === null && ch[2].t === Date.parse('2026-12-16T08:00:00Z'), 'teacup: next change 3 = target ends Dec 16');
+  const ch2 = TC.nextTargetChanges(entry, Date.parse('2026-12-20T12:00:00Z'), 2);
+  check(ch2[0].v === 890.5 && ch2[0].t === Date.parse('2027-03-15T08:00:00Z') && ch2[1].v === null, 'teacup: next changes wrap into next year');
+  check(TC.nextTargetChanges({ date: 0, unit: 'ft', c: 900 }, Date.now(), 3).length === 0, 'teacup: constant level has no changes');
+
+  // ruler scale
+  const sc = TC.rulerScale({ hi: 945, lo: 795, floor: 688, top: 18, bottom: 540 });
+  check(sc.broken, 'teacup: ruler breaks when streambed is far below focus range');
+  check(near(sc.y(945), 18) && near(sc.y(688), 540), 'teacup: ruler endpoints map to top/bottom');
+  check(sc.y(900) < sc.y(850) && sc.y(850) < sc.y(795) && sc.y(795) < sc.y(700), 'teacup: ruler monotonic (higher elevation = higher on screen)');
+  const pxPerFtFocus = (sc.y(800) - sc.y(900)) / 100, pxPerFtBreak = (sc.y(688) - sc.y(795)) / 107;
+  check(pxPerFtFocus > 3 * pxPerFtBreak, 'teacup: focus span gets more px/ft than the compressed span');
+  check(sc.ticks.length >= 3 && sc.ticks.every((t) => t >= sc.lo - 1e-9 && t <= 945 + 1e-9), 'teacup: ruler ticks inside focus range');
+  const sc2 = TC.rulerScale({ hi: 1550, lo: 1440, floor: 1430, top: 0, bottom: 100 });
+  check(!sc2.broken && near(sc2.y(1430), 100) && near(sc2.y(1550), 0), 'teacup: no break when floor is near; linear to floor');
+  const sp = TC.spreadLabels([{ y: 100 }, { y: 101 }, { y: 103 }, { y: 300 }], 14, 0, 400);
+  check(sp.every((it, i) => !i || it.ly - sp[i - 1].ly >= 14 - 1e-6) && sp[3].ly === 300, 'teacup: labels spread >= gap, far label untouched');
+  const sp2 = TC.spreadLabels([{ y: 2 }, { y: 3 }], 14, 0, 400);
+  check(sp2[0].ly >= 0 && sp2[1].ly - sp2[0].ly >= 14 - 1e-6, 'teacup: spread respects min bound');
+
+  const yr = TC.annualSeries(entry, 2026);
+  check(yr.length === 365 && yr.some((p) => p[1] === null) && yr.some((p) => p[1] === 750), 'teacup: annualSeries 365 daily points with gaps');
+  const cl = TC.consLimits(null, { cons: { elevBottom: 825, elevTop: 926, storBottom: 1, storTop: 2 } });
+  check(cl.elevBottom === 825 && !cl.fromLevels, 'teacup: consLimits falls back to project constants');
+}
+
 // ---- 3. Page wiring ---------------------------------------------------------
 console.log('page');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
@@ -216,10 +265,12 @@ check(!/illustrative/i.test(html), 'no "illustrative" wording left in page');
   const ref = m.replace(/^(?:src|href)="/, '').replace(/"$/, '');
   check(fs.existsSync(path.join(__dirname, ref)), 'referenced file exists: ' + ref);
 });
-['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'js/router.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
+['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'js/router.js', 'js/teacup-core.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
 ['overview', 'teacup', 'tables', 'docs'].forEach((r) => {
   check(html.includes('href="#/' + r + '"') && html.includes('data-view="' + r + '"'), 'route + view exist: ' + r);
 });
+check(html.indexOf('js/teacup-core.js') > html.indexOf('js/cwms-levels.js') && html.indexOf('js/teacup-core.js') < html.indexOf('js/views/teacup.js'), 'script order: teacup-core after levels, before teacup view');
+check(/Published target — not a statement of current operations\./.test(fs.readFileSync(path.join(__dirname, 'js', 'views', 'teacup.js'), 'utf8')), 'teacup view carries the mandatory target disclaimer');
 check(html.indexOf('js/cwms-levels.js') < html.indexOf('js/router.js') && html.indexOf('js/router.js') < html.indexOf('js/app.js') &&
   html.indexOf('js/views/docs.js') < html.indexOf('js/router.js'), 'script order: modules, views, router, app');
 const app = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8') + fs.readFileSync(path.join(__dirname, 'js', 'data.js'), 'utf8');
@@ -303,6 +354,40 @@ async function live() {
   } catch (e) {
     check(false, 'LOP levels fetch: ' + e.message);
   }
+
+
+  // CWMS levels availability matrix (all 8 projects, concurrency 3)
+  console.log('\nCWMS levels availability (today)');
+  const codes = ['LOP', 'HCR', 'DEX', 'GPR', 'CGR', 'FRN', 'COT', 'DOR'];
+  const got = {};
+  let qi = 0;
+  await Promise.all([0, 1, 2].map(async () => {
+    while (qi < codes.length) { const c = codes[qi++]; try { got[c] = await LV.fetchProjectLevels(c); } catch (e) { got[c] = e; } }
+  }));
+  const rulerKeys = ['streambed', 'bottomCons', 'topCons', 'topFlood', 'topMaxFlood', 'spillwayCrest', 'topDam'];
+  const statKeys = ['statsMin', 'statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95', 'statsMax'];
+  const targetIds = { inj_elev: 'Elev-Forebay.Inst.0.Injunction-Target', irrm_elev: 'Elev.Inst.0.Interim Risk Reduction Measure', interim_stor: 'Stor.Inst.0.Interim_Operations', inj_stor: 'Stor.Inst.0.Injunction-Target' };
+  const mrows = [];
+  for (const c of codes) {
+    const d = got[c];
+    if (d instanceof Error) { check(false, `levels ${c}: ${d.message}`); mrows.push({ code: c, error: d.message }); continue; }
+    const row = { code: c };
+    const have = rulerKeys.filter((k) => LV.constantAt(d, LV.IDS[k]) != null);
+    row.ruler = have.length + '/7';
+    row.missing = rulerKeys.filter((k) => !have.includes(k)).join(',') || '—';
+    const stats = statKeys.map((k) => LV.valueAt(d, LV.IDS[k]));
+    row.stats = stats.filter((v) => v != null).length + '/7';
+    for (const [k, id] of Object.entries(targetIds)) {
+      const e = LV.pick(d, id);
+      row[k] = !e ? '—' : (e.c != null ? 'const ' : '') + (LV.evalSeasonal(e, Date.now()) == null ? 'null today' : LV.evalSeasonal(e, Date.now()).toFixed(1));
+    }
+    mrows.push(row);
+    check(LV.constantAt(d, LV.IDS.topDam) != null && LV.constantAt(d, LV.IDS.streambed) != null, `levels ${c}: top of dam + streambed published`);
+    check(stats.every((v) => v != null), `levels ${c}: 30-yr stats available today`);
+  }
+  console.table(mrows);
+  for (const c of ['LOP', 'GPR', 'CGR']) check(LV.pick(got[c], targetIds.inj_elev) != null, `levels ${c}: elevation injunction target published`);
+  check(LV.pick(got.HCR, targetIds.irrm_elev) != null, 'levels HCR: elevation Interim Risk Reduction Measure published');
 
   // BPA: parse the real file
   try {

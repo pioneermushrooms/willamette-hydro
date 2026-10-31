@@ -183,6 +183,9 @@
       var snap = res[0];
       state.snap = merge(state.snap, snap);
       state.nwps = mergeNwps(state.nwps, res[1]);
+      // Share the live snapshot with other views (Teacup) — they must not refetch it.
+      H.live = { snap: state.snap, nwps: state.nwps };
+      document.dispatchEvent(new CustomEvent('hydro:data'));
       state.fetching = false;
       state.nextPollAt = Date.now() + POLL_MS;
       state.pollTimer = setTimeout(poll, POLL_MS);
