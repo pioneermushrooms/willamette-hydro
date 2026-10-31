@@ -852,3 +852,40 @@ i.lg-livept { width: 10px !important; height: 10px !important; border-radius: 50
 .node.station .body { fill: #0b0c0e; stroke: #8b939b; stroke-width: 2; }
 .card .detail-gauge { grid-template-columns: minmax(0, 1fr); }
 .card .gauge { max-width: 180px; }
+
+/* ---- Watch list (top of Overview) ----------------------------------------- */
+.watch-panel { margin-bottom: var(--gap); border-color: var(--amber-dim); }
+.w-scroll { max-height: none; margin: 0 0 10px; }
+.w-table th small, .w-table td small { margin-left: 3px; color: var(--muted); font-size: 0.78em; }
+.w-table tbody th { text-align: left; white-space: nowrap; color: var(--text); font-weight: 400; }
+.w-table tbody th small { display: block; margin-left: 0; }
+.w-table td { white-space: nowrap; }
+.w-current td b { font-size: 17px; color: var(--text); }
+.w-current td.w-time { color: var(--text-2); font-size: 12px; }
+.w-table td.na { color: var(--muted); font-size: 12px; }
+.w-table .loading { animation: pulse 1.4s ease-in-out infinite; }
+.w-table td.w-near, .w-table td.w-near b { color: var(--ok); }
+.w-table td.w-below, .w-table td.w-below b { color: #ff8a80; }
+.w-table td.w-above, .w-table td.w-above b { color: var(--amber); }
+.w-table td.w-fall b { color: #ff8a80; }
+.w-table td.w-rise b { color: var(--cyan); }
+.w-year th small { display: block; color: var(--muted); }
+.w-daily thead th[colspan] { text-align: center; border-left: 1px solid var(--line); }
+.w-controls { padding-top: 4px; }
+.w-controls .field { flex: 0 1 220px; }
+.w-controls .hint { align-self: center; }
+.w-note { margin: 4px 6px 0; }
+.w-err { color: var(--warn); }
+@media (max-width: 640px) {
+  .w-current thead { display: none; }
+  .w-current, .w-current tbody { display: block; }
+  .w-current tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; padding: 8px 10px; border-bottom: 1px solid #1e2226; }
+  .w-current tbody th, .w-current td { display: block; border: 0; padding: 2px 0; text-align: left; white-space: normal; }
+  .w-current tbody th { grid-column: 1 / -1; }
+  .w-current tbody th small { display: inline; margin-left: 6px; }
+  .w-current td::before { content: attr(data-label); display: block; font: 600 10px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .w-current td.w-time { grid-column: 1 / -1; }
+  .w-current td.w-time::before { display: inline; margin-right: 6px; }
+  .w-current td b { font-size: 15px; }
+  .w-table th, .w-table td { padding: 5px 7px; }
+}

@@ -198,6 +198,7 @@
       // Share the live snapshot with other views (Teacup) — they must not refetch it.
       H.live = { snap: state.snap, nwps: state.nwps, tdg: state.tdg };
       document.dispatchEvent(new CustomEvent('hydro:data'));
+      if (H.watch) H.watch.update();
       state.fetching = false;
       state.nextPollAt = Date.now() + POLL_MS;
       state.pollTimer = setTimeout(poll, POLL_MS);
@@ -1162,6 +1163,7 @@
     renderCards();
     renderDetails();
     renderSnow();
+    if (H.watch && !dataChanged) H.watch.render();
     if (dataChanged) renderChart(true);
   }
 
@@ -1173,6 +1175,7 @@
   tickClock();
   setInterval(tickClock, 1000);
   setInterval(function () { if (state.snap && !state.fetching) renderAll(false); }, 60000);
+  if (H.watch && $('#watch')) H.watch.mount($('#watch'), { stamp: stamp });
   renderMapBase();
   bindCards();
   initTrends();

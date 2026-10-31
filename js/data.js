@@ -493,6 +493,7 @@
     cwmsUrl: cwmsUrl,
     parseUsgs: parseUsgs,
     fetchCwms: fetchCwms,
+    limit: limit,
     loadAll: loadAll,
     latest: latest,
     atOrBefore: atOrBefore,
