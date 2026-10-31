@@ -5,6 +5,7 @@ name: Update BPA hydro data
 on:
   schedule:
     - cron: '7,37 * * * *'
+    - cron: '22,52 * * * *'   # second slot: GitHub drops/delays some scheduled runs
   workflow_dispatch:
 
 permissions:
