@@ -360,6 +360,58 @@
     });
   }
 
+  // ---- Long-range history (Trend Recorder 30 D / 12 MO) ----------------------
+
+  var RANGE_DAYS = { '24h': 1, '7d': 7, '30d': 30, '12m': 365 };
+  var USGS_DV = 'https://waterservices.usgs.gov/nwis/dv/';
+
+  // Mean of the values in each fixed bucket of `ms` (epoch-aligned); point stamped at the bucket centre.
+  function bucketMean(s, ms) {
+    var out = emptySeries({ source: s && s.source, name: s && s.name, unit: s && s.unit });
+    if (!s || !s.t || !s.t.length) return out;
+    var key = null, sum = 0, n = 0;
+    for (var i = 0; i <= s.t.length; i++) {
+      var k = i < s.t.length ? Math.floor(s.t[i] / ms) : null;
+      if (k !== key && n) { out.t.push(key * ms + ms / 2); out.v.push(sum / n); sum = 0; n = 0; }
+      if (k == null) break;
+      key = k; sum += s.v[i]; n++;
+    }
+    return out;
+  }
+
+  /*
+   * History for one chart point over `range` ('30d' | '12m'). Never rejects.
+   * Reservoir: { elev, rule }, elevation reduced to hourly (30 d) or 3-hourly (12 mo) means and
+   * fetched in ~31-day chunks (5-minute data). River: { flow, stage, tempC } from USGS IV
+   * (30 d, as reported) or USGS daily means (12 mo, statCd 00003).
+   */
+  function loadHistory(e, range, now) {
+    now = now || Date.now();
+    var days = RANGE_DAYS[range] || 30, begin = now - days * DAY, out = { range: range, fetchedAt: null, error: null };
+    var done = function () { out.fetchedAt = Date.now(); return out; };
+    if (e.kind === 'reservoir') {
+      var bucket = range === '12m' ? 3 * HOUR : HOUR, run = limit(6), chunks = [];
+      for (var b = begin; b < now; b += 31 * DAY) chunks.push([b, Math.min(now, b + 31 * DAY - 1)]);
+      var parts = [];
+      var elevP = Promise.all(chunks.map(function (c, i) {
+        return run(function () { return fetchCwms(e.series.elev, c[0], c[1]); }).then(function (s) { parts[i] = bucketMean(s, bucket); });
+      })).then(function () {
+        var s = emptySeries({ source: 'USACE CWMS', name: e.series.elev.name, unit: 'ft' });
+        parts.forEach(function (p) { s.t = s.t.concat(p.t); s.v = s.v.concat(p.v); });
+        out.elev = s;
+      });
+      var ruleP = fetchCwms(e.series.rule, begin - DAY, now + 8 * DAY).then(function (s) { out.rule = s; });
+      return Promise.all([elevP, ruleP]).then(done, function (err) { out.error = err.message; return done(); });
+    }
+    var url = range === '12m'
+      ? USGS_DV + '?format=json&sites=' + e.site + '&parameterCd=00060,00065,00010&statCd=00003&period=P' + days + 'D'
+      : USGS_IV + '?format=json&sites=' + e.site + '&parameterCd=00060,00065,00010&period=P' + days + 'D';
+    return fetchJson(url, {}, 60000).then(function (j) {
+      var parsed = parseUsgs(j)[e.site] || {};
+      ['flow', 'stage', 'tempC'].forEach(function (k) { if (parsed[k]) out[k] = parsed[k]; });
+    }, function (err) { out.error = err.message; }).then(done);
+  }
+
   // ---- Derived values (pure) -----------------------------------------------
 
   function latest(s) {
@@ -494,6 +546,9 @@
     parseUsgs: parseUsgs,
     fetchCwms: fetchCwms,
     limit: limit,
+    RANGE_DAYS: RANGE_DAYS,
+    bucketMean: bucketMean,
+    loadHistory: loadHistory,
     loadAll: loadAll,
     latest: latest,
     atOrBefore: atOrBefore,

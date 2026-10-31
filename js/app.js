@@ -31,6 +31,8 @@
     nwps: null,           // { <stationId>: { lid, gauge, error } } from js/nwps.js
     tdg: null,            // { DEX|CGR: { series, error } } from js/tdg.js
     snow: null,           // { fetchedAt, stations, error } from js/snotel.js
+    history: {},          // '<id>|30d' / '<id>|12m' -> H.loadHistory result (Trend Recorder long ranges)
+    historyLoading: {},
     angles: {},
     geom: null
   };
@@ -199,6 +201,7 @@
       H.live = { snap: state.snap, nwps: state.nwps, tdg: state.tdg };
       document.dispatchEvent(new CustomEvent('hydro:data'));
       if (H.watch) H.watch.update();
+      ensureHistory();
       state.fetching = false;
       state.nextPollAt = Date.now() + POLL_MS;
       state.pollTimer = setTimeout(poll, POLL_MS);
@@ -785,31 +788,66 @@
     return { ticks: t, step: step };
   }
 
+  var RANGE_LABEL = { '24h': 'LAST 24 H', '7d': 'LAST 7 D', '30d': 'LAST 30 D', '12m': 'LAST 12 MO' };
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var HISTORY_TTL = HOUR;
+
+  function rangeMs() { return H.RANGE_DAYS[state.range] * 24 * HOUR; }
+  function longRange() { return state.range === '30d' || state.range === '12m'; }
+
+  // 30 D / 12 MO: history for the chart point, loaded on demand and refreshed hourly.
+  function ensureHistory() {
+    if (!longRange()) return;
+    var key = state.chartId + '|' + state.range, h = state.history[key];
+    if (state.historyLoading[key] || (h && !h.error && Date.now() - h.fetchedAt < HISTORY_TTL)) return;
+    state.historyLoading[key] = true;
+    H.loadHistory(byId[state.chartId], state.range).then(function (r) {
+      delete state.historyLoading[key];
+      if (!r.error || !h) state.history[key] = r;
+      if (key === state.chartId + '|' + state.range) renderChart(true);
+    });
+  }
+
+  // Long-range series with any newer points from the live 7-day snapshot appended.
+  function withLive(hist, live) {
+    if (!hist || !hist.t.length) return live || null;
+    if (!live || !live.t.length) return hist;
+    var last = hist.t[hist.t.length - 1], t = hist.t.slice(), v = hist.v.slice();
+    for (var i = 0; i < live.t.length; i++) if (live.t[i] > last) { t.push(live.t[i]); v.push(live.v[i]); }
+    return { t: t, v: v, q: null };
+  }
+
   function chartModel() {
     var e = byId[state.chartId], res = e.kind === 'reservoir';
-    var now = Date.now(), end = now, start = now - (state.range === '24h' ? 24 : 168) * HOUR;
+    var now = Date.now(), end = now, start = now - rangeMs();
     var s, ref = null, unit, dec, title, src, param = null, g = null;
+    var long = longRange(), hist = long ? state.history[e.id + '|' + state.range] : null;
+    var histPending = long && !hist;
     if (res) {
       var d = projData(e);
       s = d && d.elev; ref = d && d.rule; unit = 'ft'; dec = 2;
+      if (long) { s = hist ? withLive(hist.elev, s) : null; ref = hist && hist.rule && hist.rule.t.length ? hist.rule : ref; }
       title = e.name + ' · pool elevation (ft)';
-      src = 'USACE CWMS (NWDP) ' + e.series.elev.name + '; dashed: ' + e.series.rule.name + ' (USACE rule curve, daily, linearly joined).';
+      src = 'USACE CWMS (NWDP) ' + e.series.elev.name + (long ? (state.range === '12m' ? ' (3-hour means)' : ' (hourly means)') : '') + '; dashed: ' + e.series.rule.name + ' (USACE rule curve, daily, linearly joined).';
     } else {
       var sd = stData(e);
       param = state.riverParam === 'temp' ? 'temp' : e.params.indexOf('flow') >= 0 && state.riverParam === 'flow' ? 'flow' : 'stage';
       if (param === 'temp') {
         // USGS reports °C; the site displays °F (°C kept in tooltips/details).
         var tc = sd && sd.tempC && sd.tempC.t.length ? sd.tempC : null;
+        if (long) tc = hist ? withLive(hist.tempC, state.range === '12m' ? null : tc) : null;
         s = tc ? { t: tc.t, v: tc.v.map(H.cToF), q: tc.q } : null;
         unit = '°F'; dec = 1;
         title = e.name + ' · water temperature (°F)';
         src = 'USGS NWIS site ' + e.site + ', parameter 00010 water temperature (reported in °C, shown in °F). Values flagged P are provisional.';
       } else {
         s = sd && sd[param] && sd[param].t.length ? sd[param] : null;
+        if (long) s = hist ? withLive(hist[param], state.range === '12m' ? null : s) : null;
         unit = param === 'flow' ? 'cfs' : 'ft'; dec = param === 'flow' ? 0 : 2;
         title = e.name + (param === 'flow' ? ' · discharge (cfs)' : ' · gage height (ft)');
         src = 'USGS NWIS site ' + e.site + ', parameter ' + (param === 'flow' ? '00060 discharge' : '00065 gage height') + '. Values flagged P are provisional.' +
-          (e.params.indexOf('flow') < 0 ? ' This gauge has no discharge series, so stage is charted.' : '');
+          (e.params.indexOf('flow') < 0 ? ' This gauge has no discharge series, so stage is charted.' : '') +
+          (state.range === '12m' ? ' 12 MO: USGS daily means.' : '');
         g = nwpsGauge(e);
       }
     }
@@ -817,7 +855,7 @@
     var fc = { t: [], v: [] }, issued = null, bands = [], fcNote = '';
     if (g && g.forecast && s && s.t.length) {
       var fv = param === 'flow' ? g.forecast.flow : g.forecast.stage, lastT = s.t[s.t.length - 1];
-      var fcEnd = now + (state.range === '24h' ? 24 : 168) * HOUR; // mirror the history window
+      var fcEnd = now + Math.min(rangeMs(), 168 * HOUR); // mirror the history window, at most 7 d
       fc.t.push(lastT); fc.v.push(s.v[s.v.length - 1]);
       for (var f = 0; f < g.forecast.t.length; f++) {
         if (g.forecast.t[f] <= lastT || fv[f] == null) continue;
@@ -870,7 +908,8 @@
     }
     return { e: e, res: res, start: start, end: end, now: now, t: t, v: v, q: q, rt: rt, rv: rv, unit: unit, dec: dec, title: title, src: src,
       tt: tt, tv: tv, tLabel: tLabel, tNote: tNote,
-      param: param, fc: fc, issued: issued, bands: bands, fcNote: fcNote, peak: g && g.peak, loading: !state.snap };
+      param: param, fc: fc, issued: issued, bands: bands, fcNote: fcNote, peak: g && g.peak, loading: !state.snap || histPending,
+      histError: hist && hist.error };
   }
 
   function renderChart(animate) {
@@ -886,7 +925,7 @@
       ps.querySelector('[data-param="temp"]').disabled = M.e.params.indexOf('tempC') < 0;
     }
     $('#chart-title').textContent = M.title;
-    $('#trend-tag').textContent = (state.range === '24h' ? 'LAST 24 H' : 'LAST 7 D') + ' · LIVE SERIES';
+    $('#trend-tag').textContent = RANGE_LABEL[state.range] + ' · LIVE SERIES';
     $('#chart-src').textContent = 'Source: ' + M.src;
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H2);
     svg.setAttribute('height', H2);
@@ -895,7 +934,8 @@
     if (M.t.length < 2) {
       svg.innerHTML = '';
       msg.hidden = false;
-      msg.textContent = M.loading ? 'Loading live data…' : 'No data returned for this series in the selected window.';
+      msg.textContent = M.loading ? (longRange() ? 'Loading ' + RANGE_LABEL[state.range].toLowerCase().replace('last ', '') + ' of history…' : 'Loading live data…') :
+        M.histError ? 'History request failed (' + M.histError + ').' : 'No data returned for this series in the selected window.';
       $('#chart-legend').innerHTML = '';
       $('#chart-stats').innerHTML = '';
       $('#chart-table').innerHTML = '';
@@ -931,7 +971,8 @@
     var xt = [];
     for (var tt = Math.ceil(M.start / HOUR) * HOUR; tt <= M.end; tt += HOUR) {
       var p = parts(tt);
-      if (state.range === '24h' ? p.h % 6 === 0 : p.h === 0) xt.push({ t: tt, p: p });
+      if (state.range === '24h' ? p.h % 6 === 0 : state.range === '12m' ? p.h === 0 && p.day === '1' : p.h === 0) xt.push({ t: tt, p: p });
+      if (p.h === 0 && state.range !== '24h') tt += 22 * HOUR; // jump to the next evening (DST-safe)
     }
     var narrow = pw / Math.max(1, xt.length) < 52;
     var every = Math.max(1, Math.ceil(30 / (pw / Math.max(1, xt.length))));
@@ -939,6 +980,8 @@
     xt.forEach(function (o) {
       var xx = x(o.t).toFixed(1), lab;
       if (state.range === '24h') lab = o.p.h === 0 ? o.p.weekday + ' ' + o.p.day : String(o.p.h).padStart(2, '0') + ':00';
+      else if (state.range === '12m') lab = MONTHS[+o.p.month - 1];
+      else if (state.range === '30d') lab = o.p.month + '/' + o.p.day;
       else lab = narrow ? o.p.day : o.p.weekday + ' ' + o.p.day;
       s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:.55"/>';
       s += '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + lab + '</text>';
@@ -1019,6 +1062,14 @@
     if (M.res && M.rt.length) {
       var rNow = H.interpolate({ t: M.rt, v: M.rv }, M.t[n - 1]);
       if (rNow != null) stats += '<div><dt>vs rule curve</dt><dd>' + signed(M.v[n - 1] - rNow, 1) + ' ft</dd></div>';
+      var dsum = 0, dn = 0, dmin = Infinity, dmax = -Infinity;
+      for (var di = 0; di < n; di++) {
+        var rv = H.interpolate({ t: M.rt, v: M.rv }, M.t[di]);
+        if (rv == null) continue;
+        var dv = M.v[di] - rv; dsum += dv; dn++; if (dv < dmin) dmin = dv; if (dv > dmax) dmax = dv;
+      }
+      if (dn) stats += '<div><dt>vs rule curve, window avg</dt><dd>' + signed(dsum / dn, 1) + ' ft</dd></div>' +
+        '<div><dt>vs rule curve, min / max</dt><dd>' + signed(dmin, 1) + ' / ' + signed(dmax, 1) + ' ft</dd></div>';
     }
     if (M.tt.length) {
       var tNow = null;
@@ -1036,7 +1087,7 @@
   }
 
   function renderTable(M) {
-    var step = (state.range === '24h' ? 1 : 6) * HOUR, rows = [], seen = {};
+    var step = (state.range === '24h' ? 1 : state.range === '7d' ? 6 : 24) * HOUR, rows = [], seen = {};
     for (var target = M.t[M.t.length - 1]; target >= M.start; target -= step) {
       var i = lastIndexBefore(target, M.t);
       if (i < 0 || seen[i]) continue;
@@ -1110,6 +1161,7 @@
   function setChart(id) {
     state.chartId = id;
     $('#trend-select').value = id;
+    ensureHistory();
     renderChart(true);
   }
 
@@ -1125,6 +1177,7 @@
       b.addEventListener('click', function () {
         state.range = b.getAttribute('data-range');
         document.querySelectorAll('[data-range]').forEach(function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
+        ensureHistory();
         renderChart(true);
       });
     });

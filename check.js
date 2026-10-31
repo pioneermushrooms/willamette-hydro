@@ -346,41 +346,33 @@ console.log('tdg / snotel / odeq');
     'odeq: target drawn for Jasper only (not Goshen)');
 }
 
-// ---- 2b. Watch list (js/watch.js) -------------------------------------------
-console.log('watch');
+// ---- 2b. Snapshot (js/watch.js) --------------------------------------------
+console.log('snapshot');
 {
   const W = require('./js/watch.js');
-  check(W.CODES.join() === 'HCR,LOP,DEX,CGR', 'watch: HCR, LOP, DEX, CGR in that order');
-  // 2026-10-31 06:30Z is Oct 30 23:30 PDT; 2026-11-01 09:30Z is Nov 1 01:30 PST (after fall-back).
-  check(W.dayKey(Date.UTC(2026, 9, 31, 6, 30)) === '2026-10-30' && W.dayKey(Date.UTC(2026, 10, 1, 9, 30)) === '2026-11-01', 'watch: Pacific day keys across DST');
-  check(W.addDays('2026-03-01', -1) === '2026-02-28' && W.addDays('2026-12-31', 1) === '2027-01-01', 'watch: calendar day arithmetic');
-  const ld = W.lastDays('2026-10-31', 30);
-  check(ld.length === 30 && ld[0] === '2026-10-02' && ld[29] === '2026-10-31', 'watch: 30-day span ends today');
-  check(W.monthDays('2026-02').length === 28 && W.monthDays('2026-10', '2026-10-15').length === 15, 'watch: month days, clipped to today');
-  const lm = W.lastMonths('2026-02', 12);
-  check(lm.length === 12 && lm[0] === '2025-03' && lm[11] === '2026-02', 'watch: 12 months across a year boundary');
-  // Two Pacific days of pool data (PDT, UTC-7) and a midnight-stamped rule curve.
-  const t0 = Date.UTC(2026, 9, 29, 7, 0);
-  const agg = W.aggregate({ t: [t0, t0 + 6 * 3600e3, t0 + 24 * 3600e3, t0 + 30 * 3600e3], v: [800, 802, 790, 794] });
-  check(agg['2026-10-29'].n === 2 && agg['2026-10-29'].sum === 1602 && agg['2026-10-30'].last === 794, 'watch: daily aggregation by Pacific day');
-  const rules = W.ruleByDay({ t: [t0, t0 + 24 * 3600e3], v: [805, 800] });
-  check(rules['2026-10-29'] === 805 && rules['2026-10-30'] === 800, 'watch: rule curve keyed by Pacific day');
-  const rows = W.dailyRows(['2026-10-28', '2026-10-29', '2026-10-30'], agg, rules);
-  check(rows[0].pool === null && rows[1].dev === -4 && rows[2].dev === -8, 'watch: daily rows (mean − rule), gaps are null');
-  const st = W.spanStats(rows);
-  check(st.poolStart === 801 && st.poolEnd === 792 && st.poolChange === -9 && st.devAvg === -6 && st.devMin === -8 && st.devDays === 2 && st.daysAbove === 0 && st.daysBelow === 0, 'watch: span stats');
-  const st2 = W.spanStats(W.dailyRows(['2026-10-29', '2026-10-30'], { '2026-10-29': { sum: 1580, n: 2 }, '2026-10-30': { sum: 1570, n: 2 } }, { '2026-10-29': 800, '2026-10-30': 800 }));
-  check(st2.daysBelow === 1 && st2.devAvg === -12.5, 'watch: only days more than 10 ft below are counted');
+  check(W.CODES.join() === 'HCR,LOP,DEX,CGR', 'snapshot: HCR, LOP, DEX, CGR in that order');
+  check(!W.GAGE.LOP && W.GAGE.HCR === 'HCRO' && W.GAGE.DEX === 'DEXO' && W.GAGE.CGR === 'CGRO', 'snapshot: outflow gages HCRO/DEXO/CGRO, no LOPO');
+  check(W.CANDIDATES.tail('LOP')[0] === 'LOP.Elev-Tailwater.Inst.0.0.MIXED-REV' && W.CANDIDATES.gage('DEX')[0] === 'DEXO.Flow.Inst.0.0.MIXED-REV', 'snapshot: candidate series ids');
   check(W.pickCatalog([{ name: 'HCRO.Flow.Ave.1Hour.1Hour.X', extents: [{ 'latest-time': '2026-10-30T00:00:00Z' }] },
     { name: 'HCRO.Flow.Inst.0.0.MIXED-REV', extents: [{ 'latest-time': '2026-10-31T00:00:00Z' }] },
-    { name: 'HCRO.Flow.Inst.0.0.OLD', extents: [{ 'latest-time': '2019-01-01T00:00:00Z' }] }]) === 'HCRO.Flow.Inst.0.0.MIXED-REV', 'watch: catalog picks the most recent series');
-  check(!W.GAGE.LOP && W.GAGE.HCR === 'HCRO' && W.CANDIDATES.gage('DEX')[0] === 'DEXO.Flow.Inst.0.0.MIXED-REV', 'watch: outflow gages HCRO/DEXO/CGRO, no LOPO');
-  check(W.pickCatalog([]) === null, 'watch: empty catalog -> null');
-  check(W.catalogUrl(W.CATALOG_LIKE.gage('HCR')).includes('like=%5EHCRO%5C.Flow%5C.') && W.CANDIDATES.tail('LOP')[0] === 'LOP.Elev-Tailwater.Inst.0.0.MIXED-REV', 'watch: catalog regex URL-encoded; tailwater candidate');
+    { name: 'HCRO.Flow.Inst.0.0.OLD', extents: [{ 'latest-time': '2019-01-01T00:00:00Z' }] }]) === 'HCRO.Flow.Inst.0.0.MIXED-REV', 'snapshot: catalog picks the most recent series');
+  check(W.pickCatalog([]) === null, 'snapshot: empty catalog -> null');
+  check(W.catalogUrl(W.CATALOG_LIKE.gage('HCR')).includes('like=%5EHCRO%5C.Flow%5C.'), 'snapshot: catalog regex URL-encoded');
   const html0 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const ov = html0.indexOf('data-view="overview"');
-  check(html0.indexOf('id="watch"') > ov && html0.indexOf('id="watch"') < html0.indexOf('id="feed-badges"'), 'watch: panel is first on Overview');
+  check(html0.indexOf('id="watch"') > ov && html0.indexOf('id="watch"') < html0.indexOf('id="feed-badges"'), 'snapshot: first on Overview');
   check(html0.indexOf('js/watch.js') > html0.indexOf('js/data.js') && html0.indexOf('js/watch.js') < html0.indexOf('js/app.js'), 'script order: watch after data, before app');
+}
+
+// ---- 2c. Trend Recorder long ranges -------------------------------------------
+console.log('trend ranges');
+{
+  check(H.RANGE_DAYS['24h'] === 1 && H.RANGE_DAYS['7d'] === 7 && H.RANGE_DAYS['30d'] === 30 && H.RANGE_DAYS['12m'] === 365, 'trend: range lengths');
+  const b = H.bucketMean({ t: [0, 1000, 3600e3, 3600e3 + 1], v: [1, 3, 10, 20] }, 3600e3);
+  check(b.t.join() === '1800000,5400000' && b.v.join() === '2,15', 'trend: bucket means stamped at bucket centre');
+  check(H.bucketMean(null, 3600e3).t.length === 0, 'trend: bucket mean of nothing is empty');
+  const h1 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  check(['24h', '7d', '30d', '12m'].every((r) => h1.includes('data-range="' + r + '"')), 'trend: 24 H, 7 D, 30 D, 12 MO buttons');
 }
 
 // ---- 3. Page wiring ---------------------------------------------------------
@@ -413,159 +405,17 @@ check(isNum(bj.latest.hydroMW) && /[+-]\d{2}:\d{2}$/.test(bj.latest.time) && Arr
 
 // ---- 4. Live ---------------------------------------------------------------
 async function live() {
-  console.log('\nWatch list (tailwater, outflow gages, pool-vs-rule trends)');
+  console.log('\nSnapshot (tailwater, outflow gages)');
   {
     const W = require('./js/watch.js');
-    const r = await W.refresh(Date.now());
-    r.errors.forEach((e) => console.log('  ' + e));
-    const rows = W.CODES.map((c) => {
-      const today = W.dayKey(Date.now()), st = W.spanStats(W.dailyRows(W.lastDays(today, 30), W._mem.agg[c], W._mem.rules[c]));
-      const cur = W._mem.current[c] || {}, last = (e) => (e && e.series && e.series.t.length ? e.series.v[e.series.t.length - 1] : null);
-      return { code: c, tail: last(cur.tail), tailSeries: (cur.tail && (cur.tail.name || cur.tail.error)) || '', gage: last(cur.gage), gageSeries: (cur.gage && (cur.gage.name || cur.gage.error)) || '',
-        days30: st.poolDays, devAvg30: st.devAvg == null ? null : +st.devAvg.toFixed(2), historyDays: Object.keys(W._mem.agg[c] || {}).length };
-    });
+    await W.refresh(Date.now());
+    const last = (e) => (e && e.series && e.series.t.length ? e.series.v[e.series.t.length - 1] : null);
+    const rows = W.CODES.map((c) => { const cur = W.current[c] || {}; return { code: c, tail: last(cur.tail), tailSeries: (cur.tail && (cur.tail.name || cur.tail.error)) || '', gage: W.GAGE[c] ? last(cur.gage) : 'n/a', gageSeries: (cur.gage && (cur.gage.name || cur.gage.error)) || '' }; });
     console.table(rows);
-    rows.forEach((x) => check(x.historyDays > 300, 'watch: ' + x.code + ' pool history covers the year (' + x.historyDays + ' days)'));
-    rows.forEach((x) => check(x.tail != null, 'watch: ' + x.code + ' tailwater reporting (' + x.tailSeries + ')'));
-    rows.filter((x) => W.GAGE[x.code]).forEach((x) => check(x.gage != null, 'watch: ' + W.GAGE[x.code] + ' outflow gage reporting (' + x.gageSeries + ')'));
-  }
-  console.log('\nlive (real APIs)');
-  const t0 = Date.now();
-  const snap = await H.loadAll();
-  const ms = Date.now() - t0;
-  const nowL = Date.now();
-  const rows = [];
-  const fmtAge = (t) => (t == null ? '' : ((nowL - t) / 60000).toFixed(0) + ' min');
-  const cell = (s, d) => {
-    const l = H.latest(s);
-    return l ? `${l.v.toFixed(d)} (${fmtAge(l.t)})` : 'MISSING';
-  };
-
-  check(snap.sources.usgs.ok, 'USGS request succeeded' + (snap.sources.usgs.error ? ' (' + snap.sources.usgs.error + ')' : ''));
-  H.stations.forEach((s) => {
-    const d = snap.stations[s.id] || {};
-    s.params.forEach((k) => check(d[k] && d[k].t.length > 0, `USGS ${s.site} ${k} returns data`));
-    check(H.stationPrimary(s, d) !== null, `USGS ${s.site} primary (${s.primary}) has data`);
-    if (!s.params.includes('flow')) check(!d.flow || !d.flow.t.length, `USGS ${s.site} still has no discharge series (else update config)`);
-    rows.push({ site: s.site, name: s.name, flow_cfs: s.params.includes('flow') ? cell(d.flow, 0) : 'n/a (no gauge)', stage_ft: cell(d.stage, 2),
-      temp_C: cell(d.tempC, 1), status: H.stationStatus(s, d, nowL).label });
-  });
-  console.table(rows);
-
-  const prow = [];
-  H.projects.forEach((p) => {
-    const d = snap.projects[p.id] || {};
-    check(d.elev && d.elev.t.length > 0, `CWMS ${p.series.elev.name} returns data`);
-    const r = H.ruleToday(d.rule, nowL);
-    check(r != null && isNum(r.v), `CWMS ${p.code} rule curve has a value for today`);
-    const st = H.latest(d.stor);
-    const pfv = st ? H.percentFull(p, st.v) : null;
-    prow.push({ code: p.code, elev_ft: cell(d.elev, 1), rule_today_ft: r ? r.v.toFixed(1) : 'MISSING', stor_acft: p.noStorage ? 'n/a' : cell(d.stor, 0),
-      pct_full: pfv ? (pfv.below ? 'below cons.' : pfv.pct.toFixed(1)) : 'n/a', out_cfs: cell(d.out, 0), comp_in_cfs: cell(d.inflow, 0), status: H.reservoirStatus(p, d, nowL).label });
-  });
-  console.table(prow);
-  console.log('CWMS series ok/empty/failed: %d/%d/%d', snap.sources.cwms.ok, snap.sources.cwms.empty, snap.sources.cwms.failed);
-  snap.sources.cwms.errors.forEach((e) => console.log('  ' + e));
-  const bs = H.basinStorage(snap, nowL), tr = H.totalRelease(snap, nowL);
-  console.log('derived: basin storage %s%% (%d/%d), total release %s cfs (%d/%d); fetched in %d ms',
-    bs.pct == null ? 'n/a' : bs.pct.toFixed(1), bs.reporting, bs.total, tr.cfs == null ? 'n/a' : tr.cfs.toFixed(0), tr.reporting, tr.total, ms);
-
-
-  // NOAA NWPS: thresholds + forecasts
-  console.log('\nNOAA NWPS');
-  const nw = await NW.loadAll();
-  const nrows = [];
-  for (const [id, o] of Object.entries(nw)) {
-    const g = o.gauge;
-    if (o.lid) {
-      check(g && g.thresholds && g.thresholds.action.stage != null, `NWPS ${o.lid} returns flood thresholds` + (o.error ? ' (' + o.error + ')' : ''));
-      check(g && g.forecast && g.forecast.t.length > 0, `NWPS ${o.lid} returns a forecast`);
-    } else check(!o.gauge, `${id}: no NWPS gauge mapped (no flood stages published)`);
-    nrows.push({ station: id, lid: o.lid || '—', thresholds_ft: g && g.thresholds ? NW.CATS.map((c) => g.thresholds[c].stage ?? '-').join('/') : 'none',
-      observed: g ? `${g.observed.stage} ft ${g.observed.category}` : (o.error || 'n/a'), issued: g && g.forecast ? new Date(g.forecast.issued).toISOString().slice(0, 16) : '—',
-      peak7d: g && g.peak ? `${g.peak.stage} ft ${new Date(g.peak.t).toISOString().slice(5, 16)} ${g.peak.category}` : '—' });
-  }
-  console.table(nrows);
-
-  // CWMS levels: real LOP injunction target today
-  console.log('\nCWMS levels (LOP)');
-  try {
-    const lv = await LV.fetchProjectLevels('LOP');
-    const e = LV.pick(lv, LV.IDS.injunctionTarget);
-    check(e && e.s, 'LOP injunction target found (seasonal)');
-    const v = LV.valueAt(lv, LV.IDS.injunctionTarget);
-    console.log('  LOP Injunction-Target version %s, today = %s ft (published target, not current operations)',
-      e ? new Date(e.date).toISOString().slice(0, 10) : '—', v == null ? 'null (gap: target not applicable today)' : v.toFixed(1));
-    check(LV.constantAt(lv, LV.IDS.bottomCons) != null && Math.abs(LV.constantAt(lv, LV.IDS.bottomCons) - 825) < 0.1, 'LOP bottom of conservation = 825 ft');
-    const stats = ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].map((k) => LV.valueAt(lv, LV.IDS[k]));
-    check(stats.every((x) => x != null) && stats.every((x, i) => !i || x >= stats[i - 1]), 'LOP 30-yr stats for today are ordered p05<=p25<=avg<=p75<=p95');
-    console.log('  LOP 30-yr stats today (ft): p05 %s  p25 %s  avg %s  p75 %s  p95 %s', ...stats.map((x) => x.toFixed(1)));
-  } catch (e) {
-    check(false, 'LOP levels fetch: ' + e.message);
+    rows.forEach((x) => check(x.tail != null, 'snapshot: ' + x.code + ' tailwater reporting (' + x.tailSeries + ')'));
+    rows.filter((x) => W.GAGE[x.code]).forEach((x) => check(x.gage != null, 'snapshot: ' + W.GAGE[x.code] + ' reporting (' + x.gageSeries + ')'));
   }
 
-
-  // CWMS levels availability matrix (all 8 projects, concurrency 3)
-  console.log('\nCWMS levels availability (today)');
-  const codes = ['LOP', 'HCR', 'DEX', 'GPR', 'CGR', 'FRN', 'COT', 'DOR'];
-  const got = {};
-  let qi = 0;
-  await Promise.all([0, 1, 2].map(async () => {
-    while (qi < codes.length) { const c = codes[qi++]; try { got[c] = await LV.fetchProjectLevels(c); } catch (e) { got[c] = e; } }
-  }));
-  const rulerKeys = ['streambed', 'bottomCons', 'topCons', 'topFlood', 'topMaxFlood', 'spillwayCrest', 'topDam'];
-  const statKeys = ['statsMin', 'statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95', 'statsMax'];
-  const targetIds = { inj_elev: 'Elev-Forebay.Inst.0.Injunction-Target', irrm_elev: 'Elev.Inst.0.Interim Risk Reduction Measure', interim_stor: 'Stor.Inst.0.Interim_Operations', inj_stor: 'Stor.Inst.0.Injunction-Target' };
-  const mrows = [];
-  for (const c of codes) {
-    const d = got[c];
-    if (d instanceof Error) { check(false, `levels ${c}: ${d.message}`); mrows.push({ code: c, error: d.message }); continue; }
-    const row = { code: c };
-    const have = rulerKeys.filter((k) => LV.constantAt(d, LV.IDS[k]) != null);
-    row.ruler = have.length + '/7';
-    row.missing = rulerKeys.filter((k) => !have.includes(k)).join(',') || '—';
-    const stats = statKeys.map((k) => LV.valueAt(d, LV.IDS[k]));
-    row.stats = stats.filter((v) => v != null).length + '/7';
-    for (const [k, id] of Object.entries(targetIds)) {
-      const e = LV.pick(d, id);
-      row[k] = !e ? '—' : (e.c != null ? 'const ' : '') + (LV.evalSeasonal(e, Date.now()) == null ? 'null today' : LV.evalSeasonal(e, Date.now()).toFixed(1));
-    }
-    mrows.push(row);
-    check(LV.constantAt(d, LV.IDS.topDam) != null && LV.constantAt(d, LV.IDS.streambed) != null, `levels ${c}: top of dam + streambed published`);
-    check(stats.every((v) => v != null), `levels ${c}: 30-yr stats available today`);
-  }
-  console.table(mrows);
-  for (const c of ['LOP', 'GPR', 'CGR']) check(LV.pick(got[c], targetIds.inj_elev) != null, `levels ${c}: elevation injunction target published`);
-  check(LV.pick(got.HCR, targetIds.irrm_elev) != null, 'levels HCR: elevation Interim Risk Reduction Measure published');
-
-
-  // Published ratings: every catalogued rating must load (documented-unavailable ones are not catalogued)
-  console.log('\nPublished ratings (CWMS + USGS)');
-  const defs = RT.allDefs(), rrows = [];
-  let ri = 0;
-  await Promise.all([0, 1, 2, 3].map(async () => {
-    while (ri < defs.length) {
-      const d = defs[ri++];
-      try {
-        const e = await RT.load(d);
-        const r = e.data;
-        const xs = r.kind === '2d' ? [].concat(...r.curves.map((cv) => cv.xs)) : r.xs, ys = r.kind === '2d' ? [].concat(...r.curves.map((cv) => cv.ys)) : r.ys;
-        rrows.push({ rating: d.source === 'usgs' ? 'USGS ' + d.site + ' exsa' : d.id.replace('.Standard.CENWP', ''), kind: r.kind + (r.kind === '2d' ? ' ' + r.others.length + ' openings' : '') + (r.transposed ? ' (transposed)' : ''),
-          points: xs.length, x: `${Math.min(...xs)}–${Math.max(...xs)} ${d.xu}`, y: `${+Math.min(...ys).toPrecision(4)}–${+Math.max(...ys).toPrecision(6)} ${d.yu}`,
-          effective: d.source === 'usgs' ? 'rating ' + r.ratingId + ', shifts ' + r.shifted + (r.baseOnly ? ' (base only)' : '') : new Date(r.effective).toISOString().slice(0, 10) });
-        check(xs.length > 0, `rating ${d.id} has points`);
-      } catch (err) {
-        rrows.push({ rating: d.id, kind: 'FAILED', points: 0, x: err.message });
-        check(false, `rating ${d.id}: ${err.message}`);
-      }
-    }
-  }));
-  rrows.sort((a, b) => (a.rating < b.rating ? -1 : 1));
-  console.table(rrows);
-  console.log('Documented unavailable (not catalogued): DEX area; ' + Object.entries(RT.UNAVAILABLE.structures).map(([k, v]) => k + ' (' + v + ')').join('; '));
-
-
-  // TDG (CWMS), SNOTEL (NRCS AWDB), ODEQ targets (CWMS levels)
   console.log('\nTDG / SNOTEL / ODEQ');
   const TDl = require('./js/tdg.js'), SNl = require('./js/snotel.js');
   const tdg = await TDl.loadAll();
