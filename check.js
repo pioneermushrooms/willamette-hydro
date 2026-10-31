@@ -357,7 +357,18 @@ console.log('snapshot / history');
   const item = (k) => [].concat(...SN.GROUPS.map((g) => g.items)).find((it) => it.key === k);
   check(item('HCRO').main.site === '14145500' && item('DEXO').main.site === '14150000' && item('CGRO').main.site === '14159500', 'snapshot: HCRO/DEXO/CGRO = USGS 14145500/14150000/14159500');
   check(item('DEX.tw').main.name === 'DEX.Elev-Tailwater.Inst.0.0.MIXED-REV' && item('LOP.elev').main.name === 'LOP.Elev-Forebay.Inst.0.0.MIXED-REV', 'snapshot: CWMS series ids');
-  check(item('HCR.tw').none && item('CGR.tw').none && !item('DEX.tw').none, 'snapshot: HCR/CGR tailwater flagged not public; DEX tailwater live');
+  check(item('HCR.tw').main.site === '14145110' && item('CGR.tw').main.site === '14159410' && item('HCR.tw').main.param === '00065' && !item('HCR.tw').none && !item('CGR.tw').none, 'snapshot: HCR/CGR tailwater = USGS dam tailwater gages 14145110/14159410 (datum 0 ft NGVD29)');
+  {
+    const st = SN.state, it = item('HCRO'), hr = Date.parse('2026-10-31T04:00:00Z');
+    st.series['usgs:14145500:00060'] = { t: [hr - 900e3, hr, hr + 900e3], v: [900, 1000, 1100] };
+    st.series['usgs:14145500:00065'] = { t: [hr - 900e3, hr, hr + 900e3], v: [2.9, 3.0, 3.1] };
+    const a = SN.shown(SN.itemModel(it, hr + 20 * 60e3));
+    check(a.hour && a.v === 1000 && a.sub === 3.0 && a.t === hr, 'snapshot: one value = the :00 reading (with its stage) once published');
+    const b = SN.shown(SN.itemModel(it, hr + 3600e3 + 5 * 60e3));
+    check(!b.hour && b.v === 1100 && b.sub === 3.1 && b.t === hr + 900e3, 'snapshot: :00 not yet published -> latest, marked as latest');
+    check(/\[latest /.test(SN.groupText(SN.GROUPS[0], hr + 3600e3 + 5 * 60e3)) && !/\[latest /.test(SN.groupText(SN.GROUPS[0], hr + 20 * 60e3).split('HCRO')[1]), 'snapshot: copy text labels latest only when :00 is missing');
+    delete st.series['usgs:14145500:00060']; delete st.series['usgs:14145500:00065'];
+  }
   const t20 = Date.parse('2026-10-31T03:00:00Z'); // 20:00 PDT
   check(SN.topOfHour(t20 + 47 * 60e3) === t20, 'snapshot: top of hour');
   check(SN.nextPollAt(Date.parse('2026-10-31T03:47:12Z')) === Date.parse('2026-10-31T03:50:40Z'), 'snapshot: next poll on the 5-minute mark + 40 s');

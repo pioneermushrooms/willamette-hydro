@@ -33,6 +33,7 @@ Willamette Valley, Oregon, built on **live public data** from USGS and USACE.
 | Basin conservation storage % | totals bar | this site | Σ max(0, stor − bottom) ÷ Σ (top − bottom) over the 7 projects with storage | **derived** |
 | BPA-wide hydro (MW) | totals bar | BPA balancing-authority file `baltwg.txt` | "Hydro" column, 5-minute MW | **live, copied every 30 min** by GitHub Actions. All hydro in BPA's balancing authority, **not** Willamette-specific |
 | Hourly Snapshot: forebay elevation (HCR, LOP, DEX, CGR), Dexter tailwater (ft) | Snapshot strip, top of every page | USACE CWMS | `<P>.Elev-Forebay.Inst.0.0.MIXED-REV`, `DEX.Elev-Tailwater.Inst.0.0.MIXED-REV` (15-min) | **live**, refreshed every 5 min |
+| Hourly Snapshot: Hills Creek and Cougar tailwater (ft) | Snapshot strip | USGS NWIS IV | 14145110 (Hills Creek Dam tailwater), 14159410 (Cougar Dam tailwater); 00065 gage height. Gage datum is 0 ft NGVD29, so gage height **is** the elevation (same datum as the CWMS forebays) | **live**, refreshed every 5 min |
 | Hourly Snapshot: HCRO, DEXO, CGRO (cfs + stage ft) | Snapshot strip | USGS NWIS IV | 14145500 (MF Willamette abv Salt Crk = HCRO), 14150000 (MF Willamette nr Dexter = DEXO), 14159500 (SF McKenzie nr Rainbow = CGRO); 00060, 00065 | **live**, refreshed every 5 min |
 | Forebay cross-check, long-range pool history | Snapshot (USGS line), 6 MO / 1 YR charts | USGS lake gages, parameter 62614 | HCR 14145100, LOP 14149000, DEX 14149500, GPR 14186100, CGR 14159400, FRN 14168000, COT 14153000, DOR 14155000 (IV and daily values) | **live** / USGS daily (provisional) |
 | TDG, % saturation (Dexter, Cougar tailwater) | DEX/CGR reservoir cards and details, Teacup detail | USACE CWMS time series | `DEXO.%-Saturation-TDG.Inst.0.0.MIXED-REV`, `CGRO.%-Saturation-TDG.Inst.0.0.MIXED-REV` (`%` URL-encoded as `%25`) | **live** (CWMS reported, provisional); 110 % line is a reference only |
@@ -81,19 +82,22 @@ Readings older than 3 hours get a STALE tag.
 A compact strip above the page tabs with the values recorded hourly:
 **Hills Creek** Elev · TW · HCRO, **Lookout Point** Elev, **Dexter** FB · TW · DEXO, **Cougar** FB · TW · CGRO. Code: `js/snapshot.js`.
 
-- Each value shows the **latest** reading with its own Pacific time and age, and the **hh:00 → value**, the reading stamped exactly
-  at the most recent top of the hour. Until that reading is published it shows "pending" with the previous hour's value.
-- Edge colour: green ≤ 45 min old, amber **LAG** ≤ 90 min, red **STALE** beyond.
-- Forebays also show the USGS lake gage (62614, same datum) as a cross-check; a Δ is shown in amber when CWMS and USGS differ by ≥ 0.1 ft
-  (CWMS `MIXED-REV` sometimes switches sensors).
-- **Copy** puts a group's :00 values (or latest, labelled) on the clipboard; **Copy all** copies all four lines.
+- Each item shows **one value**: the reading stamped exactly at the most recent top of the hour (amber **hh:00**) once it is
+  published; until then the newest reading, marked **latest hh:mm**. HCRO/DEXO/CGRO show gage stage (ft) small on the time line.
+- Edge colour: green ≤ 45 min old, amber **LAG** ≤ 90 min, red **STALE** beyond (age of the newest reading).
+- Forebays are cross-checked against the USGS lake gage (62614, same datum). An amber dot appears when CWMS and USGS differ by
+  ≥ 0.1 ft (CWMS `MIXED-REV` sometimes switches sensors); hover/tap shows the difference.
+- **Copy** puts a group's values (the :00 values, or latest labelled `[latest hh:mm]`) on the clipboard; **Copy all** copies all four lines.
 - **Refresh:** every 5 minutes on the clock (:00:40, :05:40, … so :45:40 and :50:40 run every hour), on return to the tab (phones pause timers), and with ↻.
 - **Publishing lag (measured Oct 30, 2026):** CWMS 15-minute values appear about 15–35 min after their timestamp
   (e.g. the 20:15 reading was posted 20:36–20:38), so the :00 value is normally available by :20–:35. USGS IV readings appear 5–15 min after their timestamp.
   At :50 the strip therefore shows the :00 value plus a latest reading from :15–:30 (CWMS) or :35–:45 (USGS).
-- **Not available publicly:** Hills Creek and Cougar tailwater. CWMS catalogues `HCR.Elev-Tailwater.*` and `CGR.Elev-Tailwater.*`
-  (and CWMS copies of HCRO/DEXO/CGRO flow), but the public API returns no values for them. The strip says so and will start showing
-  them automatically if CWMS publishes them.
+- **Tailwater sources.** Dexter: CWMS `DEX.Elev-Tailwater.Inst.0.0.MIXED-REV`. Hills Creek and Cougar: CWMS catalogues
+  `HCR/CGR.Elev-Tailwater.*` in every version and interval (MIXED-REV, CBT-REV/RAW 1Hour and ~1Day, GOES/IRIDIUM/USGS-RAW, 15-min
+  subsample), but the public API returns no values for any of them (checked Oct 30, 2026, offices NWDP/NWP/NWD; the NWD Dataquery
+  service has no Willamette data). The CWMS `USGS-RAW` versions indicate a USGS feed; USGS publishes its dam tailwater gages, so the strip
+  reads those directly: **14145110** Hills Creek Dam Tailwater and **14159410** Cougar Dam Tailwater (00065, gage datum 0 ft NGVD29, so the
+  reading is the true tailwater elevation, not a derived value).
 
 ## Long ranges on the rule-curve views (30 D, 6 MO, 1 YR)
 

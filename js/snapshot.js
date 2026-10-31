@@ -2,20 +2,24 @@
  * Hourly Snapshot strip, shown at the top of every page: the values Chris records each hour.
  *
  *   Hills Creek    Elev (forebay)   HCR.Elev-Forebay.Inst.0.0.MIXED-REV          USACE CWMS
- *                  Tailwater        HCR.Elev-Tailwater.Inst.0.0.MIXED-REV        CWMS lists it, returns no public values
+ *                  Tailwater        USGS 14145110 Hills Creek Dam Tailwater (00065; gage datum 0 ft NGVD29,
+ *                                   so the gage height IS the tailwater elevation)
  *                  HCRO             USGS 14145500 MF Willamette abv Salt Crk (00060 cfs, 00065 ft)
  *   Lookout Point  Elev (forebay)   LOP.Elev-Forebay.Inst.0.0.MIXED-REV          USACE CWMS
  *   Dexter         Forebay          DEX.Elev-Forebay.Inst.0.0.MIXED-REV          USACE CWMS
  *                  Tailwater        DEX.Elev-Tailwater.Inst.0.0.MIXED-REV        USACE CWMS
  *                  DEXO             USGS 14150000 MF Willamette nr Dexter (00060, 00065)
  *   Cougar         Forebay          CGR.Elev-Forebay.Inst.0.0.MIXED-REV          USACE CWMS
- *                  Tailwater        CGR.Elev-Tailwater.Inst.0.0.MIXED-REV        CWMS lists it, returns no public values
+ *                  Tailwater        USGS 14159410 Cougar Dam Tailwater (00065; gage datum 0 ft NGVD29)
  *                  CGRO             USGS 14159500 SF McKenzie nr Rainbow (00060, 00065)
  *
+ * CWMS's HCR/CGR.Elev-Tailwater ids (every version/interval) are catalogued but return no public
+ * values; the CWMS USGS-RAW versions indicate a USGS feed, and USGS publishes these dam tailwater gages.
+ * Both USACE (NWDP locations) and the USGS gages use NGVD29, same as the forebays.
  * CWMS's own HCRO/DEXO/CGRO flow series are catalogued but return no public values; the
  * same USGS gages feed them, so USGS IV is used directly (and it is ~10 min fresher).
- * Forebays also show the USGS lake gage (62614) as a cross-check: same datum, usually one
- * 15-min reading newer than CWMS.
+ * Forebays are cross-checked against the USGS lake gage (62614, same datum): amber dot if
+ * they differ by >= 0.1 ft.
  *
  * Refresh: every 5 minutes on the clock (:00:40, :05:40, …), on tab focus/resume, and on demand.
  * Provisional data; not an official source.
@@ -45,8 +49,7 @@
   var GROUPS = [
     { code: 'HCR', name: 'Hills Creek', items: [
       { key: 'HCR.elev', label: 'Elev', unit: 'ft', dec: 2, main: cw('HCR.Elev-Forebay.Inst.0.0.MIXED-REV'), check: us('14145100', '62614') },
-      { key: 'HCR.tw', label: 'TW', unit: 'ft', dec: 2, main: cw('HCR.Elev-Tailwater.Inst.0.0.MIXED-REV'),
-        none: 'not published publicly (CWMS lists the id, returns no values)' },
+      { key: 'HCR.tw', label: 'TW', unit: 'ft', dec: 2, main: us('14145110', '00065'), tw: true },
       { key: 'HCRO', label: 'HCRO', unit: 'cfs', dec: 0, main: us('14145500', '00060'), sub: us('14145500', '00065'), subUnit: 'ft' }
     ] },
     { code: 'LOP', name: 'Lookout Point', items: [
@@ -59,8 +62,7 @@
     ] },
     { code: 'CGR', name: 'Cougar', items: [
       { key: 'CGR.fb', label: 'FB', unit: 'ft', dec: 2, main: cw('CGR.Elev-Forebay.Inst.0.0.MIXED-REV'), check: us('14159400', '62614') },
-      { key: 'CGR.tw', label: 'TW', unit: 'ft', dec: 2, main: cw('CGR.Elev-Tailwater.Inst.0.0.MIXED-REV'),
-        none: 'not published publicly (CWMS lists the id, returns no values)' },
+      { key: 'CGR.tw', label: 'TW', unit: 'ft', dec: 2, main: us('14159410', '00065'), tw: true },
       { key: 'CGRO', label: 'CGRO', unit: 'cfs', dec: 0, main: us('14159500', '00060'), sub: us('14159500', '00065'), subUnit: 'ft' }
     ] }
   ];
@@ -187,33 +189,53 @@
   function zone(t) { var p = fZone.formatToParts(new Date(t)).filter(function (x) { return x.type === 'timeZoneName'; })[0]; return p ? p.value : 'PT'; }
   function fmt(v, d) { return Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  function srcText(s) { return s.src === 'cwms' ? 'USACE CWMS ' + s.name : 'USGS ' + s.site + ' (' + s.param + ')'; }
+  var USGS_NAMES = { '14145110': 'Hills Creek Dam tailwater gage, datum 0 ft NGVD29 (gage height = elevation)',
+    '14159410': 'Cougar Dam tailwater gage, datum 0 ft NGVD29 (gage height = elevation)',
+    '14145500': 'MF Willamette abv Salt Crk (HCRO)', '14150000': 'MF Willamette nr Dexter (DEXO)', '14159500': 'SF McKenzie nr Rainbow (CGRO)' };
+  function srcText(s) { return s.src === 'cwms' ? 'USACE CWMS ' + s.name : 'USGS ' + s.site + ' ' + (USGS_NAMES[s.site] || '') + ' (' + s.param + ')'; }
 
   var AGE_TXT = { ok: '', lag: 'LAG', stale: 'STALE', none: '' };
 
+  // The one value shown (and copied) for an item: the :00 reading once published, else the latest.
+  function shown(m) {
+    if (!m.latest) return null;
+    var useHour = !!(m.hour && !m.hour.pending && m.hour.v != null);
+    var r = { hour: useHour, t: useHour ? m.hour.t : m.latest.t, v: useHour ? m.hour.v : m.latest.v };
+    if (m.it.sub) {
+      var sv = useHour && m.subHour && !m.subHour.pending ? m.subHour.v : m.sub && m.sub.v;
+      r.sub = sv == null ? null : sv;
+    }
+    return r;
+  }
+
+  // CWMS forebay vs USGS lake gage: compare at the shown time when USGS has it, else latest vs latest.
+  function mismatch(m, sh) {
+    if (!m.it.check || !sh) return null;
+    var cs = state.series[specKey(m.it.check)], c = exactAt(cs, sh.t) || latest(cs);
+    if (!c) return null;
+    var cv = c.t === sh.t ? sh.v : m.latest.v, d = cv - c.v;
+    return Math.abs(d) >= DIFF_FLAG ? { d: d, usgs: c } : null;
+  }
+
   function cellHTML(m, now) {
-    var it = m.it, h = '<div class="snap-cell ' + m.age + '" title="' + esc(srcText(it.main) + (it.sub ? ' · stage ' + srcText(it.sub) : '')) + '">';
+    var it = m.it, h = '<div class="snap-cell ' + m.age + '" title="' + esc(srcText(it.main) + (it.sub ? ' · stage ' + srcText(it.sub) : '') +
+      (it.check ? ' · cross-check USGS lake gage ' + it.check.site : '')) + '">';
     h += '<span class="snap-lab">' + esc(it.label) + '</span>';
     if (!m.latest) {
       var why = it.none || (m.err ? 'unavailable (' + m.err + ')' : state.fetchedAt ? 'no data in last 3 h' : 'loading…');
       return h + '<span class="snap-na">' + (it.none ? 'n/a' : state.fetchedAt ? 'no data' : '…') + '</span><span class="snap-why">' + esc(why) + '</span></div>';
     }
+    var sh = shown(m), mm = mismatch(m, sh);
+    h += '<span class="snap-val mono">' + fmt(sh.v, it.dec) + '<span class="unit">' + it.unit + '</span>' +
+      (mm ? '<i class="snap-dot" title="CWMS and USGS lake gage ' + esc(it.check.site) + ' differ by ' + fmt(Math.abs(mm.d), 2) +
+        ' ft (CWMS MIXED-REV can switch sensors); check both." aria-label="CWMS and USGS differ"></i>' : '') +
+'</span>';
     var age = Math.max(0, Math.round((now - m.latest.t) / MIN));
-    h += '<span class="snap-val mono">' + fmt(m.latest.v, it.dec) + '<span class="unit">' + it.unit + '</span></span>';
-    if (m.sub) h += '<span class="snap-subval mono">' + fmt(m.sub.v, 2) + ' ' + it.subUnit + ' stage</span>';
-    h += '<span class="snap-time mono">latest ' + hm(m.latest.t) + ' · ' + age + 'm' + (AGE_TXT[m.age] ? ' <b class="snap-age">' + AGE_TXT[m.age] + '</b>' : '') + '</span>';
-    var hv = m.hour;
-    if (hv) {
-      h += '<span class="snap-hour mono">' + (hv.pending
-        ? '<span class="snap-pend">' + hm(hv.t) + ' pending</span>' + (hv.v != null ? ' · ' + hm(hv.prevT) + ' → ' + fmt(hv.v, it.dec) : '')
-        : '<b>' + hm(hv.t) + ' → ' + fmt(hv.v, it.dec) + '</b>' + (m.subHour && !m.subHour.pending && m.subHour.v != null ? ' · ' + fmt(m.subHour.v, 2) + ' ft' : '')) + '</span>';
-    }
-    if (m.check) {
-      var dv = m.latest.v - m.check.v, big = Math.abs(dv) >= DIFF_FLAG;
-      h += '<span class="snap-check mono' + (big ? ' diff' : '') + '" title="USGS lake gage ' + esc(it.check.site) + ', parameter 62614 (same datum). ' +
-        (big ? 'CWMS and USGS differ by ' + fmt(Math.abs(dv), 2) + ' ft: CWMS MIXED-REV can switch sensors; check both.' : '') + '">USGS ' + hm(m.check.t) + ' ' + fmt(m.check.v, 2) +
-        (big ? ' · Δ' + (dv > 0 ? '+' : '−') + fmt(Math.abs(dv), 2) : '') + '</span>';
-    }
+    var flag = AGE_TXT[m.age] ? ' <b class="snap-age">' + AGE_TXT[m.age] + '</b>' : '';
+    h += '<span class="snap-time mono' + (sh.hour ? ' is-hour' : ' is-latest') + '" title="' + (sh.hour
+      ? 'Reading stamped exactly ' + hm(sh.t) + '. Newest reading ' + hm(m.latest.t) + ' (' + age + ' min old).'
+      : 'The ' + hm(m.hour ? m.hour.t : sh.t) + ' reading is not published yet; showing the latest (' + age + ' min old).') + '">' +
+      '<span class="snap-when">' + (sh.hour ? hm(sh.t) : 'latest ' + hm(sh.t)) + '</span>' + (sh.sub != null ? '<span class="snap-stage">' + fmt(sh.sub, 2) + ' ft</span>' : '') + flag + '</span>';
     return h + '</div>';
   }
 
@@ -221,16 +243,11 @@
   function groupText(g, now) {
     var h = topOfHour(now), parts = [];
     g.items.forEach(function (it) {
-      var m = itemModel(it, now);
-      if (!m.latest) { parts.push(it.label + ' n/a'); return; }
-      var useHour = m.hour && !m.hour.pending && m.hour.v != null;
-      var v = useHour ? m.hour.v : m.latest.v, t = useHour ? m.hour.t : m.latest.t;
-      var s = it.label + ' ' + fmt(v, it.dec) + ' ' + it.unit;
-      if (it.sub) {
-        var sv = useHour && m.subHour && !m.subHour.pending ? m.subHour.v : m.sub && m.sub.v;
-        if (sv != null) s += ' (' + fmt(sv, 2) + ' ft)';
-      }
-      if (!useHour) s += ' [latest ' + hm(t) + ']';
+      var sh = shown(itemModel(it, now));
+      if (!sh) { parts.push(it.label + ' n/a'); return; }
+      var s = it.label + ' ' + fmt(sh.v, it.dec) + ' ' + it.unit;
+      if (sh.sub != null) s += ' (' + fmt(sh.sub, 2) + ' ft)';
+      if (!sh.hour) s += ' [latest ' + hm(sh.t) + ']';
       parts.push(s);
     });
     return g.name + ' ' + hm(h) + ' ' + zone(h) + ': ' + parts.join(', ');
@@ -252,9 +269,10 @@
         '<div class="snap-cells">' + g.items.map(function (it) { return cellHTML(itemModel(it, now), now); }).join('') + '</div></div>';
     }).join('');
     el.innerHTML = head + '<div class="snap-grid">' + body + '</div>' +
-      '<p class="snap-foot">LIVE · provisional. <b>latest</b> = newest published reading. <b class="snap-hl">hh:00 → value</b> = the reading stamped exactly at the top of the hour (CWMS usually posts it 15–35 min later, USGS 5–15 min); “pending” until it is published. ' +
-      'Elevations ft, flows cfs (USGS gages 14145500 / 14150000 / 14159500). “USGS” under a forebay is the USGS lake gage, same datum, as a cross-check (Δ shown when they differ by ≥ ' + DIFF_FLAG + ' ft). ' +
-      'Copy puts the :00 values (or latest, labelled) on the clipboard. HCR and CGR tailwater are not published publicly by CWMS.</p>';
+      '<p class="snap-foot">LIVE · provisional. Each value is the reading stamped at the top of the hour (<b class="snap-hl">hh:00</b>) once published ' +
+      '(CWMS usually 15–35 min after, USGS 5–15 min); until then the newest reading, marked <b>latest hh:mm</b>. LAG/STALE = newest reading &gt; ' + AGE_OK + '/' + AGE_LAG + ' min old. ' +
+      'Elevations ft NGVD29, flows cfs with gage stage. Forebays: USACE CWMS; HCR/CGR tailwater: USGS dam tailwater gages 14145110 / 14159410 (gage datum 0 ft, so stage = elevation); ' +
+      'HCRO/DEXO/CGRO: USGS 14145500 / 14150000 / 14159500. <i class="snap-dot"></i> = CWMS forebay and USGS lake gage differ by ≥ ' + DIFF_FLAG + ' ft. Tap a value for its source.</p>';
   }
 
   function schedule() {
@@ -323,6 +341,6 @@
     GROUPS: GROUPS, POLL_EVERY: POLL_EVERY, AGE_OK: AGE_OK, AGE_LAG: AGE_LAG,
     topOfHour: topOfHour, nextPollAt: nextPollAt, exactAt: exactAt, hourValue: hourValue, ageClass: ageClass,
     parseCwms: parseCwms, parseUsgs: parseUsgs, usgsUrl: usgsUrl, cwmsUrl: cwmsUrl, specKey: specKey,
-    load: load, itemModel: itemModel, groupText: groupText, state: state, init: init, refresh: refresh
+    load: load, itemModel: itemModel, shown: shown, groupText: groupText, state: state, init: init, refresh: refresh, render: render
   };
 });
