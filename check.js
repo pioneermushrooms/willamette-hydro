@@ -346,6 +346,55 @@ console.log('tdg / snotel / odeq');
     'odeq: target drawn for Jasper only (not Goshen)');
 }
 
+// ---- 2g. Hourly Snapshot + long-range history (fixtures) ---------------------------------
+console.log('snapshot / history');
+{
+  const SN = require('./js/snapshot.js');
+  const HI = require('./js/history.js');
+  const keys = [].concat(...SN.GROUPS.map((g) => g.items.map((it) => it.key)));
+  check(SN.GROUPS.map((g) => g.code).join() === 'HCR,LOP,DEX,CGR', 'snapshot: groups HCR, LOP, DEX, CGR in order');
+  check(keys.join() === 'HCR.elev,HCR.tw,HCRO,LOP.elev,DEX.fb,DEX.tw,DEXO,CGR.fb,CGR.tw,CGRO', 'snapshot: the 10 requested values');
+  const item = (k) => [].concat(...SN.GROUPS.map((g) => g.items)).find((it) => it.key === k);
+  check(item('HCRO').main.site === '14145500' && item('DEXO').main.site === '14150000' && item('CGRO').main.site === '14159500', 'snapshot: HCRO/DEXO/CGRO = USGS 14145500/14150000/14159500');
+  check(item('DEX.tw').main.name === 'DEX.Elev-Tailwater.Inst.0.0.MIXED-REV' && item('LOP.elev').main.name === 'LOP.Elev-Forebay.Inst.0.0.MIXED-REV', 'snapshot: CWMS series ids');
+  check(item('HCR.tw').none && item('CGR.tw').none && !item('DEX.tw').none, 'snapshot: HCR/CGR tailwater flagged not public; DEX tailwater live');
+  const t20 = Date.parse('2026-10-31T03:00:00Z'); // 20:00 PDT
+  check(SN.topOfHour(t20 + 47 * 60e3) === t20, 'snapshot: top of hour');
+  check(SN.nextPollAt(Date.parse('2026-10-31T03:47:12Z')) === Date.parse('2026-10-31T03:50:40Z'), 'snapshot: next poll on the 5-minute mark + 40 s');
+  check(SN.nextPollAt(Date.parse('2026-10-31T03:45:40Z')) === Date.parse('2026-10-31T03:50:40Z'), 'snapshot: poll exactly on a mark schedules the next one');
+  const ser = { t: [t20 - 3600e3, t20 - 900e3, t20, t20 + 900e3], v: [1, 2, 3, 4] };
+  const hv = SN.hourValue(ser, t20 + 40 * 60e3);
+  check(hv.v === 3 && !hv.pending, 'snapshot: :00 value is the reading stamped exactly at the hour');
+  const hp = SN.hourValue({ t: [t20 - 3600e3, t20 - 900e3], v: [1, 2] }, t20 + 10 * 60e3);
+  check(hp.pending && hp.v === 1 && hp.prevT === t20 - 3600e3, 'snapshot: :00 not yet published -> pending, previous hour shown');
+  check(SN.ageClass(t20, t20 + 30 * 60e3) === 'ok' && SN.ageClass(t20, t20 + 60 * 60e3) === 'lag' && SN.ageClass(t20, t20 + 120 * 60e3) === 'stale' && SN.ageClass(null, t20) === 'none', 'snapshot: age classes 45/90 min');
+  const pc = SN.parseCwms({ values: [[2, 5, 0], [1, null, 0], [1, 4, 0]] });
+  check(pc.t.join() === '1,2' && pc.v.join() === '4,5', 'snapshot: CWMS parse drops nulls, sorts');
+  const pu2 = SN.parseUsgs({ value: { timeSeries: [{ sourceInfo: { siteCode: [{ value: '14150000' }] }, variable: { variableCode: [{ value: '00060' }], noDataValue: -999999 },
+    values: [{ value: [{ value: '1250', dateTime: '2026-10-30T20:00:00.000-07:00' }, { value: '-999999', dateTime: '2026-10-30T20:05:00.000-07:00' }] }] }] } });
+  check(pu2['usgs:14150000:00060'].v.join() === '1250' && pu2['usgs:14150000:00060'].t[0] === t20, 'snapshot: USGS parse keyed by site+param, no-data dropped');
+  check(/sites=14145100,14145500|parameterCd=/.test(SN.usgsUrl()) && /period=PT3H/.test(SN.usgsUrl()), 'snapshot: one USGS request, last 3 h');
+  // history
+  check(HI.RANGES['30d'] === 30 && HI.RANGES['6m'] === 182 && HI.RANGES['1y'] === 365, 'history: ranges 30 D / 6 MO / 1 YR');
+  check(Object.keys(HI.LAKE_SITE).length === 8 && HI.LAKE_SITE.LOP === '14149000' && HI.LAKE_SITE.FRN === '14168000', 'history: USGS lake gage for all 8 projects');
+  check(HI.pacificMidnight(2026, 11, 1) === Date.parse('2026-11-01T07:00:00Z') && HI.pacificMidnight(2026, 12, 1) === Date.parse('2026-12-01T08:00:00Z'), 'history: Pacific midnight (PDT and PST)');
+  check(HI.dvTime('2026-10-29T00:00:00.000', true) === Date.parse('2026-10-30T07:00:00Z'), 'history: USGS 24:00 observation stamped at end of day');
+  const mt = HI.monthTicks(Date.parse('2026-05-01T00:00:00Z'), Date.parse('2026-10-31T00:00:00Z'));
+  check(mt.map((o) => o.m).join() === '5,6,7,8,9,10' && mt[0].t === Date.parse('2026-05-01T07:00:00Z'), 'history: monthly ticks at Pacific month starts');
+  const wk = HI.dayTicks(Date.parse('2026-10-01T00:00:00Z'), Date.parse('2026-10-31T00:00:00Z'), true);
+  check(wk.every((o) => o.dow === 1) && wk.length === 4 && wk[0].t === Date.parse('2026-10-05T07:00:00Z'), 'history: weekly ticks on Mondays');
+  const bm = HI.bucketMean({ t: [0, 1000, 3600e3, 3600e3 + 1], v: [1, 3, 10, 20] }, 3600e3);
+  check(bm.t.join() === '1800000,5400000' && bm.v.join() === '2,15', 'history: bucket means');
+  const al = HI.appendLive({ t: [1, 2], v: [1, 2] }, { t: [1, 2, 3600e3 * 5, 3600e3 * 5 + 10], v: [9, 9, 4, 6] });
+  check(al.t.length === 3 && al.v[2] === 5, 'history: live points appended after the history, hourly means');
+  const html2 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  check(html2.indexOf('id="snapshot"') > html2.indexOf('</header>') && html2.indexOf('id="snapshot"') < html2.indexOf('class="tabs routes"'), 'snapshot: strip sits above the page tabs (every page)');
+  check(['24h', '7d', '30d', '6m', '1y'].every((r) => html2.includes('data-range="' + r + '"')), 'trend: 24 H, 7 D, 30 D, 6 MO, 1 YR buttons');
+  check(html2.indexOf('js/snapshot.js') > html2.indexOf('js/data.js') && html2.indexOf('js/history.js') < html2.indexOf('js/views/teacup.js'), 'script order: snapshot/history after data, before views');
+  const tcs = fs.readFileSync(path.join(__dirname, 'js', 'views', 'teacup.js'), 'utf8');
+  check(['year', '30d', '6m', '1y'].every((r) => tcs.includes("['" + r + "'")), 'teacup: YEAR / 30 D / 6 MO / 1 YR range buttons');
+}
+
 // ---- 3. Page wiring ---------------------------------------------------------
 console.log('page');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
@@ -538,6 +587,37 @@ async function live() {
   }
   console.table(odeqRows);
   check(odeqRows.find((r) => r.code === 'DEX' && r.published !== 'no'), 'ODEQ target published for DEX (drawn at Jasper)');
+
+  // Hourly Snapshot: every value against the raw APIs
+  console.log('\nHourly Snapshot (live)');
+  {
+    const SN = require('./js/snapshot.js');
+    const nowS = Date.now();
+    await SN.load(nowS);
+    const rows = [];
+    SN.GROUPS.forEach((g) => g.items.forEach((it) => {
+      const m = SN.itemModel(it, Date.now());
+      rows.push({ key: it.key, latest: m.latest ? m.latest.v : null, at: m.latest ? new Date(m.latest.t).toISOString().slice(11, 16) + 'Z' : '', ageMin: m.latest ? Math.round((Date.now() - m.latest.t) / 60e3) : '',
+        hour: m.hour ? (m.hour.pending ? 'pending' : m.hour.v) : '', sub: m.sub ? m.sub.v : '', usgsCheck: m.check ? m.check.v : '' });
+      if (it.none) check(true, 'snapshot ' + it.key + ': documented not public (' + (m.latest ? 'NOW RETURNS DATA - update config' : 'still empty') + ')');
+      else check(m.latest && (Date.now() - m.latest.t) < 3 * 3600e3, 'snapshot ' + it.key + ' has a reading in the last 3 h');
+    }));
+    console.table(rows);
+  }
+
+  // Long-range history: one reservoir and one river per range
+  console.log('\nHistory (30 D / 6 MO / 1 YR)');
+  {
+    const HI = require('./js/history.js');
+    const lopP = H.projects.find((p) => p.code === 'LOP'), jas = H.stations.find((s) => s.id === 'middle-fork-jasper');
+    for (const r of ['30d', '6m', '1y']) {
+      const a = await HI.load(lopP, r);
+      check(!a.error && a.pool && a.pool.t.length > (r === '30d' ? 1000 : 100) && a.rule && a.rule.t.length >= HI.RANGES[r] - 2,
+        `history LOP ${r}: ${a.pool ? a.pool.t.length : 0} pool pts, ${a.rule ? a.rule.t.length : 0} rule pts (${a.src || a.error})`);
+      const b = await HI.load(jas, r);
+      check(!b.error && b.flow && b.flow.t.length > (r === '30d' ? 1000 : 100), `history Jasper ${r}: ${b.flow ? b.flow.t.length : 0} flow pts`);
+    }
+  }
 
   // BPA: parse the real file
   try {

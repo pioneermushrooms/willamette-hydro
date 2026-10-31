@@ -46,6 +46,8 @@
     el: null, sel: 'LOP',
     levels: {}, levelErr: {}, loading: {},
     ruleYear: {}, ruleYearErr: {},
+    range: 'year',        // 'year' (calendar year) | '30d' | '6m' | '1y' (window ending now)
+    hist: {},             // '<code>:<range>' -> js/history.js result, or { loading: true }
     ro: null
   };
 
@@ -272,28 +274,68 @@
 
   // ---- Annual chart --------------------------------------------------------------
 
+  var RANGE_BTNS = [['year', 'YEAR'], ['30d', '30 D'], ['6m', '6 MO'], ['1y', '1 YR']];
+  var RANGE_DAYS = { '30d': 30, '6m': 182, '1y': 365 };
+  var MNAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // Pool + rule-curve history for a rolling window (js/history.js, cached there for 30 min).
+  function histFor(m) {
+    var key = m.code + ':' + st.range, hv = st.hist[key];
+    if (hv) return hv;
+    st.hist[key] = { loading: true };
+    H.history.load(m.p, st.range, m.d && m.d.elev).then(function (r) {
+      st.hist[key] = r;
+      setTimeout(function () { if (st.hist[key] === r) delete st.hist[key]; }, 30 * 60 * 1000);
+      if (m.code === st.sel) renderAnnual();
+    });
+    return st.hist[key];
+  }
+
+  // Seasonal level as daily points over [t0, t1] (spans calendar years).
+  function windowSeries(entry, t0, t1) {
+    if (!entry) return [];
+    var y0 = +fYear.format(new Date(t0)), y1 = +fYear.format(new Date(t1)), pts = [];
+    for (var y = y0; y <= y1; y++) pts = pts.concat(T.annualSeries(entry, y));
+    return pts.filter(function (p) { return p[0] >= t0 && p[0] <= t1; });
+  }
+
   function renderAnnual() {
     var box = st.el && st.el.querySelector('#tc-annual');
     if (!box) return;
     var m = model(st.sel), lv = m.lv;
     if (!lv) { box.innerHTML = ''; return; }
     var W = Math.max(280, Math.floor(box.clientWidth || 600)), Ht = W < 520 ? 220 : 260;
-    var year = +fYear.format(new Date()), now = Date.now();
-    var t0 = Date.UTC(year, 0, 1, 8), t1 = Date.UTC(year + 1, 0, 1, 8);
+    var year = +fYear.format(new Date()), now = Date.now(), cal = st.range === 'year';
+    var t0 = cal ? Date.UTC(year, 0, 1, 8) : now - RANGE_DAYS[st.range] * 24 * 3600 * 1000;
+    var t1 = cal ? Date.UTC(year + 1, 0, 1, 8) : now;
+    var hist = cal ? null : histFor(m), hLoading = !!(hist && hist.loading);
     var ser = {};
-    ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].forEach(function (k) { ser[k] = T.annualSeries(LV.pick(lv, LV.IDS[k], now), year); });
+    ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].forEach(function (k) {
+      var en = LV.pick(lv, LV.IDS[k], now);
+      ser[k] = cal ? T.annualSeries(en, year) : windowSeries(en, t0, t1);
+    });
     var hasStats = ser.statsAve.some(function (p) { return p[1] != null; });
     var tgt = ELEV_TARGET[m.code], tEntry = tgt ? LV.pick(lv, tgt.id, now) : null;
-    var tSer = tEntry ? T.annualSeries(tEntry, year) : [];
-    var ry = st.ruleYear[m.code];
-    var pool = m.d && m.d.elev && m.d.elev.t.length ? m.d.elev : null;
+    var tSer = tEntry ? (cal ? T.annualSeries(tEntry, year) : windowSeries(tEntry, t0, t1)) : [];
+    var ry = cal ? st.ruleYear[m.code] : hist && !hLoading ? hist.rule : null;
+    var pool = cal ? (m.d && m.d.elev && m.d.elev.t.length ? m.d.elev : null) : hist && !hLoading && hist.pool && hist.pool.t.length ? hist.pool : null;
+    if (ry && !cal) {
+      var rt = [], rv = [];
+      ry.t.forEach(function (t, i) { if (t >= t0 - 86400000 && t <= t1 + 86400000) { rt.push(t); rv.push(ry.v[i]); } });
+      ry = { t: rt, v: rv };
+    }
 
     var vals = [];
     ['statsP05', 'statsP95'].forEach(function (k) { ser[k].forEach(function (p) { if (p[1] != null) vals.push(p[1]); }); });
     tSer.forEach(function (p) { if (p[1] != null) vals.push(p[1]); });
     if (ry) ry.v.forEach(function (v) { vals.push(v); });
     if (pool) { vals.push(Math.min.apply(null, pool.v)); vals.push(Math.max.apply(null, pool.v)); }
-    if (!vals.length) { box.innerHTML = '<p class="na">No annual series published for this project.</p>'; return; }
+    var seg = '<div class="seg tc-range" role="group" aria-label="Chart range">' + RANGE_BTNS.map(function (b) {
+      return '<button type="button" data-tcrange="' + b[0] + '" aria-pressed="' + (st.range === b[0]) + '">' + b[1] + '</button>';
+    }).join('') + '</div>';
+    var title = cal ? year + ' at a glance' : { '30d': 'Last 30 days', '6m': 'Last 6 months', '1y': 'Last 12 months' }[st.range];
+    var head = '<div class="tc-an-head"><h4 class="tc-h4">' + title + ' <span class="hint">30-yr stats thru 2023 are DERIVED from published CWMS levels</span></h4>' + seg + '</div>';
+    if (!vals.length) { box.innerHTML = head + '<p class="na">' + (hLoading ? 'Loading history…' : 'No series published for this project in this window.') + '</p>'; return; }
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo) * 0.06 || 1;
     lo -= pad; hi += pad;
     var ml = 44, mr = 10, mt = 10, mb = 24, pw = W - ml - mr, ph = Ht - mt - mb;
@@ -313,39 +355,64 @@
       return 'M' + top.map(function (p) { return x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1); }).join('L') + 'L' +
         bot.map(function (p) { return x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1); }).join('L') + 'Z';
     };
-    var s = '<svg class="annual" viewBox="0 0 ' + W + ' ' + Ht + '" width="100%" height="' + Ht + '" role="img" aria-label="' + esc(m.p.name + ' annual elevation chart') + '">';
+    var s = '<svg class="annual" viewBox="0 0 ' + W + ' ' + Ht + '" width="100%" height="' + Ht + '" role="img" aria-label="' + esc(m.p.name + ' ' + title + ' elevation chart') + '">';
+    s += '<defs><clipPath id="an-clip"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath></defs>';
     // grid
-    var step = (hi - lo) > 120 ? 50 : (hi - lo) > 60 ? 20 : (hi - lo) > 25 ? 10 : (hi - lo) > 10 ? 5 : 2;
+    var step = (hi - lo) > 120 ? 50 : (hi - lo) > 60 ? 20 : (hi - lo) > 25 ? 10 : (hi - lo) > 10 ? 5 : (hi - lo) > 4 ? 2 : (hi - lo) > 2 ? 1 : 0.5;
     for (var v = Math.ceil(lo / step) * step; v <= hi; v += step) {
       s += '<line class="an-grid" x1="' + ml + '" x2="' + (W - mr) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>' +
-        '<text class="an-lab" x="' + (ml - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v) + '</text>';
+        '<text class="an-lab" x="' + (ml - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, step < 1 ? 1 : 0) + '</text>';
     }
-    var months = W < 520 ? 'JFMAMJJASOND' : null, mnames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    for (var mo = 0; mo < 12; mo++) {
-      var tm = Date.UTC(year, mo, 1, 8), xm = x(tm).toFixed(1);
-      s += '<line class="an-grid" x1="' + xm + '" x2="' + xm + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
-      s += '<text class="an-lab" x="' + (x(tm) + (x(Date.UTC(year, mo + 1, 1, 8)) - x(tm)) / 2).toFixed(1) + '" y="' + (Ht - 7) + '" text-anchor="middle">' + (months ? months[mo] : mnames[mo]) + '</text>';
+    if (cal) {
+      var months = W < 520 ? 'JFMAMJJASOND' : null;
+      for (var mo = 0; mo < 12; mo++) {
+        var tm = Date.UTC(year, mo, 1, 8), xm = x(tm).toFixed(1);
+        s += '<line class="an-grid" x1="' + xm + '" x2="' + xm + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
+        s += '<text class="an-lab" x="' + (x(tm) + (x(Date.UTC(year, mo + 1, 1, 8)) - x(tm)) / 2).toFixed(1) + '" y="' + (Ht - 7) + '" text-anchor="middle">' + (months ? months[mo] : MNAMES[mo]) + '</text>';
+      }
+    } else if (st.range === '30d') {
+      H.history.dayTicks(t0, t1, false).forEach(function (o) {
+        var xd = x(o.t).toFixed(1), d = new Date(o.t + 12 * 3600 * 1000);
+        s += '<line class="an-grid" x1="' + xd + '" x2="' + xd + '" y1="' + mt + '" y2="' + (mt + ph) + '"' + (o.dow === 1 ? '' : ' style="opacity:.35"') + '/>';
+        if (o.dow === 1) s += '<text class="an-lab" x="' + xd + '" y="' + (Ht - 7) + '" text-anchor="middle">' + fDay.format(d) + '</text>';
+      });
+    } else {
+      var ticks = H.history.monthTicks(t0, t1), skip = st.range === '1y' && W < 420 ? 2 : 1;
+      ticks.forEach(function (o, i) {
+        var xm2 = x(o.t).toFixed(1);
+        s += '<line class="an-grid" x1="' + xm2 + '" x2="' + xm2 + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
+        if (i % skip === 0) s += '<text class="an-lab" x="' + xm2 + '" y="' + (Ht - 7) + '" text-anchor="middle">' + MNAMES[o.m - 1] + (o.m === 1 ? " '" + String(o.y).slice(2) : '') + '</text>';
+      });
     }
+    s += '<g clip-path="url(#an-clip)">';
     if (hasStats) {
       s += '<path class="an-p95" d="' + band(ser.statsP95, ser.statsP05) + '"/>';
       s += '<path class="an-p75" d="' + band(ser.statsP75, ser.statsP25) + '"/>';
       s += '<path class="an-mean" d="' + path(ser.statsAve) + '"/>';
     }
-    if (ry) s += '<path class="an-rule" d="' + path(ry.t.map(function (t, i) { return [t, ry.v[i]]; })) + '"/>';
+    if (ry && ry.t.length) s += '<path class="an-rule" d="' + path(ry.t.map(function (t, i) { return [t, ry.v[i]]; })) + '"/>';
     if (tSer.length) s += '<path class="an-target" d="' + path(tSer) + '"/>';
     if (pool) s += '<path class="an-pool" d="' + path(pool.t.map(function (t, i) { return [t, pool.v[i]]; })) + '"/>';
-    var xn = x(now).toFixed(1);
-    s += '<line class="an-today" x1="' + xn + '" x2="' + xn + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
-    s += '<text class="an-todaylab" x="' + (+xn + (x(now) > W - 70 ? -4 : 4)) + '" y="' + (mt + 10) + '" text-anchor="' + (x(now) > W - 70 ? 'end' : 'start') + '">TODAY</text>';
+    s += '</g>';
+    if (cal) {
+      var xn = x(now).toFixed(1);
+      s += '<line class="an-today" x1="' + xn + '" x2="' + xn + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
+      s += '<text class="an-todaylab" x="' + (+xn + (x(now) > W - 70 ? -4 : 4)) + '" y="' + (mt + 10) + '" text-anchor="' + (x(now) > W - 70 ? 'end' : 'start') + '">TODAY</text>';
+    }
     s += '</svg>';
     var leg = [];
     if (hasStats) leg.push('<span><i class="lg-p95"></i>p05–p95</span><span><i class="lg-p75"></i>p25–p75</span><span><i class="lg-mean"></i>30-yr mean</span>');
-    leg.push(ry ? '<span><i class="lg-rule"></i>Rule curve ' + year + ' (CWMS daily)</span>' : st.ruleYearErr[m.code] === 'loading' ? '<span class="na loading">loading rule curve…</span>' : '<span class="na">rule curve unavailable</span>');
+    var ruleLoading = cal ? st.ruleYearErr[m.code] === 'loading' : hLoading;
+    leg.push(ry && ry.t.length ? '<span><i class="lg-rule"></i>Rule curve' + (cal ? ' ' + year : '') + ' (CWMS daily)</span>' : ruleLoading ? '<span class="na loading">loading rule curve…</span>' : '<span class="na">rule curve unavailable</span>');
     if (tSer.length) leg.push('<span><i class="lg-target"></i>' + esc(tgt.label) + ' (published)</span>');
-    if (pool) leg.push('<span><i class="lg-pool"></i>Pool, last 7 days (LIVE)</span>');
-    box.innerHTML = '<h4 class="tc-h4">' + year + ' at a glance <span class="hint">30-yr stats thru 2023 are DERIVED from published CWMS levels</span></h4>' + s +
-      '<div class="an-legend">' + leg.join('') + '</div>' +
-      '<p class="hint">Longer pool history is not shown: CWMS publishes no public daily or hourly elevation series for these projects, and 90 days of 5–15-minute data is too heavy to load here.</p>';
+    if (pool) leg.push('<span><i class="lg-pool"></i>' + (cal ? 'Pool, last 7 days (LIVE)' : 'Pool elevation (history + LIVE)') + '</span>');
+    else if (hLoading) leg.push('<span class="na loading">loading pool history…</span>');
+    else if (!cal) leg.push('<span class="na">pool history unavailable' + (hist && hist.error ? ' (' + esc(hist.error) + ')' : '') + '</span>');
+    var foot = cal
+      ? 'Pick 30 D, 6 MO or 1 YR for pool history against the rule curve. The calendar-year view shows the last 7 days of live pool data.'
+      : 'Pool: ' + esc(hist && hist.src ? hist.src + (hist.pool && hist.pool.liveFrom ? stamp(hist.pool.liveFrom) + ' (hourly means)' : '') : '…') + '. ' +
+        'Rule curve: CWMS ' + esc(m.p.series.rule.name) + '. ' + (hist && hist.note ? esc(hist.note) + ' ' : '') + 'Provisional data.';
+    box.innerHTML = head + s + '<div class="an-legend">' + leg.join('') + '</div><p class="hint">' + foot + '</p>';
   }
 
   // ---- Detail ---------------------------------------------------------------------
@@ -459,6 +526,8 @@
         if (cup) { select(cup.getAttribute('data-code'), true); return; }
         var chip = ev.target.closest('.chip[data-code]');
         if (chip) { select(chip.getAttribute('data-code'), false); return; }
+        var rb = ev.target.closest('[data-tcrange]');
+        if (rb) { st.range = rb.getAttribute('data-tcrange'); renderAnnual(); return; }
         var rt = ev.target.closest('[data-retry]');
         if (rt) loadLevels(rt.getAttribute('data-retry'), true);
       });

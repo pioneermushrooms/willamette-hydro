@@ -26,7 +26,8 @@
     pollTimer: 0,
     selectedId: 'lookout-point',
     chartId: 'lookout-point',
-    range: '7d',
+    range: '7d',          // '24h' | '7d' live series; '30d' | '6m' | '1y' long history (js/history.js)
+    hist: {},             // '<id>:<range>' -> history result (or { loading: true })
     riverParam: 'flow',   // trend chart for river gauges: 'flow' | 'stage' (flood bands + NWS stage forecast)
     nwps: null,           // { <stationId>: { lid, gauge, error } } from js/nwps.js
     tdg: null,            // { DEX|CGR: { series, error } } from js/tdg.js
@@ -784,34 +785,63 @@
     return { ticks: t, step: step };
   }
 
+  var RANGE_H = { '24h': 24, '7d': 168, '30d': 30 * 24, '6m': 182 * 24, '1y': 365 * 24 };
+  var RANGE_TAG = { '24h': 'LAST 24 H', '7d': 'LAST 7 D', '30d': 'LAST 30 D', '6m': 'LAST 6 MO', '1y': 'LAST 1 YR' };
+  function isLong(r) { return r === '30d' || r === '6m' || r === '1y'; }
+
+  // Long-range history for the charted point (cached in js/history.js); re-renders when it lands.
+  function histFor(e) {
+    if (!isLong(state.range) || !H.history) return null;
+    var key = e.id + ':' + state.range, hv = state.hist[key];
+    if (hv && !hv.loading) return hv;
+    if (!hv) {
+      state.hist[key] = { loading: true };
+      var d = e.kind === 'reservoir' ? projData(e) : null;
+      H.history.load(e, state.range, d && d.elev).then(function (r) {
+        state.hist[key] = r;
+        if (state.chartId === e.id && e.id + ':' + state.range === key) renderChart(true);
+        setTimeout(function () { if (state.hist[key] === r) delete state.hist[key]; }, 30 * 60 * 1000);
+      });
+    }
+    return state.hist[key];
+  }
+
   function chartModel() {
     var e = byId[state.chartId], res = e.kind === 'reservoir';
-    var now = Date.now(), end = now, start = now - (state.range === '24h' ? 24 : 168) * HOUR;
+    var long = isLong(state.range), hist = long ? histFor(e) : null, hLoading = !!(hist && hist.loading);
+    var now = Date.now(), end = now, start = now - RANGE_H[state.range] * HOUR;
     var s, ref = null, unit, dec, title, src, param = null, g = null;
     if (res) {
       var d = projData(e);
-      s = d && d.elev; ref = d && d.rule; unit = 'ft'; dec = 2;
+      s = long ? hist && hist.pool : d && d.elev; ref = long ? hist && hist.rule : d && d.rule; unit = 'ft'; dec = 2;
       title = e.name + ' · pool elevation (ft)';
-      src = 'USACE CWMS (NWDP) ' + e.series.elev.name + '; dashed: ' + e.series.rule.name + ' (USACE rule curve, daily, linearly joined).';
+      src = long
+        ? (hist && hist.src ? hist.src + (hist.pool && hist.pool.liveFrom ? stamp(hist.pool.liveFrom) + ' (hourly means)' : '') : 'loading history…') +
+          '; dashed: ' + e.series.rule.name + ' (USACE rule curve, daily, linearly joined).' + (hist && hist.note ? ' ' + hist.note : '')
+        : 'USACE CWMS (NWDP) ' + e.series.elev.name + '; dashed: ' + e.series.rule.name + ' (USACE rule curve, daily, linearly joined).';
     } else {
       var sd = stData(e);
       param = state.riverParam === 'temp' ? 'temp' : e.params.indexOf('flow') >= 0 && state.riverParam === 'flow' ? 'flow' : 'stage';
       if (param === 'temp') {
         // USGS reports °C; the site displays °F (°C kept in tooltips/details).
-        var tc = sd && sd.tempC && sd.tempC.t.length ? sd.tempC : null;
+        var tsrc = long ? hist && hist.tempC : sd && sd.tempC;
+        var tc = tsrc && tsrc.t.length ? tsrc : null;
         s = tc ? { t: tc.t, v: tc.v.map(H.cToF), q: tc.q } : null;
         unit = '°F'; dec = 1;
         title = e.name + ' · water temperature (°F)';
-        src = 'USGS NWIS site ' + e.site + ', parameter 00010 water temperature (reported in °C, shown in °F). Values flagged P are provisional.';
+        src = 'USGS NWIS site ' + e.site + ', parameter 00010 water temperature (reported in °C, shown in °F)' + (long && hist && hist.src ? ', ' + hist.src : '') + '. Values flagged P are provisional.';
       } else {
-        s = sd && sd[param] && sd[param].t.length ? sd[param] : null;
+        var psrc = long ? hist && hist[param] : sd && sd[param];
+        s = psrc && psrc.t.length ? psrc : null;
         unit = param === 'flow' ? 'cfs' : 'ft'; dec = param === 'flow' ? 0 : 2;
         title = e.name + (param === 'flow' ? ' · discharge (cfs)' : ' · gage height (ft)');
-        src = 'USGS NWIS site ' + e.site + ', parameter ' + (param === 'flow' ? '00060 discharge' : '00065 gage height') + '. Values flagged P are provisional.' +
+        src = 'USGS NWIS site ' + e.site + ', parameter ' + (param === 'flow' ? '00060 discharge' : '00065 gage height') + (long && hist && hist.src ? ', ' + hist.src : '') + '. Values flagged P are provisional.' +
           (e.params.indexOf('flow') < 0 ? ' This gauge has no discharge series, so stage is charted.' : '');
         g = nwpsGauge(e);
       }
     }
+    var gBands = g;
+    if (long) g = null; // NWS forecast extension only on the 24 H / 7 D views
     // NWS forecast as a dashed extension to the right of "now" (river gauges only).
     var fc = { t: [], v: [] }, issued = null, bands = [], fcNote = '';
     if (g && g.forecast && s && s.t.length) {
@@ -831,13 +861,13 @@
         fc = { t: [], v: [] };
         if (param === 'flow') fcNote = 'NWS forecast has no flow values for this gauge; switch to Stage.';
       }
-    } else if (!res && param !== 'temp' && N && N.LIDS[e.id] && state.nwps && !g) {
+    } else if (!long && !res && param !== 'temp' && N && N.LIDS[e.id] && state.nwps && !g) {
       fcNote = 'NWS data unavailable.';
     }
-    if (param === 'stage' && g && g.thresholds) {
-      var defined = N.CATS.filter(function (c) { return g.thresholds[c].stage != null; });
+    if (param === 'stage' && gBands && gBands.thresholds) {
+      var defined = N.CATS.filter(function (c) { return gBands.thresholds[c].stage != null; });
       defined.forEach(function (c, i) {
-        bands.push({ cat: c, lo: g.thresholds[c].stage, hi: i < defined.length - 1 ? g.thresholds[defined[i + 1]].stage : null });
+        bands.push({ cat: c, lo: gBands.thresholds[c].stage, hi: i < defined.length - 1 ? gBands.thresholds[defined[i + 1]].stage : null });
       });
       if (bands.length) src += ' Bands: NWS flood categories (live from NOAA NWPS).';
     }
@@ -869,7 +899,8 @@
     }
     return { e: e, res: res, start: start, end: end, now: now, t: t, v: v, q: q, rt: rt, rv: rv, unit: unit, dec: dec, title: title, src: src,
       tt: tt, tv: tv, tLabel: tLabel, tNote: tNote,
-      param: param, fc: fc, issued: issued, bands: bands, fcNote: fcNote, peak: g && g.peak, loading: !state.snap };
+      param: param, fc: fc, issued: issued, bands: bands, fcNote: fcNote, peak: g && g.peak, long: long,
+      loading: long ? hLoading : !state.snap, histError: long && hist && !hist.loading ? hist.error : null };
   }
 
   function renderChart(animate) {
@@ -885,7 +916,7 @@
       ps.querySelector('[data-param="temp"]').disabled = M.e.params.indexOf('tempC') < 0;
     }
     $('#chart-title').textContent = M.title;
-    $('#trend-tag').textContent = (state.range === '24h' ? 'LAST 24 H' : 'LAST 7 D') + ' · LIVE SERIES';
+    $('#trend-tag').textContent = RANGE_TAG[state.range] + (M.long ? ' · HISTORY + LIVE' : ' · LIVE SERIES');
     $('#chart-src').textContent = 'Source: ' + M.src;
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H2);
     svg.setAttribute('height', H2);
@@ -894,7 +925,8 @@
     if (M.t.length < 2) {
       svg.innerHTML = '';
       msg.hidden = false;
-      msg.textContent = M.loading ? 'Loading live data…' : 'No data returned for this series in the selected window.';
+      msg.textContent = M.loading ? (M.long ? 'Loading ' + RANGE_TAG[state.range].toLowerCase() + ' of history…' : 'Loading live data…')
+        : M.histError ? 'History unavailable (' + M.histError + ').' : 'No data returned for this series in the selected window.';
       $('#chart-legend').innerHTML = '';
       $('#chart-stats').innerHTML = '';
       $('#chart-table').innerHTML = '';
@@ -927,21 +959,40 @@
       s += '<text x="' + (ml - 8) + '" y="' + (+yy + 3.5) + '" text-anchor="end">' + labels[k] + '</text>';
     });
     // x ticks on Pacific-time boundaries (Pacific offsets are whole hours, so UTC hour starts align)
-    var xt = [];
-    for (var tt = Math.ceil(M.start / HOUR) * HOUR; tt <= M.end; tt += HOUR) {
-      var p = parts(tt);
-      if (state.range === '24h' ? p.h % 6 === 0 : p.h === 0) xt.push({ t: tt, p: p });
+    if (M.long && H.history) {
+      // 30 D: faint daily lines, Mondays labelled. 6 MO / 1 YR: month starts labelled (year on January).
+      var MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      if (state.range === '30d') {
+        H.history.dayTicks(M.start, M.end, false).forEach(function (o) {
+          var xx = x(o.t).toFixed(1), p2 = parts(o.t + HOUR);
+          s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:' + (o.dow === 1 ? '.6' : '.18') + '"/>';
+          if (o.dow === 1) s += '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + (pw < 420 ? p2.month + '/' + p2.day : 'Mon ' + p2.month + '/' + p2.day) + '</text>';
+        });
+      } else {
+        var mt2 = H.history.monthTicks(M.start, M.end), skip = state.range === '1y' && pw < 420 ? 2 : 1;
+        mt2.forEach(function (o, i) {
+          var xx = x(o.t).toFixed(1);
+          s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:.55"/>';
+          if (i % skip === 0) s += '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + MN[o.m - 1] + (o.m === 1 ? " '" + String(o.y).slice(2) : '') + '</text>';
+        });
+      }
+    } else {
+      var xt = [];
+      for (var tt = Math.ceil(M.start / HOUR) * HOUR; tt <= M.end; tt += HOUR) {
+        var p = parts(tt);
+        if (state.range === '24h' ? p.h % 6 === 0 : p.h === 0) xt.push({ t: tt, p: p });
+      }
+      var narrow = pw / Math.max(1, xt.length) < 52;
+      var every = Math.max(1, Math.ceil(30 / (pw / Math.max(1, xt.length))));
+      xt = xt.filter(function (o, i) { return i % every === 0; });
+      xt.forEach(function (o) {
+        var xx = x(o.t).toFixed(1), lab;
+        if (state.range === '24h') lab = o.p.h === 0 ? o.p.weekday + ' ' + o.p.day : String(o.p.h).padStart(2, '0') + ':00';
+        else lab = narrow ? o.p.day : o.p.weekday + ' ' + o.p.day;
+        s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:.55"/>';
+        s += '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + lab + '</text>';
+      });
     }
-    var narrow = pw / Math.max(1, xt.length) < 52;
-    var every = Math.max(1, Math.ceil(30 / (pw / Math.max(1, xt.length))));
-    xt = xt.filter(function (o, i) { return i % every === 0; });
-    xt.forEach(function (o) {
-      var xx = x(o.t).toFixed(1), lab;
-      if (state.range === '24h') lab = o.p.h === 0 ? o.p.weekday + ' ' + o.p.day : String(o.p.h).padStart(2, '0') + ':00';
-      else lab = narrow ? o.p.day : o.p.weekday + ' ' + o.p.day;
-      s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:.55"/>';
-      s += '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + lab + '</text>';
-    });
     s += '</g>';
 
     var d = '';
@@ -1003,7 +1054,7 @@
     }
     state.geom = { M: M, x: x, y: y, ml: ml, pw: pw, W: W };
 
-    $('#chart-legend').innerHTML = '<span><i></i>' + (M.res ? 'Pool elevation (USACE)' : M.param === 'flow' ? 'Discharge (USGS)' : M.param === 'temp' ? 'Water temperature (USGS)' : 'Gage height (USGS)') + '</span>' +
+    $('#chart-legend').innerHTML = '<span><i></i>' + (M.res ? (M.long && /^USGS/.test(M.src) ? 'Pool elevation (USGS daily + USACE live)' : 'Pool elevation (USACE)') : M.param === 'flow' ? 'Discharge (USGS)' : M.param === 'temp' ? 'Water temperature (USGS)' : 'Gage height (USGS)') + '</span>' +
       (M.tt.length ? '<span><i class="tgt"></i>' + esc(M.tLabel) + '</span>' : '') + (M.tNote ? '<span class="na">' + esc(M.tNote) + '</span>' : '') +
       (M.rt.length > 1 ? '<span><i class="ref"></i>USACE rule curve</span>' : M.res ? '<span class="na">Rule curve: no data</span>' : '') +
       (M.fc.t.length > 1 ? '<span><i class="fc"></i>NWS/NWRFC forecast (via NOAA NWPS), issued ' + stamp(M.issued) + '</span>' : '') +
@@ -1035,7 +1086,7 @@
   }
 
   function renderTable(M) {
-    var step = (state.range === '24h' ? 1 : 6) * HOUR, rows = [], seen = {};
+    var step = ({ '24h': 1, '7d': 6, '30d': 24, '6m': 7 * 24, '1y': 7 * 24 })[state.range] * HOUR, rows = [], seen = {};
     for (var target = M.t[M.t.length - 1]; target >= M.start; target -= step) {
       var i = lastIndexBefore(target, M.t);
       if (i < 0 || seen[i]) continue;

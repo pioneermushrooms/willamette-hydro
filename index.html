@@ -43,6 +43,8 @@
     </div>
   </header>
 
+  <section class="panel snapshot" id="snapshot" aria-label="Hourly snapshot: Hills Creek, Lookout Point, Dexter, Cougar" aria-live="polite"></section>
+
   <nav class="tabs routes" aria-label="Pages">
     <a href="#/overview" data-route="overview">Overview</a>
     <a href="#/teacup" data-route="teacup">Teacup</a>
@@ -107,6 +109,9 @@
         <div class="seg" role="group" aria-label="Time range">
           <button type="button" data-range="24h" aria-pressed="false">24 H</button>
           <button type="button" data-range="7d" aria-pressed="true">7 D</button>
+          <button type="button" data-range="30d" aria-pressed="false">30 D</button>
+          <button type="button" data-range="6m" aria-pressed="false">6 MO</button>
+          <button type="button" data-range="1y" aria-pressed="false">1 YR</button>
         </div>
       </div>
       <h3 class="chart-title" id="chart-title"></h3>
@@ -173,6 +178,8 @@
   </footer>
 
   <script src="js/data.js"></script>
+  <script src="js/snapshot.js"></script>
+  <script src="js/history.js"></script>
   <script src="js/cwms-levels.js"></script>
   <script src="js/nwps.js"></script>
   <script src="js/tdg.js"></script>

@@ -852,3 +852,62 @@ i.lg-livept { width: 10px !important; height: 10px !important; border-radius: 50
 .node.station .body { fill: #0b0c0e; stroke: #8b939b; stroke-width: 2; }
 .card .detail-gauge { grid-template-columns: minmax(0, 1fr); }
 .card .gauge { max-width: 180px; }
+
+/* ---- Hourly Snapshot (js/snapshot.js), top of every page --------------------- */
+
+.snapshot { width: calc(100% - 40px); max-width: 1360px; margin: 12px auto 0; padding: 12px; border-color: var(--amber-dim); }
+.snap-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 0 6px 8px; }
+.snap-head h2 { flex: 1 1 auto; font-size: 14px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--amber); margin: 0; }
+.snap-meta { order: 3; flex: 1 1 100%; font-size: 11.5px; color: var(--text-2); }
+.snap-btns { display: flex; gap: 6px; }
+.snap-hl { color: var(--amber) !important; }
+.snap-pend { color: var(--muted); }
+.snap-btn { min-height: 36px; padding: 0 12px; font-size: 11px; }
+.snap-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1.1fr) minmax(0, 3fr) minmax(0, 3fr); gap: 8px; }
+.snap-group { background: #0b0c0e; border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px 8px; min-width: 0; }
+.snap-gh { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px; }
+.snap-gname { font: 700 12px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); }
+.snap-copy { font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); background: none; border: 1px solid var(--line); border-radius: 3px; padding: 4px 8px; min-height: 28px; cursor: pointer; }
+.snap-copy:hover, .snap-copy:focus-visible { color: var(--amber); border-color: var(--amber-dim); }
+.snap-cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
+.snap-cell { display: flex; flex-direction: column; gap: 1px; padding: 5px 6px; border-left: 3px solid var(--ok); background: #121417; border-radius: 2px; min-width: 0; }
+.snap-cell.lag { border-left-color: var(--warn); }
+.snap-cell.stale { border-left-color: var(--crit); }
+.snap-cell.none { border-left-color: #3b4148; }
+.snap-lab { font: 700 11px var(--mono); letter-spacing: 0.1em; color: var(--text-2); }
+.snap-val { font-size: 21px; font-weight: 700; color: #fff; line-height: 1.15; white-space: nowrap; }
+.snap-val .unit { font-size: 11px; font-weight: 400; color: var(--text-2); margin-left: 3px; }
+.snap-subval { font-size: 12px; color: var(--text); }
+.snap-time, .snap-hour, .snap-check { font-size: 10.5px; color: var(--text-2); line-height: 1.35; }
+.snap-hour b { color: var(--amber); font-weight: 700; }
+.snap-check { color: var(--muted); }
+.snap-age { color: var(--warn); }
+.snap-cell.stale .snap-age { color: var(--crit); }
+.snap-na { font: 700 16px var(--mono); color: var(--muted); }
+.snap-why { font-size: 10.5px; color: var(--muted); line-height: 1.3; }
+.snap-foot { margin: 8px 6px 0; font-size: 11px; color: var(--muted); line-height: 1.45; }
+.snap-foot b { color: var(--text-2); font-weight: 600; }
+@media (max-width: 1100px) { .snap-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .snapshot { width: calc(100% - 20px); margin-top: 10px; padding: 8px; }
+  .snap-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .snap-cells { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .snap-val { font-size: 18px; }
+  .snap-head { padding: 0 2px 6px; }
+  .snap-btn { min-height: 34px; padding: 0 10px; }
+  .snap-group { padding: 5px 6px 6px; }
+  .snap-cell { padding: 4px 5px; }
+  .snap-time, .snap-hour, .snap-check, .snap-why { font-size: 10px; }
+  .snap-foot { font-size: 10.5px; margin: 6px 2px 0; }
+  .snap-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .snap-group[data-group="HCR"], .snap-group[data-group="DEX"], .snap-group[data-group="CGR"] { grid-column: 1 / -1; }
+  .snap-group[data-group="LOP"] { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 6px; align-items: start; }
+  .snap-group[data-group="LOP"] .snap-gh { flex-direction: column; align-items: flex-start; }
+  .snap-group[data-group="LOP"] .snap-cells { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Teacup chart range selector (YEAR / 30 D / 6 MO / 1 YR) */
+.tc-an-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 6px; }
+.tc-an-head .tc-h4 { margin: 0; }
+.tc-range button { min-height: 36px; }
+.snap-check.diff { color: var(--warn); }
