@@ -1,0 +1,46 @@
+name: Update BPA hydro data
+
+# BPA's balancing-authority file has no CORS headers, so the browser can't read it.
+# This job fetches it every 30 minutes and commits data/bpa.json when it changes.
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-bpa
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Fetch BPA balancing-authority data
+        run: node scripts/fetch-bpa.js
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet -- data/bpa.json && [ -z "$(git ls-files --others --exclude-standard data/bpa.json)" ]; then
+            echo "data/bpa.json unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/bpa.json
+          git commit -m "Update BPA hydro data"
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
+            sleep 5
+          done
+          echo "push failed" >&2
+          exit 1
