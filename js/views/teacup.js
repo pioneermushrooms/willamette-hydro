@@ -410,7 +410,7 @@
     else if (!cal) leg.push('<span class="na">pool history unavailable' + (hist && hist.error ? ' (' + esc(hist.error) + ')' : '') + '</span>');
     var foot = cal
       ? 'Pick 30 D, 6 MO or 1 YR for pool history against the rule curve. The calendar-year view shows the last 7 days of live pool data.'
-      : 'Pool: ' + esc(hist && hist.src ? hist.src + (hist.pool && hist.pool.liveFrom ? stamp(hist.pool.liveFrom) + ' (hourly means)' : '') : '…') + '. ' +
+      : 'Pool: ' + esc(hist && hist.src ? hist.src + (hist.pool && hist.pool.liveFrom ? stamp(hist.pool.liveFrom) + ' (hourly)' : '') : '…') + '. ' +
         'Rule curve: CWMS ' + esc(m.p.series.rule.name) + '. ' + (hist && hist.note ? esc(hist.note) + ' ' : '') + 'Provisional data.';
     box.innerHTML = head + s + '<div class="an-legend">' + leg.join('') + '</div><p class="hint">' + foot + '</p>';
   }

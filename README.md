@@ -100,7 +100,7 @@ A compact strip above the page tabs with the values recorded hourly:
 The Trend Recorder (Overview) has **24 H · 7 D · 30 D · 6 MO · 1 YR**; the Teacup lake chart has **YEAR · 30 D · 6 MO · 1 YR**. Code: `js/history.js`.
 
 - **30 D:** CWMS 15-minute pool elevation (same series as live). Daily grid lines, Mondays labelled.
-- **6 MO / 1 YR:** USGS daily lake elevation (62614, observation at 24:00) plus live CWMS hourly means since the last daily value. Month grid lines and labels.
+- **6 MO / 1 YR:** USGS daily lake elevation (62614, observation at 24:00) plus live CWMS readings (last one per hour) since the last daily value. Month grid lines and labels.
   CWMS publishes no public daily or hourly pool series, and a year of 15-minute data is ~35,000 points per lake; if USGS fails, CWMS is fetched in monthly chunks and reduced to 6-hour means.
 - **Rule curve:** the CWMS daily rule curve for the whole window. Rivers use USGS IV (30 D) or USGS daily means (6 MO / 1 YR); NWS forecasts are only drawn on 24 H / 7 D.
 - History is fetched when a range is picked and cached for 30 minutes.

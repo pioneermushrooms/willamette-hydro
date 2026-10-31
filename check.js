@@ -386,7 +386,7 @@ console.log('snapshot / history');
   const bm = HI.bucketMean({ t: [0, 1000, 3600e3, 3600e3 + 1], v: [1, 3, 10, 20] }, 3600e3);
   check(bm.t.join() === '1800000,5400000' && bm.v.join() === '2,15', 'history: bucket means');
   const al = HI.appendLive({ t: [1, 2], v: [1, 2] }, { t: [1, 2, 3600e3 * 5, 3600e3 * 5 + 10], v: [9, 9, 4, 6] });
-  check(al.t.length === 3 && al.v[2] === 5, 'history: live points appended after the history, hourly means');
+  check(al.t.length === 3 && al.v[2] === 6 && al.t[2] === 3600e3 * 5 + 10, 'history: live points appended after the history, last reading per hour (real timestamps)');
   const html2 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   check(html2.indexOf('id="snapshot"') > html2.indexOf('</header>') && html2.indexOf('id="snapshot"') < html2.indexOf('class="tabs routes"'), 'snapshot: strip sits above the page tabs (every page)');
   check(['24h', '7d', '30d', '6m', '1y'].every((r) => html2.includes('data-range="' + r + '"')), 'trend: 24 H, 7 D, 30 D, 6 MO, 1 YR buttons');

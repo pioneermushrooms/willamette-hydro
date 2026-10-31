@@ -136,14 +136,20 @@
     });
   }
 
-  // Appends live points newer than the history's last point (decimated to hourly).
+  // Appends live points newer than the history's last point (one per hour).
   function appendLive(hist, live) {
     if (!live || !live.t || !live.t.length) return hist;
     var last = hist.t.length ? hist.t[hist.t.length - 1] : -Infinity;
     var tail = { t: [], v: [] };
     for (var i = 0; i < live.t.length; i++) if (live.t[i] > last) { tail.t.push(live.t[i]); tail.v.push(live.v[i]); }
-    var b = bucketMean(tail, HOUR);
-    return { t: hist.t.concat(b.t), v: hist.v.concat(b.v), liveFrom: b.t.length ? b.t[0] : null };
+    // Last actual reading in each hour (real timestamps, so "latest" never points into the future).
+    var bt = [], bv = [];
+    for (var j = 0; j < tail.t.length; j++) {
+      var k = Math.floor(tail.t[j] / HOUR);
+      if (bt.length && Math.floor(bt[bt.length - 1] / HOUR) === k) { bt[bt.length - 1] = tail.t[j]; bv[bv.length - 1] = tail.v[j]; }
+      else { bt.push(tail.t[j]); bv.push(tail.v[j]); }
+    }
+    return { t: hist.t.concat(bt), v: hist.v.concat(bv), liveFrom: bt.length ? bt[0] : null };
   }
 
   /*

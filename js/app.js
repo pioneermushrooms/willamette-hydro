@@ -816,7 +816,7 @@
       s = long ? hist && hist.pool : d && d.elev; ref = long ? hist && hist.rule : d && d.rule; unit = 'ft'; dec = 2;
       title = e.name + ' · pool elevation (ft)';
       src = long
-        ? (hist && hist.src ? hist.src + (hist.pool && hist.pool.liveFrom ? stamp(hist.pool.liveFrom) + ' (hourly means)' : '') : 'loading history…') +
+        ? (hist && hist.src ? hist.src + (hist.pool && hist.pool.liveFrom ? stamp(hist.pool.liveFrom) + ' (hourly)' : '') : 'loading history…') +
           '; dashed: ' + e.series.rule.name + ' (USACE rule curve, daily, linearly joined).' + (hist && hist.note ? ' ' + hist.note : '')
         : 'USACE CWMS (NWDP) ' + e.series.elev.name + '; dashed: ' + e.series.rule.name + ' (USACE rule curve, daily, linearly joined).';
     } else {
