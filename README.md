@@ -14,6 +14,10 @@ Willamette Valley, Oregon, built on **live public data** from USGS and USACE.
 |---|---|---|---|---|
 | River discharge (cfs) | river cards, details, trend | USGS NWIS Instantaneous Values | parameter `00060`; sites 14166000, 14162500, 14165500, 14152000, 14157500 | **live** |
 | River discharge at Eugene | Eugene card | n/a | 14158050 publishes no `00060` series | **unavailable** (shown as "no data"; Eugene charts stage instead) |
+| NWS flood categories (action / minor / moderate / major stage, ft) | gauge cards (ruler + badges), Stage chart bands | NOAA NWPS `api.water.noaa.gov/nwps/v1/gauges/<LID>` | EUGO3, HARO3, VIDO3, JASO3, GOSO3 (Coburg: none published) | **live** (read at runtime, never hardcoded) |
+| Observed flood category | gauge cards | NOAA NWPS `status.observed.floodCategory` | same LIDs | **live** |
+| River forecast (stage ft, flow) | dashed extension right of "now" on the trend chart, "Forecast peak (7 d)" | NOAA NWPS `/stageflow/forecast` (NWS/NWRFC-issued, ~6-hourly, ~7–10 days) | same LIDs; flow converted kcfs → cfs | **live (NWS forecast)**, issued time shown |
+| Historic crests (top 3) | gauge details panel | NOAA NWPS `flood.crests.historic` | same LIDs | **published** |
 | Gage height / stage (ft) | river cards, details, Eugene trend | USGS NWIS IV | parameter `00065`, all 6 sites | **live** |
 | Water temperature | river cards | USGS NWIS IV | parameter `00010` (°C), all 6 sites | **live** (converted to °F for display, °C shown too) |
 | 24 h change | river cards | this site | difference over the last 24 h of the series | **derived** |
@@ -64,6 +68,35 @@ The thresholds are this site's own choices, not an agency determination.
 Every card shows its own last-reading time in Pacific time with an age, for example "Oct 30, 4:45 PM PDT · 23 min ago".
 Readings older than 3 hours get a STALE tag.
 
+## Pages (hash routes)
+
+`#/overview` is the live dashboard (default). `#/teacup`, `#/tables` and `#/docs` are placeholders for later stages.
+Plain anchors (`#trends`, `#rivers`, …) stay on Overview and scroll.
+
+## NOAA NWPS (flood stages + forecasts)
+
+`js/nwps.js` maps each USGS gauge to its NWS location id and loads, per gauge, the metadata
+(thresholds, observed category, historic crests) and the stage/flow forecast. It uses 3 tries and a 10-min memory cache.
+- Sentinels: undefined thresholds are `-9999`, missing values `-999`. Anything `<= -900` is treated as none. A forecast with `issuedTime` `0001-01-01` and no data means "no forecast".
+- McKenzie near Coburg (14165500, NWS MRGO3) has no published flood stages, so its card says so.
+- The Willamette at Eugene forecast has stage only (flow is `-999`). Its chart is stage-only.
+- River charts have a **Flow / Stage** toggle. Stage mode draws the NWS flood-category bands (the lowest band is always in view) and the NWS stage forecast. Flow mode draws the flow forecast where NWS provides one. Each gauge card also shows a flood ruler: bands, current stage ▼, and the 7-day forecast peak (dashed).
+- If NWPS fails, cards show "NWS data unavailable" and the rest of the dashboard is unaffected. A gauge that loaded earlier keeps its last good copy, marked CACHED.
+- Gauge links: `https://water.noaa.gov/gauges/<LID>`.
+
+## CWMS location levels (`js/cwms-levels.js`)
+
+This is a shared helper for the upcoming Teacup and target overlays.
+- `fetchProjectLevels(code)` calls `/levels?office=NWDP&level-id-mask=<CODE>.*` with 3 tries. It keeps only ids starting with `<CODE>.`, converts m → ft, cms → cfs and m³ → ac-ft, and caches the compact result (about 150 KB, not the ~550 KB raw response) in memory and in localStorage for 24 h.
+- `pick()` returns the latest version with level-date ≤ the date. `constantAt()` and `valueAt()` evaluate a level.
+- `evalSeasonal()` evaluates a seasonal level:
+  - Knots sit at interval-origin + n × interval-months + offset-months + offset-minutes.
+  - Values between knots are interpolated linearly, or held when `interpolate-string` is `F`.
+  - Knots without a value are gaps, so any span touching one is null (target not applicable).
+  - The pattern wraps across years.
+- The single-level `?effective-date=` endpoint returns HTTP 500 for seasonal levels, so it is not used.
+- Example: `node check.js --live` evaluates the real LOP `Elev-Forebay.Inst.0.Injunction-Target`. On 2026-10-30 that is 828.0 ft, a **published target, not a statement of current operations**.
+
 ## Polling and refresh
 
 - **USGS and USACE** are fetched directly by the browser, since both send `Access-Control-Allow-Origin: *`. The page fetches on load and then every 15 minutes, and the **Refresh** button fetches immediately.
@@ -94,7 +127,11 @@ Readings older than 3 hours get a STALE tag.
 index.html                      single-page dashboard
 css/style.css                   theme, layout, animations (honours prefers-reduced-motion)
 js/data.js                      static config (stations, projects, series, limits, links) + live loader + derived helpers
-js/app.js                       rendering: clock, feed status, totals, SVG map, gauges, cards, trend chart, polling
+js/app.js                       Overview rendering: clock, feed status, totals, SVG map, gauges, cards, trend chart, polling
+js/cwms-levels.js               CWMS location levels: fetch + 24 h cache + seasonal evaluator + unit conversion
+js/nwps.js                      NOAA NWPS flood categories + NWS forecasts
+js/router.js                    hash router (#/overview, #/teacup, #/tables, #/docs)
+js/views/*.js                   non-overview views (placeholders for now)
 scripts/fetch-bpa.js            BPA download + parser (DST-aware), writes data/bpa.json
 data/bpa.json                   latest BPA balancing-authority hydro/load, last 48 h at 5-min
 .github/workflows/update-bpa.yml  scheduled BPA refresh
@@ -117,8 +154,8 @@ python3 -m http.server 8000
 
 ```sh
 for f in js/*.js check.js scripts/*.js; do node --check "$f"; done
-node check.js          # config shape, helpers, DST parsing, page wiring (offline)
-node check.js --live   # + real USGS / CWMS / BPA requests, prints a live/missing table (Node 20+)
+node check.js          # config shape, helpers, DST parsing, seasonal-level evaluator, NWPS parsing, page wiring (offline)
+node check.js --live   # + real USGS / CWMS / NWPS / CWMS levels / BPA requests, prints live/missing tables (Node 20+)
 node scripts/fetch-bpa.js --stdout   # preview the BPA JSON without writing
 ```
 

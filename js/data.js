@@ -189,12 +189,18 @@
   }
 
   // One retry after a short pause for network errors and HTTP 5xx (not for 4xx).
-  function fetchJson(url, opts, ms) {
-    var attempt = function () { return fetchWithTimeout(url, opts, ms).then(function (r) { return r.json(); }); };
-    return attempt().catch(function (err) {
-      if (/^HTTP 4/.test(err.message)) throw err;
-      return new Promise(function (res) { setTimeout(res, 1500); }).then(attempt);
-    });
+  // `tries` attempts in total (default 2), pausing 1.5 s, 3 s, ... between them.
+  // Retries network errors, timeouts and HTTP 5xx; never retries 4xx.
+  function fetchJson(url, opts, ms, tries) {
+    var max = tries || 2, n = 0;
+    var attempt = function () {
+      n++;
+      return fetchWithTimeout(url, opts, ms).then(function (r) { return r.json(); }).catch(function (err) {
+        if (/^HTTP 4/.test(err.message) || n >= max) throw err;
+        return new Promise(function (res) { setTimeout(res, 1500 * n); }).then(attempt);
+      });
+    };
+    return attempt();
   }
 
   // Runs promise-returning tasks with at most `n` in flight.
@@ -476,6 +482,8 @@
       disclaimer: 'Not an official agency site; not affiliated with USGS, USACE or BPA.'
     },
     SETTINGS: SETTINGS,
+    // Shared HTTP helper for the other modules (js/cwms-levels.js, js/nwps.js).
+    http: { fetchJson: fetchJson, cwmsAccept: CWMS_ACCEPT, cwmsBase: 'https://cwms-data.usace.army.mil/cwms-data/' },
     PARAM: PARAM,
     endpoints: { usgs: USGS_IV, cwms: CWMS_TS, cwmsAccept: CWMS_ACCEPT, usacePortal: USACE_PORTAL },
     stations: stations,

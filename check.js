@@ -15,6 +15,8 @@ const path = require('path');
 
 const H = require('./js/data.js');
 const BPA = require('./scripts/fetch-bpa.js');
+const LV = require('./js/cwms-levels.js');
+const NW = require('./js/nwps.js');
 
 const LIVE = process.argv.includes('--live');
 let passes = 0;
@@ -121,6 +123,86 @@ check(bp.rows.length === 2, 'BPA: empty future rows skipped');
 check(bp.rows[0].iso === '2026-11-01T01:55:00-07:00' && bp.rows[1].iso === '2026-11-01T01:00:00-08:00', 'BPA: DST repeated hour mapped PDT then PST');
 check(BPA.isoPacific(Date.UTC(2026, 6, 1, 19)) === '2026-07-01T12:00:00-07:00' && BPA.isoPacific(Date.UTC(2026, 11, 1, 20)) === '2026-12-01T12:00:00-08:00', 'BPA: isoPacific offsets');
 
+// ---- 2b. CWMS levels: seasonal evaluator (hand-made fixture, LOP injunction shape) ---
+console.log('levels');
+{
+  const ft = (m) => m / 0.3048;
+  // Mimics LOP.Elev-Forebay.Inst.0.Injunction-Target (2025-02-01 version): origin Jan 1 08:00Z,
+  // 12-month cycle, gaps (points without value), spring hold, fall drawdown, Dec deep pool.
+  const fixture = { levels: [
+    { 'location-level-id': 'LOP.Elev-Forebay.Inst.0.Injunction-Target', 'level-units-id': 'm', 'level-date': '2023-03-01T08:00:00Z',
+      'interval-origin': '2023-01-01T08:00:00Z', 'interval-months': 12, 'interpolate-string': 'T',
+      'seasonal-values': [{ value: 260, 'offset-months': 0, 'offset-minutes': 0 }, { value: 260, 'offset-months': 11, 'offset-minutes': 0 }] },
+    { 'location-level-id': 'LOP.Elev-Forebay.Inst.0.Injunction-Target', 'level-units-id': 'm', 'level-date': '2025-02-01T08:00:00Z',
+      'interval-origin': '2023-01-01T08:00:00Z', 'interval-months': 12, 'interpolate-string': 'T',
+      'seasonal-values': [
+        { 'offset-months': 0, 'offset-minutes': 0 },
+        { value: 271.4244, 'offset-months': 2, 'offset-minutes': 14 * 1440 },   // Mar 15
+        { value: 271.4244, 'offset-months': 3, 'offset-minutes': 14 * 1440 },   // Apr 15
+        { 'offset-months': 3, 'offset-minutes': 15 * 1440 },                    // Apr 16: gap starts
+        { value: 274.32, 'offset-months': 8, 'offset-minutes': 29 * 1440 },     // Sep 30: 900 ft
+        { value: 251.46, 'offset-months': 9, 'offset-minutes': 30 * 1440 },     // Oct 31: 825 ft
+        { value: 228.6, 'offset-months': 11, 'offset-minutes': 0 },             // Dec 1: 750 ft
+        { value: 228.6, 'offset-months': 11, 'offset-minutes': 14 * 1440 },     // Dec 15
+        { 'offset-months': 11, 'offset-minutes': 15 * 1440 }                    // Dec 16: gap
+      ] },
+    { 'location-level-id': 'LOP.Elev.Inst.0.Top of Dam', 'level-units-id': 'm', 'level-date': '1900-01-01T08:00:00Z', 'constant-value': 286.8168 },
+    { 'location-level-id': 'LOP.Elev.Inst.0.Bottom of Flood', 'level-units-id': 'm', 'level-date': '1900-01-01T08:00:00Z', 'seasonal-values': [] },
+    { 'location-level-id': 'LOP-BlackCanyon.Elev.Inst.0.Top of Dam', 'level-units-id': 'm', 'level-date': '1900-01-01T08:00:00Z', 'constant-value': 1 },
+    { 'location-level-id': 'LOP.Flow.Inst.0.Min', 'level-units-id': 'cms', 'level-date': '1900-01-01T08:00:00Z', 'constant-value': 10 },
+    { 'location-level-id': 'LOP.Elev.Inst.0.Step', 'level-units-id': 'm', 'level-date': '1900-01-01T08:00:00Z',
+      'interval-origin': '2000-01-01T08:00:00Z', 'interval-months': 12, 'interpolate-string': 'F',
+      'seasonal-values': [{ value: 100, 'offset-months': 0, 'offset-minutes': 0 }, { value: 200, 'offset-months': 6, 'offset-minutes': 0 }] }
+  ] };
+  const c = LV.compact(fixture, 'LOP', 0);
+  const near = (a, b, tol) => a != null && Math.abs(a - b) <= (tol || 0.01);
+  const at = (iso) => LV.valueAt(c, 'Elev-Forebay.Inst.0.Injunction-Target', Date.parse(iso));
+  check(!('LOP-BlackCanyon' in c.levels) && !Object.keys(c.levels).some((k) => /BlackCanyon/.test(k)), 'levels: sub-location ids (LOP-...) excluded');
+  check(!c.levels['Elev.Inst.0.Bottom of Flood'], 'levels: empty seasonal entries dropped');
+  check(near(LV.constantAt(c, 'Elev.Inst.0.Top of Dam'), ft(286.8168)), 'levels: constant m -> ft');
+  check(near(LV.constantAt(c, 'Flow.Inst.0.Min'), 353.147, 0.01), 'levels: cms -> cfs');
+  check(LV.pick(c, 'Elev-Forebay.Inst.0.Injunction-Target', Date.parse('2024-06-01')).date === Date.parse('2023-03-01T08:00:00Z'), 'levels: picks version effective at the date');
+  check(LV.pick(c, 'Elev-Forebay.Inst.0.Injunction-Target', Date.parse('2026-10-30')).date === Date.parse('2025-02-01T08:00:00Z'), 'levels: picks latest version <= date');
+  check(near(at('2026-03-15T08:00:00Z'), ft(271.4244)) && near(at('2026-04-01T08:00:00Z'), ft(271.4244)), 'seasonal: knot value + flat hold (890.5 ft)');
+  check(at('2026-03-01T08:00:00Z') === null, 'seasonal: before first valued knot (after Jan 1 gap) -> null');
+  check(at('2026-07-01T08:00:00Z') === null, 'seasonal: inside gap (Apr 16 - Sep 30) -> null');
+  check(at('2026-04-15T20:00:00Z') === null, 'seasonal: span ending at a gap knot -> null');
+  const mid = at('2026-10-15T20:00:00Z');
+  check(near(mid, 900 + (825 - 900) * ((Date.parse('2026-10-15T20:00:00Z') - Date.parse('2026-09-30T08:00:00Z')) / (Date.parse('2026-10-31T08:00:00Z') - Date.parse('2026-09-30T08:00:00Z'))), 0.01),
+    'seasonal: linear interpolation between knots (Sep 30 -> Oct 31)');
+  check(near(at('2026-12-10T08:00:00Z'), 750), 'seasonal: Dec deep pool 750 ft');
+  check(at('2026-12-20T08:00:00Z') === null && at('2027-01-10T08:00:00Z') === null, 'seasonal: gap after Dec 16 wraps over new year -> null');
+  check(near(at('2031-03-20T08:00:00Z'), ft(271.4244)), 'seasonal: repeats in later cycles');
+  check(near(LV.valueAt(c, 'Elev.Inst.0.Step', Date.parse('2026-03-01T08:00:00Z')), ft(100)) &&
+    near(LV.valueAt(c, 'Elev.Inst.0.Step', Date.parse('2026-09-01T08:00:00Z')), ft(200)), 'seasonal: interpolate-string F holds previous value (and wraps)');
+  const ser = LV.seasonalSeries(LV.pick(c, 'Elev-Forebay.Inst.0.Injunction-Target', Date.parse('2026-10-30')), Date.parse('2026-09-01T08:00:00Z'), Date.parse('2026-12-31T08:00:00Z'));
+  check(ser[0][1] === null && ser.some((p) => p[1] === null && p[0] > Date.parse('2026-12-15')) && ser.some((p) => near(p[1], 750)), 'seasonalSeries: knots + null breaks');
+}
+
+// ---- 2c. NWPS parsing (fixtures with sentinels) -----------------------------------
+console.log('nwps');
+{
+  const g = NW.parseGauge({ lid: 'HARO3', name: 'Willamette River at Harrisburg', usgsId: '14166000',
+    flood: { stageUnits: 'ft', categories: { action: { stage: 10.8, flow: 37000 }, minor: { stage: 14, flow: -9999 }, moderate: { stage: -9999, flow: -9999 }, major: { stage: 17, flow: 100000 } },
+      crests: { historic: [{ occurredTime: '1943-01-01T00:00:00Z', stage: 21.1 }, { occurredTime: '1861-12-04T00:00:00Z', stage: 23 }, { occurredTime: '1999-01-01T00:00:00Z', stage: -999 }] } },
+    status: { observed: { primary: 1.86, secondary: 4.19, secondaryUnit: 'kcfs', floodCategory: 'no_flooding', validTime: '2026-10-31T00:45:00Z' },
+      forecast: { primary: -999, secondary: -999, floodCategory: 'fcst_not_current', validTime: '0001-01-01T00:00:00Z' } } });
+  check(g.thresholds.action.stage === 10.8 && g.thresholds.moderate.stage === null && g.thresholds.minor.flow === null, 'nwps: -9999 thresholds -> null');
+  check(g.observed.flow === 4190 && g.observed.category === 'none', 'nwps: kcfs -> cfs, no_flooding -> none');
+  check(g.nwsForecastCategory === null, 'nwps: fcst_not_current -> no category');
+  check(g.crests.length === 2 && g.crests[0].stage === 23, 'nwps: crests sorted, sentinels dropped');
+  check(NW.categoryFor(12, g.thresholds) === 'action' && NW.categoryFor(15, g.thresholds) === 'minor' && NW.categoryFor(18, g.thresholds) === 'major' && NW.categoryFor(2, g.thresholds) === 'none', 'nwps: categoryFor');
+  check(NW.parseGauge({ flood: { categories: { action: { stage: -9999 }, minor: { stage: -9999 }, moderate: { stage: -9999 }, major: { stage: -9999 } } }, status: {} }).thresholds === null, 'nwps: all -9999 -> no thresholds');
+  check(NW.parseForecast({ issuedTime: '0001-01-01T00:00:00Z', data: [] }) === null, 'nwps: empty forecast -> null');
+  const f = NW.parseForecast({ issuedTime: '2026-10-30T20:38:00Z', secondaryUnits: 'kcfs',
+    data: [{ validTime: '2026-10-31T00:00:00Z', primary: 1.84, secondary: 4.16 }, { validTime: '2026-10-31T06:00:00Z', primary: 2.5, secondary: -999 }] });
+  check(f.t.length === 2 && f.flow[0] === 4160 && f.flow[1] === null && f.stage[1] === 2.5, 'nwps: forecast parse + -999 -> null');
+  const pk = NW.forecastPeak({ forecast: f, thresholds: g.thresholds }, Date.parse('2026-10-30T23:00:00Z'));
+  check(pk.stage === 2.5 && pk.category === 'none', 'nwps: forecast peak + derived category');
+  check(NW.LIDS['mckenzie-coburg'] === null && ['EUGO3', 'HARO3', 'VIDO3', 'JASO3', 'GOSO3'].every((l) => Object.values(NW.LIDS).includes(l)), 'nwps: LID map');
+  check(NW.gaugeUrl('HARO3') === 'https://water.noaa.gov/gauges/HARO3', 'nwps: gauge link');
+}
+
 // ---- 3. Page wiring ---------------------------------------------------------
 console.log('page');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
@@ -134,7 +216,12 @@ check(!/illustrative/i.test(html), 'no "illustrative" wording left in page');
   const ref = m.replace(/^(?:src|href)="/, '').replace(/"$/, '');
   check(fs.existsSync(path.join(__dirname, ref)), 'referenced file exists: ' + ref);
 });
-['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
+['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'js/router.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
+['overview', 'teacup', 'tables', 'docs'].forEach((r) => {
+  check(html.includes('href="#/' + r + '"') && html.includes('data-view="' + r + '"'), 'route + view exist: ' + r);
+});
+check(html.indexOf('js/cwms-levels.js') < html.indexOf('js/router.js') && html.indexOf('js/router.js') < html.indexOf('js/app.js') &&
+  html.indexOf('js/views/docs.js') < html.indexOf('js/router.js'), 'script order: modules, views, router, app');
 const app = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8') + fs.readFileSync(path.join(__dirname, 'js', 'data.js'), 'utf8');
 check(!/mulberry|seeded|gauss\(/i.test(app), 'no seeded generator left in JS');
 const bj = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'bpa.json'), 'utf8'));
@@ -182,6 +269,40 @@ async function live() {
   const bs = H.basinStorage(snap, nowL), tr = H.totalRelease(snap, nowL);
   console.log('derived: basin storage %s%% (%d/%d), total release %s cfs (%d/%d); fetched in %d ms',
     bs.pct == null ? 'n/a' : bs.pct.toFixed(1), bs.reporting, bs.total, tr.cfs == null ? 'n/a' : tr.cfs.toFixed(0), tr.reporting, tr.total, ms);
+
+
+  // NOAA NWPS: thresholds + forecasts
+  console.log('\nNOAA NWPS');
+  const nw = await NW.loadAll();
+  const nrows = [];
+  for (const [id, o] of Object.entries(nw)) {
+    const g = o.gauge;
+    if (o.lid) {
+      check(g && g.thresholds && g.thresholds.action.stage != null, `NWPS ${o.lid} returns flood thresholds` + (o.error ? ' (' + o.error + ')' : ''));
+      check(g && g.forecast && g.forecast.t.length > 0, `NWPS ${o.lid} returns a forecast`);
+    } else check(!o.gauge, `${id}: no NWPS gauge mapped (no flood stages published)`);
+    nrows.push({ station: id, lid: o.lid || '—', thresholds_ft: g && g.thresholds ? NW.CATS.map((c) => g.thresholds[c].stage ?? '-').join('/') : 'none',
+      observed: g ? `${g.observed.stage} ft ${g.observed.category}` : (o.error || 'n/a'), issued: g && g.forecast ? new Date(g.forecast.issued).toISOString().slice(0, 16) : '—',
+      peak7d: g && g.peak ? `${g.peak.stage} ft ${new Date(g.peak.t).toISOString().slice(5, 16)} ${g.peak.category}` : '—' });
+  }
+  console.table(nrows);
+
+  // CWMS levels: real LOP injunction target today
+  console.log('\nCWMS levels (LOP)');
+  try {
+    const lv = await LV.fetchProjectLevels('LOP');
+    const e = LV.pick(lv, LV.IDS.injunctionTarget);
+    check(e && e.s, 'LOP injunction target found (seasonal)');
+    const v = LV.valueAt(lv, LV.IDS.injunctionTarget);
+    console.log('  LOP Injunction-Target version %s, today = %s ft (published target, not current operations)',
+      e ? new Date(e.date).toISOString().slice(0, 10) : '—', v == null ? 'null (gap: target not applicable today)' : v.toFixed(1));
+    check(LV.constantAt(lv, LV.IDS.bottomCons) != null && Math.abs(LV.constantAt(lv, LV.IDS.bottomCons) - 825) < 0.1, 'LOP bottom of conservation = 825 ft');
+    const stats = ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].map((k) => LV.valueAt(lv, LV.IDS[k]));
+    check(stats.every((x) => x != null) && stats.every((x, i) => !i || x >= stats[i - 1]), 'LOP 30-yr stats for today are ordered p05<=p25<=avg<=p75<=p95');
+    console.log('  LOP 30-yr stats today (ft): p05 %s  p25 %s  avg %s  p75 %s  p95 %s', ...stats.map((x) => x.toFixed(1)));
+  } catch (e) {
+    check(false, 'LOP levels fetch: ' + e.message);
+  }
 
   // BPA: parse the real file
   try {

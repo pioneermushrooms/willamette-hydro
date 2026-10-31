@@ -43,14 +43,21 @@
     </div>
   </header>
 
-  <nav class="tabs" aria-label="Sections">
-    <a href="#overview">Overview</a>
-    <a href="#trends">Trends</a>
-    <a href="#reservoirs">Reservoirs</a>
-    <a href="#rivers">Rivers</a>
+  <nav class="tabs routes" aria-label="Pages">
+    <a href="#/overview" data-route="overview">Overview</a>
+    <a href="#/teacup" data-route="teacup">Teacup</a>
+    <a href="#/tables" data-route="tables">Tables</a>
+    <a href="#/docs" data-route="docs">Docs</a>
   </nav>
 
   <main id="main">
+    <div class="view view-overview" data-view="overview">
+    <nav class="jump" aria-label="Jump to section">
+      <a href="#overview">Map</a>
+      <a href="#trends">Trends</a>
+      <a href="#reservoirs">Reservoirs</a>
+      <a href="#rivers">Rivers</a>
+    </nav>
     <section class="feed" aria-label="Data feed status">
       <div class="feed-badges" id="feed-badges" aria-live="polite">
         <span class="badge pending">Loading USGS, USACE and BPA data…</span>
@@ -91,6 +98,10 @@
           <span class="field-label">Point</span>
           <select id="trend-select"></select>
         </label>
+        <div class="seg" id="param-seg" role="group" aria-label="River parameter" hidden>
+          <button type="button" data-param="flow" aria-pressed="true">FLOW</button>
+          <button type="button" data-param="stage" aria-pressed="false">STAGE</button>
+        </div>
         <div class="seg" role="group" aria-label="Time range">
           <button type="button" data-range="24h" aria-pressed="false">24 H</button>
           <button type="button" data-range="7d" aria-pressed="true">7 D</button>
@@ -126,6 +137,20 @@
       </div>
       <div class="card-grid" id="river-cards"></div>
     </section>
+    </div>
+
+    <section class="view panel view-page" data-view="teacup" hidden>
+      <div class="panel-head"><h2>Teacup</h2><span class="panel-tag mono">COMING SOON</span></div>
+      <div class="view-body"></div>
+    </section>
+    <section class="view panel view-page" data-view="tables" hidden>
+      <div class="panel-head"><h2>Reports &amp; Tables</h2><span class="panel-tag mono">COMING SOON</span></div>
+      <div class="view-body"></div>
+    </section>
+    <section class="view panel view-page" data-view="docs" hidden>
+      <div class="panel-head"><h2>Docs</h2><span class="panel-tag mono">COMING SOON</span></div>
+      <div class="view-body"></div>
+    </section>
   </main>
 
   <footer class="site-footer">
@@ -133,12 +158,18 @@
       <span class="notice-icon" aria-hidden="true">!</span>
       <span><strong>Live data from USGS and USACE; provisional, not official.</strong> Not an official agency site; not affiliated with USGS, USACE or BPA.</span>
     </div>
-    <p>River data: <a href="https://waterservices.usgs.gov/" rel="noopener">USGS NWIS Instantaneous Values</a> (provisional data subject to revision). Reservoir data: <a href="https://cwms-data.usace.army.mil/cwms-data/" rel="noopener">USACE CWMS Data API</a>, office NWDP, also viewable at <a href="https://water.sec.usace.army.mil/" rel="noopener">water.sec.usace.army.mil</a>. Regional hydro: <a href="https://transmission.bpa.gov/business/operations/Wind/baltwg.txt" rel="noopener">BPA balancing-authority totals</a>, copied every 30 minutes.</p>
+    <p>River data: <a href="https://waterservices.usgs.gov/" rel="noopener">USGS NWIS Instantaneous Values</a> (provisional data subject to revision). Flood categories and river forecasts: <a href="https://water.noaa.gov/" rel="noopener">NOAA National Water Prediction Service</a> (NWS/NWRFC). Reservoir data: <a href="https://cwms-data.usace.army.mil/cwms-data/" rel="noopener">USACE CWMS Data API</a>, office NWDP, also viewable at <a href="https://water.sec.usace.army.mil/" rel="noopener">water.sec.usace.army.mil</a>. Regional hydro: <a href="https://transmission.bpa.gov/business/operations/Wind/baltwg.txt" rel="noopener">BPA balancing-authority totals</a>, copied every 30 minutes.</p>
     <p>Values marked “derived” are calculated by this site. Status lights are this site’s own classification. Do not use this page for safety, navigation, recreation or operational decisions; consult the official sources.</p>
     <p class="mono small">MIT License · static site · browser polls USGS/USACE every 15 min</p>
   </footer>
 
   <script src="js/data.js"></script>
+  <script src="js/cwms-levels.js"></script>
+  <script src="js/nwps.js"></script>
+  <script src="js/views/teacup.js"></script>
+  <script src="js/views/tables.js"></script>
+  <script src="js/views/docs.js"></script>
+  <script src="js/router.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
