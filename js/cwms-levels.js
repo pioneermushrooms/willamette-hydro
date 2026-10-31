@@ -154,6 +154,15 @@
     return p;
   }
 
+  // Cached levels only (memory or localStorage), never fetches — for optional overlays.
+  function peekProjectLevels(code) {
+    var m = memory[code];
+    if (m && !m.then) return m;
+    var c = readCache(code, Date.now());
+    if (c) memory[code] = c;
+    return c;
+  }
+
   // ---- Evaluation ------------------------------------------------------------
 
   function addMonthsUTC(ms, k) {
@@ -289,6 +298,7 @@
     compact: compact,
     levelsUrl: levelsUrl,
     fetchProjectLevels: fetchProjectLevels,
+    peekProjectLevels: peekProjectLevels,
     pick: pick,
     evalSeasonal: evalSeasonal,
     valueAt: valueAt,

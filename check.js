@@ -18,6 +18,7 @@ const BPA = require('./scripts/fetch-bpa.js');
 const LV = require('./js/cwms-levels.js');
 const NW = require('./js/nwps.js');
 const TC = require('./js/teacup-core.js');
+const RT = require('./js/ratings.js');
 
 const LIVE = process.argv.includes('--live');
 let passes = 0;
@@ -252,6 +253,65 @@ console.log('teacup');
   check(cl.elevBottom === 825 && !cl.fromLevels, 'teacup: consLimits falls back to project constants');
 }
 
+// ---- 2e. Ratings (fixtures) -----------------------------------------------------------
+console.log('ratings');
+{
+  const near = (a, b, tol) => a != null && Math.abs(a - b) <= (tol || 1e-6);
+  // simple-rating as ARRAY (several versions); rating-points as {point:[...]} with string numbers
+  const arr = { 'rating-template': {}, 'simple-rating': [
+    { 'rating-spec-id': 'X.Elev-Forebay;Stor.Standard.CENWP', 'units-id': 'ft;ac-ft', 'effective-date': '1988-01-01T02:00:00Z', 'create-date': '2022-04-14T20:47:00Z', 'rating-points': { point: [{ ind: '700.0', dep: '100.0' }, { ind: '710.0', dep: '300.0' }] } },
+    { 'rating-spec-id': 'X.Elev-Forebay;Stor.Standard.CENWP', 'units-id': 'ft;ac-ft', 'effective-date': '2014-01-01T02:00:00Z', 'create-date': '2022-04-14T20:47:00Z', 'rating-points': { point: [{ ind: '710.0', dep: '500.0' }, { ind: '700.0', dep: '200.0' }, { ind: '720.0', dep: '900.0' }] } },
+    { 'rating-spec-id': 'X', 'units-id': 'ft;ac-ft', 'effective-date': '2099-01-01T00:00:00Z', 'rating-points': { point: [{ ind: '1', dep: '1' }] } }] };
+  const a = RT.parseCwms(arr, Date.parse('2026-10-30'));
+  check(a.kind === '1d' && a.versions === 3 && a.effective === Date.parse('2014-01-01T02:00:00Z'), 'ratings: array form -> latest version <= today (future version ignored)');
+  check(a.xs.join() === '700,710,720' && a.ys.join() === '200,500,900', 'ratings: string points parsed and sorted by ind');
+  // simple-rating as OBJECT
+  const obj = RT.parseCwms({ 'simple-rating': { 'units-id': 'ft;cfs', 'effective-date': '1954-01-01T02:00:00Z', 'rating-points': { point: [{ ind: '889.0', dep: '1610.0' }, { ind: '890.0', dep: '3010.0' }] } } });
+  check(obj.kind === '1d' && obj.xs.length === 2 && obj.units === 'ft;cfs', 'ratings: object form');
+  // 2-D: array of {other-ind, point}; a single-point curve serialized as an object
+  const two = RT.parseCwms({ 'simple-rating': { 'units-id': 'ft,ft;cfs', 'effective-date': '1954-01-01T02:00:00Z', 'rating-points': [
+    { 'other-ind': { position: '1', value: '1.0' }, point: [{ ind: '800', dep: '100' }, { ind: '900', dep: '200' }] },
+    { 'other-ind': { position: '1', value: '2.0' }, point: [{ ind: '800', dep: '300' }, { ind: '900', dep: '500' }] },
+    { 'other-ind': { position: '1', value: '0.5' }, point: { ind: '850', dep: '40' } }] } });
+  check(two.kind === '2d' && two.others.join() === '0.5,1,2' && !two.transposed && two.curves[0].xs.length === 1, 'ratings: 2-D parse, openings sorted, single-point object curve');
+  check(near(RT.interp2d(two, 1.5, 850).y, 275) && near(RT.interp2d(two, 1, 850).y, 150), 'ratings: 2-D interpolation between and on opening curves');
+  check(RT.interp2d(two, 3, 850).out === 'above-opening', 'ratings: 2-D opening out of range flagged');
+  // 2-D published with swapped axes (other-ind holds elevations) -> transposed
+  const sw = RT.parseCwms({ 'simple-rating': { 'units-id': 'ft,ft;cfs', 'effective-date': '2000-01-01T00:00:00Z', 'rating-points': [
+    { 'other-ind': { position: '1', value: '1658.0' }, point: [{ ind: '0.25', dep: '70' }, { ind: '0.5', dep: '140' }] },
+    { 'other-ind': { position: '1', value: '1660.0' }, point: [{ ind: '0.25', dep: '90' }, { ind: '0.5', dep: '180' }] }] } });
+  check(sw.transposed && sw.others.join() === '0.25,0.5' && sw.curves[1].xs.join() === '1658,1660' && sw.curves[1].ys.join() === '140,180', 'ratings: swapped 2-D axes detected and transposed');
+  let threw = false; try { RT.parseCwms({ message: 'Failed to process request' }); } catch (e) { threw = true; }
+  check(threw, 'ratings: error payload rejected');
+
+  // USGS RDB (exsa) with comments, header, format row, STOR flag
+  const rdb = ['# //WARNING The stage-discharge rating provided in this file should be', '# //RATING SHIFTED="20260603161002 PST"',
+    '# //RATING ID="32.0" TYPE="STGQ" NAME="stage-discharge" AGING=????', 'INDEP\tSHIFT\tDEP\tSTOR', '16N\t16N\t16N\t1S',
+    '1.00\t0.30\t2800.00\t', '1.01\t0.30\t2815.50\t*', '1.02\t0.30\t2831.00\t', ''].join('\n');
+  const u = RT.parseUsgsRdb(rdb);
+  check(u.xs.join() === '1,1.01,1.02' && u.ys[1] === 2815.5 && u.shift[0] === 0.3, 'ratings: USGS rdb rows parsed (format row skipped)');
+  check(u.ratingId === '32.0' && u.shifted === '2026-06-03' && !u.baseOnly, 'ratings: USGS rating id + shift date');
+  check(RT.parseUsgsRdb('# //WARNING This rating does not include any shifts that may have been\nINDEP\tSHIFT\tDEP\tSTOR\n16N\t16N\t16N\t1S\n').baseOnly &&
+    RT.parseUsgsRdb('# nothing here\n').xs.length === 0, 'ratings: base-only flag; empty file -> no rows');
+  // gage height is looked up directly (DEP already includes the shift; verified against live NWIS)
+  check(near(RT.interp(u.xs, u.ys, 1.005).y, 2807.75), 'ratings: USGS lookup by gage height (no extra shift)');
+
+  // interpolation
+  check(near(RT.interp([700, 710, 720], [200, 500, 900], 705).y, 350) && RT.interp([700, 710], [1, 2], 710).y === 2, 'ratings: forward interpolation');
+  check(RT.interp([700, 710], [1, 2], 699).out === 'below' && RT.interp([700, 710], [1, 2], 711).out === 'above', 'ratings: out of range flagged');
+  check(near(RT.inverse([700, 710, 720], [200, 500, 900], 700).x, 715), 'ratings: reverse interpolation');
+  check(RT.inverse([1, 2, 3], [5, 4, 6], 4.5).notMonotonic, 'ratings: reverse refused when not monotonic');
+  check(RT.nearestIndex([1, 2, 3, 4], 2.6) === 2, 'ratings: nearest row');
+  const csvExpected = 'A (ft),"B, ""x""' + '"\r\n1,"a,b"\r\n2,\r\n';
+  check(RT.toCSV(['A (ft)', 'B, "x"'], [[1, 'a,b'], [2, null]]) === csvExpected, 'ratings: CSV quoting');
+  check(RT.cwmsUrl('LOP.Elev-Forebay;Stor.Standard.CENWP') === 'https://cwms-data.usace.army.mil/cwms-data/ratings/LOP.Elev-Forebay%3BStor.Standard.CENWP?office=NWDP' &&
+    RT.cwmsUrl('LOP-RegulatingOutlets.Opening,Elev-Forebay;Flow.Standard.CENWP').includes('Opening%2CElev-Forebay%3BFlow'), 'ratings: ids URL-encoded (; and ,)');
+  check(RT.cwmsDefs('area', 'DEX').length === 0 && RT.cwmsDefs('area', 'LOP').length === 1 && RT.cwmsDefs('storage', 'DEX').length === 1, 'ratings: catalog (no DEX area)');
+  const allR = RT.allDefs();
+  check(allR.filter((d) => d.group === 'storage').length === 8 && allR.filter((d) => d.group === 'area').length === 7 &&
+    allR.filter((d) => d.key === 'spillway').length === 8 && allR.filter((d) => d.group === 'usgs').length === 6, 'ratings: catalog counts storage 8 / area 7 / spillway 8 / USGS 6');
+}
+
 // ---- 3. Page wiring ---------------------------------------------------------
 console.log('page');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
@@ -265,11 +325,13 @@ check(!/illustrative/i.test(html), 'no "illustrative" wording left in page');
   const ref = m.replace(/^(?:src|href)="/, '').replace(/"$/, '');
   check(fs.existsSync(path.join(__dirname, ref)), 'referenced file exists: ' + ref);
 });
-['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'js/router.js', 'js/teacup-core.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
+['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'js/router.js', 'js/teacup-core.js', 'js/ratings.js', 'scripts/check-links.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
 ['overview', 'teacup', 'tables', 'docs'].forEach((r) => {
   check(html.includes('href="#/' + r + '"') && html.includes('data-view="' + r + '"'), 'route + view exist: ' + r);
 });
 check(html.indexOf('js/teacup-core.js') > html.indexOf('js/cwms-levels.js') && html.indexOf('js/teacup-core.js') < html.indexOf('js/views/teacup.js'), 'script order: teacup-core after levels, before teacup view');
+check(!/biological-opinion-upper-willamette-valley/.test(fs.readFileSync(path.join(__dirname, 'js', 'views', 'docs.js'), 'utf8')), 'docs: 404 BiOp URL not linked');
+check((fs.readFileSync(path.join(__dirname, 'js', 'views', 'docs.js'), 'utf8').match(/target="_blank" rel="noopener"/g) || []).length >= 1, 'docs: external links open in new tab with rel=noopener');
 check(/Published target — not a statement of current operations\./.test(fs.readFileSync(path.join(__dirname, 'js', 'views', 'teacup.js'), 'utf8')), 'teacup view carries the mandatory target disclaimer');
 check(html.indexOf('js/cwms-levels.js') < html.indexOf('js/router.js') && html.indexOf('js/router.js') < html.indexOf('js/app.js') &&
   html.indexOf('js/views/docs.js') < html.indexOf('js/router.js'), 'script order: modules, views, router, app');
@@ -389,6 +451,32 @@ async function live() {
   for (const c of ['LOP', 'GPR', 'CGR']) check(LV.pick(got[c], targetIds.inj_elev) != null, `levels ${c}: elevation injunction target published`);
   check(LV.pick(got.HCR, targetIds.irrm_elev) != null, 'levels HCR: elevation Interim Risk Reduction Measure published');
 
+
+  // Published ratings: every catalogued rating must load (documented-unavailable ones are not catalogued)
+  console.log('\nPublished ratings (CWMS + USGS)');
+  const defs = RT.allDefs(), rrows = [];
+  let ri = 0;
+  await Promise.all([0, 1, 2, 3].map(async () => {
+    while (ri < defs.length) {
+      const d = defs[ri++];
+      try {
+        const e = await RT.load(d);
+        const r = e.data;
+        const xs = r.kind === '2d' ? [].concat(...r.curves.map((cv) => cv.xs)) : r.xs, ys = r.kind === '2d' ? [].concat(...r.curves.map((cv) => cv.ys)) : r.ys;
+        rrows.push({ rating: d.source === 'usgs' ? 'USGS ' + d.site + ' exsa' : d.id.replace('.Standard.CENWP', ''), kind: r.kind + (r.kind === '2d' ? ' ' + r.others.length + ' openings' : '') + (r.transposed ? ' (transposed)' : ''),
+          points: xs.length, x: `${Math.min(...xs)}–${Math.max(...xs)} ${d.xu}`, y: `${+Math.min(...ys).toPrecision(4)}–${+Math.max(...ys).toPrecision(6)} ${d.yu}`,
+          effective: d.source === 'usgs' ? 'rating ' + r.ratingId + ', shifts ' + r.shifted + (r.baseOnly ? ' (base only)' : '') : new Date(r.effective).toISOString().slice(0, 10) });
+        check(xs.length > 0, `rating ${d.id} has points`);
+      } catch (err) {
+        rrows.push({ rating: d.id, kind: 'FAILED', points: 0, x: err.message });
+        check(false, `rating ${d.id}: ${err.message}`);
+      }
+    }
+  }));
+  rrows.sort((a, b) => (a.rating < b.rating ? -1 : 1));
+  console.table(rrows);
+  console.log('Documented unavailable (not catalogued): DEX area; ' + Object.entries(RT.UNAVAILABLE.structures).map(([k, v]) => k + ' (' + v + ')').join('; '));
+
   // BPA: parse the real file
   try {
     const text = await BPA.fetchText(BPA.SOURCE);
@@ -403,7 +491,15 @@ async function live() {
   }
 }
 
-(LIVE ? live() : Promise.resolve()).then(() => {
+// --links: verify every external link on the Docs page (scripts/check-links.js)
+const LINKS = process.argv.includes('--links');
+async function links() {
+  console.log('\nDocs links');
+  const bad = await require('./scripts/check-links.js').main();
+  check(bad === 0, 'all Docs links reachable (' + bad + ' failed)');
+}
+
+(LIVE ? live() : Promise.resolve()).then(() => (LINKS ? links() : null)).then(() => {
   console.log('\n' + passes + ' passed, ' + failures + ' failed' + (LIVE ? '' : '  (run with --live to test real APIs)'));
   process.exit(failures ? 1 : 0);
 }, (e) => { console.error(e); process.exit(1); });
