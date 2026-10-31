@@ -70,7 +70,7 @@ Readings older than 3 hours get a STALE tag.
 
 ## Pages (hash routes)
 
-`#/overview` is the live dashboard (default). `#/teacup` is the basin teacup and lake ruler. `#/tables` and `#/docs` are placeholders for later stages.
+`#/overview` is the live dashboard (default). `#/teacup` is the basin teacup and lake ruler. `#/tables` has the published rating tables and `#/docs` the documents and data sources.
 Plain anchors (`#trends`, `#rivers`, …) stay on Overview and scroll.
 
 ## Teacup view (`#/teacup`)
@@ -103,6 +103,42 @@ Level availability (live, 2026-10-30):
 | GPR | 7 | 7/7 | Injunction-Target (924.7 ft today) |
 | CGR | 7 | 7/7 | Injunction-Target (1,510.6 ft today) |
 | FRN, COT, DOR | 7 | 7/7 | none published |
+
+## Reports & Tables (`#/tables`)
+
+These are **published** rating tables, not live data.
+- Pick a rating type, then a project, gauge or structure. Each rating is fetched only when selected, with 3 tries, and cached for 7 days in memory and localStorage as compact arrays.
+- Each rating shows:
+  - its provenance: source, effective and create dates, the number of published versions, a link to the API, and "use for reference only";
+  - a lookup with reverse lookup where the curve is monotonic, flagging out-of-range input, plus a **Use current** button with the LIVE pool or gage height;
+  - a curve chart with hover readout and published-level markers when those levels are already cached;
+  - a paged table (50 rows) with "jump to lookup", and a CSV download.
+
+| Type | CWMS / USGS id | Available | Unavailable |
+|---|---|---|---|
+| Elevation–storage | `<P>.Elev-Forebay;Stor.Standard.CENWP` | all 8 | — |
+| Elevation–area | `<P>.Elev-Forebay;Area.Standard.CENWP` | 7 | DEX (CWMS returns HTTP 500) |
+| Spillway, free flow | `<P>-Spillway.Elev-Forebay;Flow-Free.Standard.CENWP` | all 8 | — |
+| Spillway gates (2-D) | `<P>-Spillway.Opening,Elev-Forebay;Flow.Standard.CENWP` | LOP, HCR, DEX, GPR, CGR, FRN | COT, DOR (HTTP 500) |
+| Regulating outlets (2-D) | `<P>-RegulatingOutlets.Opening,Elev-Forebay;Flow…`, CGR `-RegOutlets`, `-1Gate`, `-2Gates`, FRN `-SluiceGate` | LOP, HCR, GPR, FRN, COT, DOR, CGR (variants), FRN sluice | DEX, CGR base id (HTTP 500) |
+| USGS stage–discharge | `get_ratings?site_no=<site>&file_type=exsa` (nwis host) | all 6 | — |
+
+Notes:
+- **2-D gate ratings** parse cleanly as opening × elevation grids, so they are implemented. You choose a gate opening and an elevation; openings between published curves are interpolated. CGR's gated-spillway rating publishes its axes swapped (elevations in the opening slot). It is detected, transposed, and flagged on the page.
+- **USGS exsa:** look-ups use the gage height (INDEP) directly. DEP is the discharge USGS computes for that gage height with the shift already applied. This was verified against live NWIS discharge at five gauges: at Harrisburg, 1.86 ft gives 4,194 cfs from the table versus 4,190 cfs live. Adding SHIFT to INDEP would be wrong (3,673 cfs). SHIFT is shown for information only.
+- **Jasper's file** is a base rating without shifts, as USGS states in the file.
+- **Eugene** has a rating file (rating 3.0, shifts 2023) even though no live discharge is published there. It is shown with that caveat.
+
+## Docs (`#/docs`)
+
+Verified public documents:
+- the WVS EIS page, the June 23, 2026 SEIS ROD and Final SEIS Appendix N;
+- the injunction page, the 2024 NMFS BiOp landing page and the injunction RM&E index;
+- the 7 water control manuals (2017 redacted public versions; LOP and DEX share one);
+- an interim-operations summary in our own words;
+- a data-sources table and a disclaimer.
+
+Run `node scripts/check-links.js` (or `node check.js --links`) to re-check every link. It sends a browser User-Agent and a Range request, and 200/206 pass. Pages on nwp.usace.army.mil may answer 403 to bots, which is accepted. water.usace.army.mil ignores Range, sends the whole PDF and is sometimes slow, so each link gets 3 tries.
 
 ## NOAA NWPS (flood stages + forecasts)
 
@@ -163,7 +199,9 @@ js/cwms-levels.js               CWMS location levels: fetch + 24 h cache + seaso
 js/nwps.js                      NOAA NWPS flood categories + NWS forecasts
 js/router.js                    hash router (#/overview, #/teacup, #/tables, #/docs)
 js/teacup-core.js               pure Teacup helpers (percent full, rule delta, next target changes, ruler scale)
-js/views/*.js                   non-overview views (teacup.js; tables/docs placeholders)
+js/views/*.js                   non-overview views (teacup, tables, docs)
+js/ratings.js                   published ratings: CWMS + USGS exsa parsers, interpolation, CSV, 7-day cache
+scripts/check-links.js          re-runnable check of every Docs link
 scripts/fetch-bpa.js            BPA download + parser (DST-aware), writes data/bpa.json
 data/bpa.json                   latest BPA balancing-authority hydro/load, last 48 h at 5-min
 .github/workflows/update-bpa.yml  scheduled BPA refresh
