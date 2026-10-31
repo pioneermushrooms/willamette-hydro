@@ -29,6 +29,8 @@
     range: '7d',
     riverParam: 'flow',   // trend chart for river gauges: 'flow' | 'stage' (flood bands + NWS stage forecast)
     nwps: null,           // { <stationId>: { lid, gauge, error } } from js/nwps.js
+    tdg: null,            // { DEX|CGR: { series, error } } from js/tdg.js
+    snow: null,           // { fetchedAt, stations, error } from js/snotel.js
     angles: {},
     geom: null
   };
@@ -172,6 +174,12 @@
     return next;
   }
 
+  // Keep the last good TDG series when a later request fails (it then ages into STALE).
+  function mergeTdg(prev, next) {
+    if (prev) Object.keys(next).forEach(function (k) { if (!next[k].series && prev[k] && prev[k].series) next[k] = prev[k]; });
+    return next;
+  }
+
   function poll() {
     if (state.fetching) return;
     state.fetching = true;
@@ -179,12 +187,16 @@
     renderFeed();
     tickClock();
     var nwpsP = H.nwps ? H.nwps.loadAll().catch(function () { return null; }) : Promise.resolve(null);
-    Promise.all([H.loadAll({ bpaUrl: BPA_URL }), nwpsP]).then(function (res) {
+    var tdgP = H.tdg ? H.tdg.loadAll().catch(function () { return null; }) : Promise.resolve(null);
+    var snowP = H.snotel ? H.snotel.load().catch(function () { return null; }) : Promise.resolve(null);
+    Promise.all([H.loadAll({ bpaUrl: BPA_URL }), nwpsP, tdgP, snowP]).then(function (res) {
+      if (res[2]) state.tdg = mergeTdg(state.tdg, res[2]);
+      if (res[3]) state.snow = res[3].error && state.snow && !state.snow.error ? state.snow : res[3];
       var snap = res[0];
       state.snap = merge(state.snap, snap);
       state.nwps = mergeNwps(state.nwps, res[1]);
       // Share the live snapshot with other views (Teacup) — they must not refetch it.
-      H.live = { snap: state.snap, nwps: state.nwps };
+      H.live = { snap: state.snap, nwps: state.nwps, tdg: state.tdg };
       document.dispatchEvent(new CustomEvent('hydro:data'));
       state.fetching = false;
       state.nextPollAt = Date.now() + POLL_MS;
@@ -226,6 +238,14 @@
       var okN = lids.filter(function (id) { return state.nwps[id].gauge; }).length;
       b.push('<span class="badge ' + (okN === lids.length ? 'ok' : okN ? 'warn' : 'err') + '" title="NOAA NWPS flood categories + NWS/NWRFC forecasts">NOAA NWPS ' +
         (okN === lids.length ? '✓ ' : '') + okN + '/' + lids.length + ' gauges</span>');
+    }
+    if (state.tdg) {
+      var tk = Object.keys(state.tdg), tok = tk.filter(function (k) { return state.tdg[k].series && state.tdg[k].series.t.length; }).length;
+      b.push('<span class="badge ' + (tok === tk.length ? 'ok' : tok ? 'warn' : 'err') + '" title="CWMS TDG % saturation, Dexter + Cougar tailwater">CWMS TDG ' + (tok === tk.length ? '✓ ' : '') + tok + '/' + tk.length + '</span>');
+    }
+    if (state.snow) {
+      var sn = H.snotel.STATIONS.length, sok = H.snotel.STATIONS.filter(function (x) { return state.snow.stations[x.triplet]; }).length;
+      b.push('<span class="badge ' + (sok === sn ? 'ok' : sok ? 'warn' : 'err') + '" title="NRCS SNOTEL daily snowpack">SNOTEL ' + (sok === sn ? '✓ ' : '') + sok + '/' + sn + '</span>');
     }
     b.push('<span class="badge plain">Fetched ' + stamp(s.fetchedAt) + '</span>');
     $('#feed-badges').innerHTML = b.join('');
@@ -536,6 +556,34 @@
     return h + '</div>';
   }
 
+  // ---- TDG (Dexter / Cougar tailwater) --------------------------------------
+
+  function tdgChip(p) {
+    if (!H.tdg || !H.tdg.SERIES[p.code]) return '';
+    return H.tdg.chipHTML(p.code, state.tdg ? state.tdg[p.code] : null, stamp);
+  }
+
+  // ---- ODEQ 2006 TMDL temperature target (published level) -------------------
+  // Drawn only where a USGS temperature gauge sits directly below the project.
+  var ODEQ_AT = {
+    'middle-fork-jasper': { code: 'DEX', label: 'ODEQ 2006 TMDL target for DEX/LOP (published; applies at the dam tailwater, nearest gauge shown for context)' }
+  };
+  var odeqLoading = {};
+
+  function odeqEntry(stationId) {
+    var cfg = ODEQ_AT[stationId], LV = H.levels;
+    if (!cfg || !LV) return null;
+    var lv = LV.peekProjectLevels(cfg.code);
+    if (!lv) {
+      if (!odeqLoading[cfg.code]) {
+        odeqLoading[cfg.code] = true;
+        LV.fetchProjectLevels(cfg.code).then(function () { renderChart(false); renderDetails(); }, function () { odeqLoading[cfg.code] = 'failed'; renderChart(false); });
+      }
+      return { cfg: cfg, entry: null, loading: odeqLoading[cfg.code] === true };
+    }
+    return { cfg: cfg, entry: LV.pick(lv, LV.IDS.odeqTemp, Date.now()) };
+  }
+
   // ---- Readouts ------------------------------------------------------------
 
   function reservoirReadouts(p, full) {
@@ -609,6 +657,7 @@
     if (isRes) {
       var d = projData(e);
       h += '<div class="detail-gauge">' + reservoirGauge(e, 'detail') + reservoirReadouts(e, true) + '</div>';
+      h += tdgChip(e);
       var w = d && window24(d.elev);
       if (w && w.t.length > 1) h += '<div>' + sparkSVG(w.t, w.v, { t0: w.t0, t1: w.t1 }) + '<div class="spark-cap"><span>−24 H</span><span>POOL ELEV · ft</span><span>NOW</span></div></div>';
       if (d) {
@@ -624,6 +673,12 @@
       var sd = stData(e);
       h += stationReadouts(e, true);
       h += floodBlock(e, true);
+      var oq = ODEQ_AT[e.id] && H.levels && H.levels.peekProjectLevels(ODEQ_AT[e.id].code) ? odeqEntry(e.id) : null;
+      if (oq && oq.entry) {
+        var ov = H.levels.evalSeasonal(oq.entry, Date.now());
+        h += '<p class="flood-note">ODEQ 2006 TMDL temperature target for DEX/LOP today: <b>' + (ov == null ? 'none published for today' : fmt(H.cToF(ov), 1) + ' °F (' + fmt(ov, 1) + ' °C)') +
+          '</b> <span class="hint">published target at the dam tailwater; Jasper is the nearest gauge, shown for context.</span></p>';
+      }
       var pw = sd && window24(H.stationPrimary(e, sd));
       if (pw && pw.t.length > 1) h += '<div>' + sparkSVG(pw.t, pw.v, { t0: pw.t0, t1: pw.t1 }) + '<div class="spark-cap"><span>−24 H</span><span>' + (e.primary === 'flow' ? 'FLOW · cfs' : 'STAGE · ft') + '</span><span>NOW</span></div></div>';
       if (sd) {
@@ -654,7 +709,7 @@
     $('#reservoir-cards').innerHTML = H.projects.map(function (p) {
       var d = projData(p), e = d && H.latest(d.elev);
       return cardShell(p, p.river + (p.hydro ? ' · hydropower' : ' · flood control'),
-        '<div class="detail-gauge">' + reservoirGauge(p, 'card-' + p.id) + reservoirReadouts(p, false) + '</div>' +
+        '<div class="detail-gauge">' + reservoirGauge(p, 'card-' + p.id) + reservoirReadouts(p, false) + '</div>' + tdgChip(p) +
         (d ? readingLine(e && e.t, 'Last pool reading') : '') + sourceLinks(p));
     }).join('');
     $('#river-cards').innerHTML = H.stations.map(function (s) {
@@ -674,6 +729,33 @@
         if (c) select(c.getAttribute('data-id'), true);
       });
     });
+  }
+
+  // ---- Snowpack (NRCS SNOTEL) --------------------------------------------------
+
+  var fSnowDay = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+
+  function snowSpark(o) {
+    if (!o || o.swe.v.length < 2) return '';
+    var v = o.swe.v.slice(-7), w = 120, h = 28, hi = Math.max(1, Math.max.apply(null, v));
+    var d = v.map(function (x, i) { return (i ? 'L' : 'M') + ((i / (v.length - 1)) * w).toFixed(1) + ' ' + (h - 2 - (x / hi) * (h - 4)).toFixed(1); }).join('');
+    return '<svg class="snow-spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true"><line x1="0" x2="' + w + '" y1="' + (h - 2) + '" y2="' + (h - 2) + '" class="snow-base"/><path d="' + d + '"/></svg>';
+  }
+
+  function renderSnow() {
+    var box = $('#snow-grid');
+    if (!box || !H.snotel) return;
+    var sn = state.snow;
+    if (!sn) { box.innerHTML = '<p class="na loading">Loading SNOTEL…</p>'; return; }
+    if (sn.error && !Object.keys(sn.stations).length) { box.innerHTML = '<p class="warntext">SNOTEL data unavailable (' + esc(sn.error) + ').</p>'; return; }
+    box.innerHTML = '<table class="snow-table"><thead><tr><th>Station</th><th>SWE</th><th>Depth</th><th>SWE 7 d</th><th>Last report</th></tr></thead><tbody>' +
+      H.snotel.STATIONS.map(function (st) {
+        var o = sn.stations[st.triplet];
+        var swe = o && o.swe.v.length ? o.swe.v[o.swe.v.length - 1] : null, dep = o && o.depth.v.length ? o.depth.v[o.depth.v.length - 1] : null;
+        return '<tr><td><b>' + esc(st.name) + '</b><span class="snow-meta">' + fmt(st.elevFt) + ' ft · ' + esc(st.basin) + '</span></td>' +
+          '<td class="mono">' + (swe == null ? NA : fmt(swe, 1) + ' in') + '</td><td class="mono">' + (dep == null ? NA : fmt(dep, 0) + ' in') + '</td>' +
+          '<td>' + (o ? snowSpark(o) : '') + '</td><td class="mono">' + (o && o.last ? fSnowDay.format(new Date(o.last + 'T12:00:00Z')) : NA) + '</td></tr>';
+      }).join('') + '</tbody></table>';
   }
 
   // ---- Selection -----------------------------------------------------------
@@ -713,13 +795,22 @@
       src = 'USACE CWMS (NWDP) ' + e.series.elev.name + '; dashed: ' + e.series.rule.name + ' (USACE rule curve, daily, linearly joined).';
     } else {
       var sd = stData(e);
-      param = e.params.indexOf('flow') >= 0 && state.riverParam === 'flow' ? 'flow' : 'stage';
-      s = sd && sd[param] && sd[param].t.length ? sd[param] : null;
-      unit = param === 'flow' ? 'cfs' : 'ft'; dec = param === 'flow' ? 0 : 2;
-      title = e.name + (param === 'flow' ? ' · discharge (cfs)' : ' · gage height (ft)');
-      src = 'USGS NWIS site ' + e.site + ', parameter ' + (param === 'flow' ? '00060 discharge' : '00065 gage height') + '. Values flagged P are provisional.' +
-        (e.params.indexOf('flow') < 0 ? ' This gauge has no discharge series, so stage is charted.' : '');
-      g = nwpsGauge(e);
+      param = state.riverParam === 'temp' ? 'temp' : e.params.indexOf('flow') >= 0 && state.riverParam === 'flow' ? 'flow' : 'stage';
+      if (param === 'temp') {
+        // USGS reports °C; the site displays °F (°C kept in tooltips/details).
+        var tc = sd && sd.tempC && sd.tempC.t.length ? sd.tempC : null;
+        s = tc ? { t: tc.t, v: tc.v.map(H.cToF), q: tc.q } : null;
+        unit = '°F'; dec = 1;
+        title = e.name + ' · water temperature (°F)';
+        src = 'USGS NWIS site ' + e.site + ', parameter 00010 water temperature (reported in °C, shown in °F). Values flagged P are provisional.';
+      } else {
+        s = sd && sd[param] && sd[param].t.length ? sd[param] : null;
+        unit = param === 'flow' ? 'cfs' : 'ft'; dec = param === 'flow' ? 0 : 2;
+        title = e.name + (param === 'flow' ? ' · discharge (cfs)' : ' · gage height (ft)');
+        src = 'USGS NWIS site ' + e.site + ', parameter ' + (param === 'flow' ? '00060 discharge' : '00065 gage height') + '. Values flagged P are provisional.' +
+          (e.params.indexOf('flow') < 0 ? ' This gauge has no discharge series, so stage is charted.' : '');
+        g = nwpsGauge(e);
+      }
     }
     // NWS forecast as a dashed extension to the right of "now" (river gauges only).
     var fc = { t: [], v: [] }, issued = null, bands = [], fcNote = '';
@@ -740,7 +831,7 @@
         fc = { t: [], v: [] };
         if (param === 'flow') fcNote = 'NWS forecast has no flow values for this gauge; switch to Stage.';
       }
-    } else if (!res && N && N.LIDS[e.id] && state.nwps && !g) {
+    } else if (!res && param !== 'temp' && N && N.LIDS[e.id] && state.nwps && !g) {
       fcNote = 'NWS data unavailable.';
     }
     if (param === 'stage' && g && g.thresholds) {
@@ -763,7 +854,21 @@
       for (var k = 0; k < ref.t.length; k++) if (ref.t[k] > start && ref.t[k] < end) { rt.push(ref.t[k]); rv.push(ref.v[k]); }
       var b = H.interpolate(ref, end); if (b != null) { rt.push(end); rv.push(b); }
     }
+    // ODEQ 2006 TMDL temperature target (published seasonal level, °C -> °F), Jasper only.
+    var tt = [], tv = [], tLabel = '', tNote = '';
+    if (param === 'temp') {
+      var oq = odeqEntry(e.id);
+      if (!oq) tNote = 'No ODEQ temperature target drawn: published targets apply at the dams, and no project sits directly above this gauge (e.g. Cottage Grove is far upstream of Goshen).';
+      else if (oq.loading) tNote = 'Loading ODEQ target…';
+      else if (!oq.entry) tNote = 'ODEQ target level unavailable.';
+      else {
+        H.levels.seasonalSeries(oq.entry, start, end).forEach(function (p) { tt.push(p[0]); tv.push(p[1] == null ? null : H.cToF(p[1])); });
+        tLabel = oq.cfg.label;
+        src += ' Dashed: ' + oq.cfg.code + '.Temp-Water.Inst.0.ODEQ-2006TMDL-Target (CWMS level, monthly steps).';
+      }
+    }
     return { e: e, res: res, start: start, end: end, now: now, t: t, v: v, q: q, rt: rt, rv: rv, unit: unit, dec: dec, title: title, src: src,
+      tt: tt, tv: tv, tLabel: tLabel, tNote: tNote,
       param: param, fc: fc, issued: issued, bands: bands, fcNote: fcNote, peak: g && g.peak, loading: !state.snap };
   }
 
@@ -777,6 +882,7 @@
       var noFlow = M.e.params.indexOf('flow') < 0;
       ps.querySelector('[data-param="flow"]').disabled = noFlow;
       ps.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-param') === M.param ? 'true' : 'false'); });
+      ps.querySelector('[data-param="temp"]').disabled = M.e.params.indexOf('tempC') < 0;
     }
     $('#chart-title').textContent = M.title;
     $('#trend-tag').textContent = (state.range === '24h' ? 'LAST 24 H' : 'LAST 7 D') + ' · LIVE SERIES';
@@ -796,7 +902,7 @@
     }
     msg.hidden = true;
 
-    var vals = M.v.concat(M.rv, M.fc.v);
+    var vals = M.v.concat(M.rv, M.fc.v, M.tv.filter(function (v) { return v != null; }));
     if (M.bands.length) vals.push(M.bands[0].lo); // always show at least the first flood band
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     var pad = (hi - lo || Math.abs(hi) * 0.01 || 1) * 0.08;
@@ -861,6 +967,20 @@
       var ry = y(M.rv[M.rv.length - 1]), above = ry - mt > 18;
       s += '<text class="ref-label" x="' + (W - mr - 6) + '" y="' + (above ? ry - 6 : ry + 14).toFixed(1) + '" text-anchor="end">RULE CURVE ' + fmt(M.rv[M.rv.length - 1], 1) + ' ft</text>';
     }
+    if (M.tt.length) {
+      var td = '', pen = false;
+      for (var ti = 0; ti < M.tt.length; ti++) {
+        if (M.tv[ti] == null) { pen = false; continue; }
+        td += (pen ? 'L' : 'M') + x(M.tt[ti]).toFixed(1) + ' ' + y(M.tv[ti]).toFixed(1); pen = true;
+      }
+      s += '<path class="tgt-line" d="' + td + '"/>';
+      var lastT = null;
+      for (var tj = M.tv.length - 1; tj >= 0; tj--) if (M.tv[tj] != null) { lastT = M.tv[tj]; break; }
+      if (lastT != null) {
+        var tyy = y(lastT), tAbove = tyy - mt > 18;
+        s += '<text class="tgt-label" x="' + (W - mr - 6) + '" y="' + (tAbove ? tyy - 6 : tyy + 14).toFixed(1) + '" text-anchor="end">ODEQ TARGET ' + fmt(lastT, 1) + ' °F</text>';
+      }
+    }
     s += '<path class="series' + (animate && !REDUCED ? ' draw' : '') + '" id="chart-line" d="' + d + '"/>';
     if (M.fc.t.length > 1) {
       var fd = '';
@@ -883,7 +1003,8 @@
     }
     state.geom = { M: M, x: x, y: y, ml: ml, pw: pw, W: W };
 
-    $('#chart-legend').innerHTML = '<span><i></i>' + (M.res ? 'Pool elevation (USACE)' : M.param === 'flow' ? 'Discharge (USGS)' : 'Gage height (USGS)') + '</span>' +
+    $('#chart-legend').innerHTML = '<span><i></i>' + (M.res ? 'Pool elevation (USACE)' : M.param === 'flow' ? 'Discharge (USGS)' : M.param === 'temp' ? 'Water temperature (USGS)' : 'Gage height (USGS)') + '</span>' +
+      (M.tt.length ? '<span><i class="tgt"></i>' + esc(M.tLabel) + '</span>' : '') + (M.tNote ? '<span class="na">' + esc(M.tNote) + '</span>' : '') +
       (M.rt.length > 1 ? '<span><i class="ref"></i>USACE rule curve</span>' : M.res ? '<span class="na">Rule curve: no data</span>' : '') +
       (M.fc.t.length > 1 ? '<span><i class="fc"></i>NWS/NWRFC forecast (via NOAA NWPS), issued ' + stamp(M.issued) + '</span>' : '') +
       (M.bands.length ? '<span><i class="fb"></i>NWS flood categories</span>' : '') +
@@ -897,6 +1018,11 @@
     if (M.res && M.rt.length) {
       var rNow = H.interpolate({ t: M.rt, v: M.rv }, M.t[n - 1]);
       if (rNow != null) stats += '<div><dt>vs rule curve</dt><dd>' + signed(M.v[n - 1] - rNow, 1) + ' ft</dd></div>';
+    }
+    if (M.tt.length) {
+      var tNow = null;
+      for (var tk = 0; tk < M.tt.length; tk++) if (M.tt[tk] <= M.t[n - 1] && M.tv[tk] != null) tNow = M.tv[tk];
+      if (tNow != null) stats += '<div><dt>vs ODEQ target</dt><dd>' + signed(M.v[n - 1] - tNow, 1) + ' °F</dd></div>';
     }
     if (M.fc.t.length > 1) {
       var pk = 1;
@@ -919,7 +1045,7 @@
         (M.res ? '<td>' + (r == null ? '—' : fmt(r, 1)) + '</td>' : '<td>' + esc(qualText(M.q[i]) || '—') + '</td>') + '</tr>');
     }
     $('#chart-table').innerHTML = '<table><caption class="skip">' + esc(M.title) + '</caption><thead><tr><th>Time (PT)</th><th>' +
-      (M.res ? 'Pool elev (ft)' : M.param === 'flow' ? 'Flow (cfs)' : 'Stage (ft)') + '</th><th>' + (M.res ? 'Rule curve (ft)' : 'Qualifier') + '</th></tr></thead><tbody>' +
+      (M.res ? 'Pool elev (ft)' : M.param === 'flow' ? 'Flow (cfs)' : M.param === 'temp' ? 'Temp (°F)' : 'Stage (ft)') + '</th><th>' + (M.res ? 'Rule curve (ft)' : 'Qualifier') + '</th></tr></thead><tbody>' +
       rows.join('') + '</tbody></table>';
   }
 
@@ -959,6 +1085,14 @@
       var r = H.interpolate({ t: g.M.rt, v: g.M.rv }, g.M.t[i]);
       if (r != null) extra = '<br>rule curve ' + fmt(r, 1) + ' ft';
     } else if (g.M.q[i]) extra = '<br>' + esc(qualText(g.M.q[i]));
+    if (g.M.param === 'temp') {
+      extra = '<br>' + fmt((g.M.v[i] - 32) * 5 / 9, 1) + ' °C' + extra;
+      if (g.M.tt.length) {
+        var tvv = null;
+        for (var q2 = 0; q2 < g.M.tt.length; q2++) if (g.M.tt[q2] <= g.M.t[i]) tvv = g.M.tv[q2];
+        if (tvv != null) extra += '<br>ODEQ target ' + fmt(tvv, 1) + ' °F';
+      }
+    }
     tip.hidden = false;
     tip.innerHTML = stamp(g.M.t[i]) + '<br><b>' + fmt(g.M.v[i], g.M.dec) + ' ' + g.M.unit + '</b>' + extra;
     var left = cx / scale + 14, tw = tip.offsetWidth;
@@ -1027,6 +1161,7 @@
     renderMapNodes();
     renderCards();
     renderDetails();
+    renderSnow();
     if (dataChanged) renderChart(true);
   }
 

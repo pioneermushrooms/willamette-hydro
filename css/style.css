@@ -758,6 +758,50 @@ i.lg-livept { width: 10px !important; height: 10px !important; border-radius: 50
   .doc-table td:first-child { font-weight: 700; color: var(--text); }
 }
 
+/* ---- TDG chips, ODEQ target, SNOTEL (v3 stage 4) ---------------------------- */
+
+.tdg-chip { display: grid; gap: 4px; padding: 8px 10px; background: #0b0c0e; border: 1px solid var(--line); border-left: 3px solid var(--ok); border-radius: 3px; min-width: 0; }
+.tdg-chip.tdg-over { border-color: rgba(255,176,0,0.6); border-left-color: var(--warn); background: rgba(255,176,0,0.07); }
+.tdg-chip.tdg-na { border-left-color: #5b6168; }
+.tdg-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tdg-lbl { font: 600 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
+.tdg-val { font: 700 18px var(--mono); color: var(--text); }
+.tdg-val small { font-size: 11px; color: var(--text-2); margin-left: 3px; font-weight: 400; }
+.tdg-over .tdg-val { color: var(--warn); }
+.tdg-spark { display: block; width: 100%; height: 40px; }
+.tdg-line { fill: none; stroke: var(--cyan); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.tdg-over .tdg-line { stroke: var(--warn); }
+.tdg-ref-line { stroke: var(--crit); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.tdg-foot { font-size: 11px; color: var(--muted); }
+.tdg-ref-key { display: inline-block; width: 14px; margin-right: 6px; vertical-align: middle; border-top: 1px dashed var(--crit); }
+#chart .tgt-line { fill: none; stroke: #e070ff; stroke-width: 2; stroke-dasharray: 6 4; }
+#chart .tgt-label { fill: #e070ff; font: 10px var(--mono); }
+.chart-legend i.tgt { border-top: 2px dashed #e070ff; }
+.snow-grid { padding: 0 6px; overflow-x: auto; }
+.snow-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.snow-table th, .snow-table td { padding: 7px 8px; border-bottom: 1px solid #1e2226; text-align: left; vertical-align: middle; }
+.snow-table th { font: 600 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.snow-table td b { display: block; color: var(--text); }
+.snow-meta { display: block; font-size: 11px; color: var(--muted); }
+.snow-spark { display: block; width: 100%; max-width: 120px; height: 28px; }
+.snow-spark path { fill: none; stroke: #9ec5f4; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.snow-base { stroke: #2c3238; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.snow-note { margin: 10px 6px 0; }
+.snow-note a { color: var(--cyan); }
+.seg button[data-param] { min-width: 0; }
+
+@media (max-width: 640px) {
+  .snow-table thead { display: none; }
+  .snow-table tr { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 0.8fr)); grid-template-areas: "name swe dep" "spark spark last"; gap: 2px 8px; padding: 8px 0; border-bottom: 1px solid #1e2226; }
+  .snow-table td { border: 0; padding: 0; }
+  .snow-table td:nth-child(1) { grid-area: name; } .snow-table td:nth-child(2) { grid-area: swe; }
+  .snow-table td:nth-child(3) { grid-area: dep; } .snow-table td:nth-child(4) { grid-area: spark; }
+  .snow-table td:nth-child(5) { grid-area: last; font-size: 11.5px; color: var(--muted); }
+  .snow-table td:nth-child(2)::before { content: "SWE "; color: var(--muted); font-size: 10px; }
+  .snow-table td:nth-child(3)::before { content: "depth "; color: var(--muted); font-size: 10px; }
+  .snow-table td:nth-child(5)::before { content: "report "; font-size: 10px; }
+}
+
 @media (max-width: 1100px) {
   .site-header { grid-template-columns: 1fr auto; }
   .site-header .notice { grid-column: 1 / -1; grid-row: 2; }

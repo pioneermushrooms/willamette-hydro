@@ -32,6 +32,11 @@ Willamette Valley, Oregon, built on **live public data** from USGS and USACE.
 | Total reservoir release | totals bar | this site | sum of latest fresh (≤ 3 h) outflows, "N of 8 reporting" | **derived** |
 | Basin conservation storage % | totals bar | this site | Σ max(0, stor − bottom) ÷ Σ (top − bottom) over the 7 projects with storage | **derived** |
 | BPA-wide hydro (MW) | totals bar | BPA balancing-authority file `baltwg.txt` | "Hydro" column, 5-minute MW | **live, copied every 30 min** by GitHub Actions. All hydro in BPA's balancing authority, **not** Willamette-specific |
+| TDG, % saturation (Dexter, Cougar tailwater) | DEX/CGR reservoir cards and details, Teacup detail | USACE CWMS time series | `DEXO.%-Saturation-TDG.Inst.0.0.MIXED-REV`, `CGRO.%-Saturation-TDG.Inst.0.0.MIXED-REV` (`%` URL-encoded as `%25`) | **live** (CWMS reported, provisional); 110 % line is a reference only |
+| ODEQ 2006 TMDL temperature target | Jasper water-temperature chart (dashed) and Jasper details | USACE CWMS location level | `DEX.Temp-Water.Inst.0.ODEQ-2006TMDL-Target` (°C → °F; monthly steps) | **published target**; defined at the dam tailwater, shown at the nearest gauge for context |
+| Snowpack: SWE, snow depth (in) | Overview → Snowpack (SNOTEL) | NRCS AWDB REST `/services/v1/data` | 8 SNOTEL stations: 388, 729, 710, 529, 719, 619, 1166, 733 (`:OR:SNTL`) | **live** (daily) |
+| Published rating tables | Tables page | CWMS ratings, USGS exsa | see Reports & Tables | **published** |
+| Structural levels, 30-yr stats, injunction / interim targets | Teacup page | CWMS location levels | see Teacup view | **published / derived** |
 | Per-dam generation MW, units online | removed | n/a | USACE power series are not public | **unavailable** |
 | Status lights | map, cards | this site | see below | **derived** (not an agency determination) |
 
@@ -103,6 +108,20 @@ Level availability (live, 2026-10-30):
 | GPR | 7 | 7/7 | Injunction-Target (924.7 ft today) |
 | CGR | 7 | 7/7 | Injunction-Target (1,510.6 ft today) |
 | FRN, COT, DOR | 7 | 7/7 | none published |
+
+## TDG, ODEQ temperature targets and snowpack
+
+- **TDG chips (Dexter, Cougar):**
+  - **Data:** CWMS hourly total-dissolved-gas % saturation in the tailwater, labelled "CWMS reported, provisional". It is fetched with the 15-min poll (3 tries; the `%` in the id is URL-encoded), and if a later request fails the last good data is kept and ages into STALE.
+  - **Display:** the latest value with its time, a 7-day sparkline, and a dashed **"110% - Oregon/EPA TDG standard (reference)"** line. The chip turns amber when the latest value is above 110 %.
+  - **Coverage:** no other project publishes a public TDG series, so no chip is shown there.
+- **ODEQ 2006 TMDL temperature targets:**
+  - **Data:** all 8 projects publish the seasonal level `<P>.Temp-Water.Inst.0.ODEQ-2006TMDL-Target`. It is in °C, with monthly step values and no target in winter. The latest version is 2012-01-01.
+  - **Jasper only:** the river trend chart has a **Temp** option (USGS °C shown in °F). Only Middle Fork at Jasper gets the DEX/LOP target line, labelled as defined at the dam tailwater with the nearest gauge shown for context.
+  - **Goshen:** not drawn, because Cottage Grove is far upstream. The chart says why.
+- **Snowpack (SNOTEL):**
+  - **What's shown:** a section on Overview (jump link "Snow") with 8 Willamette-basin stations, each with SWE, snow depth, a 7-day SWE sparkline, last report date, elevation and sub-basin (from the station HUC).
+  - **Data:** daily values, refetched at most hourly. 0 is shown as 0, and median normals are not shown because the API returned none.
 
 ## Reports & Tables (`#/tables`)
 
@@ -200,6 +219,8 @@ js/nwps.js                      NOAA NWPS flood categories + NWS forecasts
 js/router.js                    hash router (#/overview, #/teacup, #/tables, #/docs)
 js/teacup-core.js               pure Teacup helpers (percent full, rule delta, next target changes, ruler scale)
 js/views/*.js                   non-overview views (teacup, tables, docs)
+js/tdg.js                       CWMS TDG series (DEX/CGR tailwater) + chip renderer
+js/snotel.js                    NRCS SNOTEL snowpack loader/parser
 js/ratings.js                   published ratings: CWMS + USGS exsa parsers, interpolation, CSV, 7-day cache
 scripts/check-links.js          re-runnable check of every Docs link
 scripts/fetch-bpa.js            BPA download + parser (DST-aware), writes data/bpa.json
@@ -225,7 +246,7 @@ python3 -m http.server 8000
 ```sh
 for f in js/*.js check.js scripts/*.js; do node --check "$f"; done
 node check.js          # config shape, helpers, DST parsing, seasonal-level evaluator, NWPS parsing, page wiring (offline)
-node check.js --live   # + real USGS / CWMS / NWPS / CWMS levels / BPA requests, prints live/missing tables (Node 20+)
+node check.js --live   # + real USGS / CWMS / NWPS / CWMS levels / ratings / TDG / SNOTEL / BPA requests, prints live/missing tables (Node 20+)
 node scripts/fetch-bpa.js --stdout   # preview the BPA JSON without writing
 ```
 

@@ -51,10 +51,11 @@
     ['USGS NWIS Instantaneous Values', 'River discharge, gage height, water temperature (6 gauges)', 'LIVE', 'https://waterservices.usgs.gov/'],
     ['USGS NWIS rating files (exsa)', 'Stage–discharge ratings on the Tables page', 'PUBLISHED', 'https://nwis.waterdata.usgs.gov/nwisweb/get_ratings?site_no=14166000&file_type=exsa'],
     ['USACE CWMS Data API (office NWDP) — time series', 'Pool elevation, storage, outflow, computed inflow, daily rule curve', 'LIVE', 'https://cwms-data.usace.army.mil/cwms-data/'],
-    ['USACE CWMS — location levels', 'Structural elevations, conservation pool limits, 30-yr statistics, published targets', 'PUBLISHED', 'https://cwms-data.usace.army.mil/cwms-data/levels?office=NWDP&level-id-mask=LOP.Elev.Inst.0.Top%20of%20Dam'],
+    ['USACE CWMS — TDG time series', 'Total dissolved gas % saturation below Dexter and Cougar (CWMS reported, provisional)', 'LIVE', 'https://cwms-data.usace.army.mil/cwms-data/timeseries?office=NWDP&name=DEXO.%25-Saturation-TDG.Inst.0.0.MIXED-REV&unit=%25'],
+    ['USACE CWMS — location levels', 'Structural elevations, conservation pool limits, 30-yr statistics, published targets (incl. ODEQ 2006 TMDL temperature targets)', 'PUBLISHED', 'https://cwms-data.usace.army.mil/cwms-data/levels?office=NWDP&level-id-mask=LOP.Elev.Inst.0.Top%20of%20Dam'],
     ['USACE CWMS — ratings', 'Elevation–storage, elevation–area, spillway and outlet ratings', 'PUBLISHED', 'https://cwms-data.usace.army.mil/cwms-data/ratings/LOP-Spillway.Elev-Forebay%3BFlow-Free.Standard.CENWP?office=NWDP'],
     ['NOAA National Water Prediction Service (NWPS)', 'Flood categories, NWS/NWRFC river forecasts, historic crests', 'LIVE', 'https://water.noaa.gov/'],
-    ['NRCS AWDB / SNOTEL', 'Snowpack panel (planned; not shown yet)', 'LIVE (planned)', 'https://wcc.sc.egov.usda.gov/awdbRestApi/swagger-ui/index.html'],
+    ['NRCS AWDB / SNOTEL', 'Snowpack panel on Overview: SWE, snow depth, 7-day SWE (8 Willamette-basin stations)', 'LIVE (daily)', 'https://wcc.sc.egov.usda.gov/awdbRestApi/swagger-ui/index.html'],
     ['BPA balancing-authority totals', 'BPA-wide hydro generation (copied every 30 min by a GitHub Action)', 'LIVE (30 min)', 'https://transmission.bpa.gov/business/operations/Wind/baltwg.txt']
   ];
 

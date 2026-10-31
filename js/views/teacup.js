@@ -406,6 +406,7 @@
     info += '<div><dt>% full <span class="lbl">DERIVED</span></dt><dd>' + (m.p.noStorage ? 'n/a' : !m.pf ? na() : m.pf.below ? '<span class="below-txt">Below cons. pool</span>' : fmt(m.pf.clamped, 1) + '<span class="unit">%</span>') + '</dd>' +
       '<dd class="sub">' + (m.p.noStorage ? 'no conservation pool' : m.pfFromElev ? 'by elevation (storage missing)' : '(storage − bottom) ÷ (top − bottom)') + '</dd></div>';
     info += '</dl>';
+    if (H.tdg && H.tdg.SERIES[m.code]) info += H.tdg.chipHTML(m.code, H.live && H.live.tdg ? H.live.tdg[m.code] : null, stamp);
     if (R.stats) {
       info += '<p class="tc-stats mono">Today, 30-yr history thru 2023 <span class="lbl">DERIVED from published CWMS stats</span><br>' +
         'p05 ' + fmt(R.stats.statsP05, 1) + ' · p25 ' + fmt(R.stats.statsP25, 1) + ' · mean ' + fmt(R.stats.statsAve, 1) + ' · p75 ' + fmt(R.stats.statsP75, 1) + ' · p95 ' + fmt(R.stats.statsP95, 1) +

@@ -312,6 +312,40 @@ console.log('ratings');
     allR.filter((d) => d.key === 'spillway').length === 8 && allR.filter((d) => d.group === 'usgs').length === 6, 'ratings: catalog counts storage 8 / area 7 / spillway 8 / USGS 6');
 }
 
+// ---- 2f. TDG, SNOTEL, ODEQ (fixtures) -----------------------------------------------------
+console.log('tdg / snotel / odeq');
+{
+  const TD = require('./js/tdg.js'), SN = require('./js/snotel.js');
+  const p = TD.parse({ units: '%', values: [[1793300400000, 107, 0], [1793296800000, 106, 0], [1793304000000, null, 0]] });
+  check(p.t.length === 2 && p.t[0] < p.t[1] && p.v.join() === '106,107', 'tdg: parse sorts and drops nulls');
+  check(TD.level(110) === 'ok' && TD.level(110.1) === 'over' && TD.level(null) === null, 'tdg: >110 % flagged, 110 itself is not');
+  check(H.cwmsUrl(TD.SERIES.DEX.name, '%', 0, 1).includes('name=DEXO.%25-Saturation-TDG') && H.cwmsUrl(TD.SERIES.DEX.name, '%', 0, 1).includes('unit=%25'), 'tdg: % URL-encoded in name and unit');
+  const chip = TD.chipHTML('CGR', { series: { t: [Date.now() - 7200e3, Date.now() - 3600e3], v: [109, 111.5], name: 'x' } }, () => 'T', Date.now());
+  check(/tdg-over/.test(chip) && /111\.5/.test(chip) && chip.includes(TD.REF_LABEL) && /CWMS reported, provisional/.test(chip), 'tdg: chip over 110 coloured, labelled, reference text');
+  check(/no data/.test(TD.chipHTML('DEX', { series: { t: [], v: [] }, error: 'no data' })) && TD.chipHTML('LOP', {}) === '', 'tdg: no-data chip; no chip for projects without TDG');
+  check(TD.REF_LABEL === '110% - Oregon/EPA TDG standard (reference)', 'tdg: reference label text');
+
+  const sj = SN.parse([{ stationTriplet: '388:OR:SNTL', data: [
+    { stationElement: { elementCode: 'WTEQ', storedUnitCode: 'in' }, values: [{ date: '2026-10-28', value: 0 }, { date: '2026-10-29', value: 0.1 }] },
+    { stationElement: { elementCode: 'SNWD', storedUnitCode: 'in' }, values: [{ date: '2026-10-29', value: 0 }] },
+    { stationElement: { elementCode: 'PREC', storedUnitCode: 'in' }, values: [{ date: '2026-10-29', value: 0.8 }] }] },
+    { stationTriplet: '729:OR:SNTL', data: [{ stationElement: { elementCode: 'WTEQ' }, values: [{ date: '2026-10-29', value: null }] }] }]);
+  check(sj['388:OR:SNTL'].swe.v.join() === '0,0.1' && sj['388:OR:SNTL'].depth.v[0] === 0 && sj['388:OR:SNTL'].last === '2026-10-29', 'snotel: parse SWE/depth, zeros kept, last date');
+  check(sj['729:OR:SNTL'].swe.v.length === 0 && sj['729:OR:SNTL'].last === null, 'snotel: null values dropped');
+  check(SN.STATIONS.length === 8 && SN.STATIONS.every((s) => /^\d+:OR:SNTL$/.test(s.triplet) && s.elevFt > 0), 'snotel: 8 Oregon SNOTEL stations configured');
+  check(/stationTriplets=388:OR:SNTL,/.test(SN.url(9, Date.UTC(2026, 9, 30))) && /beginDate=2026-10-21&endDate=2026-10-30/.test(SN.url(9, Date.UTC(2026, 9, 30))) && /elements=WTEQ,SNWD/.test(SN.url()), 'snotel: request URL');
+
+  // ODEQ 2006 TMDL target: monthly steps (interpolate-string F), degC -> degF
+  const odeq = LV.compact({ levels: [{ 'location-level-id': 'DEX.Temp-Water.Inst.0.ODEQ-2006TMDL-Target', 'level-units-id': 'C', 'level-date': '2012-01-01T08:00:00Z',
+    'interval-origin': '2012-01-01T08:00:00Z', 'interval-months': 12, 'interpolate-string': 'F',
+    'seasonal-values': [{ 'offset-months': 0, 'offset-minutes': 0 }, { value: 6.5, 'offset-months': 3, 'offset-minutes': 0 }, { value: 10.222, 'offset-months': 9, 'offset-minutes': 0 }, { 'offset-months': 11, 'offset-minutes': 0 }] }] }, 'DEX');
+  const ov = LV.valueAt(odeq, LV.IDS.odeqTemp, Date.parse('2026-10-30T20:00:00Z'));
+  check(ov === 10.222 && Math.abs(H.cToF(ov) - 50.4) < 0.05, 'odeq: step value today 10.222 °C = 50.4 °F');
+  check(LV.valueAt(odeq, LV.IDS.odeqTemp, Date.parse('2026-12-15T20:00:00Z')) === null && LV.valueAt(odeq, LV.IDS.odeqTemp, Date.parse('2026-06-15T20:00:00Z')) === 6.5, 'odeq: winter gap null; held value mid-year');
+  check(/ODEQ_AT = \{\s*'middle-fork-jasper'/.test(fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8')) && !/'coast-fork-goshen': \{ code/.test(fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8')),
+    'odeq: target drawn for Jasper only (not Goshen)');
+}
+
 // ---- 3. Page wiring ---------------------------------------------------------
 console.log('page');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
@@ -325,7 +359,7 @@ check(!/illustrative/i.test(html), 'no "illustrative" wording left in page');
   const ref = m.replace(/^(?:src|href)="/, '').replace(/"$/, '');
   check(fs.existsSync(path.join(__dirname, ref)), 'referenced file exists: ' + ref);
 });
-['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'js/router.js', 'js/teacup-core.js', 'js/ratings.js', 'scripts/check-links.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
+['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'js/router.js', 'js/teacup-core.js', 'js/ratings.js', 'scripts/check-links.js', 'js/tdg.js', 'js/snotel.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
 ['overview', 'teacup', 'tables', 'docs'].forEach((r) => {
   check(html.includes('href="#/' + r + '"') && html.includes('data-view="' + r + '"'), 'route + view exist: ' + r);
 });
@@ -476,6 +510,34 @@ async function live() {
   rrows.sort((a, b) => (a.rating < b.rating ? -1 : 1));
   console.table(rrows);
   console.log('Documented unavailable (not catalogued): DEX area; ' + Object.entries(RT.UNAVAILABLE.structures).map(([k, v]) => k + ' (' + v + ')').join('; '));
+
+
+  // TDG (CWMS), SNOTEL (NRCS AWDB), ODEQ targets (CWMS levels)
+  console.log('\nTDG / SNOTEL / ODEQ');
+  const TDl = require('./js/tdg.js'), SNl = require('./js/snotel.js');
+  const tdg = await TDl.loadAll();
+  for (const [k, o] of Object.entries(tdg)) {
+    const s = o.series, n = s ? s.t.length : 0;
+    check(n > 0, `TDG ${k} returns data` + (o.error ? ' (' + o.error + ')' : ''));
+    if (n) console.log(`  TDG ${k}: ${s.v[n - 1]} % at ${new Date(s.t[n - 1]).toISOString()} (${n} pts, 7-d range ${Math.min(...s.v)}–${Math.max(...s.v)} %)`);
+  }
+  const sn = await SNl.load({ force: true });
+  check(!sn.error, 'SNOTEL request ok' + (sn.error ? ' (' + sn.error + ')' : ''));
+  const srows = SNl.STATIONS.map((st) => {
+    const o = sn.stations[st.triplet];
+    check(o && o.swe.v.length > 0 && o.last, `SNOTEL ${st.triplet} ${st.name} returns SWE`);
+    return { station: st.name, triplet: st.triplet, swe_in: o ? o.swe.v.at(-1) : 'MISSING', depth_in: o && o.depth.v.length ? o.depth.v.at(-1) : 'MISSING', last: o ? o.last : '—' };
+  });
+  console.table(srows);
+  const odeqRows = [];
+  for (const c of ['LOP', 'HCR', 'DEX', 'GPR', 'CGR', 'FRN', 'COT', 'DOR']) {
+    const d = got[c];
+    if (!d || d instanceof Error) continue;
+    const e = LV.pick(d, LV.IDS.odeqTemp), v = e ? LV.evalSeasonal(e, Date.now()) : null;
+    odeqRows.push({ code: c, published: e ? 'yes (' + new Date(e.date).toISOString().slice(0, 10) + ')' : 'no', today_C: v == null ? '—' : v.toFixed(2), today_F: v == null ? '—' : H.cToF(v).toFixed(1) });
+  }
+  console.table(odeqRows);
+  check(odeqRows.find((r) => r.code === 'DEX' && r.published !== 'no'), 'ODEQ target published for DEX (drawn at Jasper)');
 
   // BPA: parse the real file
   try {

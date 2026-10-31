@@ -57,6 +57,7 @@
       <a href="#trends">Trends</a>
       <a href="#reservoirs">Reservoirs</a>
       <a href="#rivers">Rivers</a>
+      <a href="#snow">Snow</a>
     </nav>
     <section class="feed" aria-label="Data feed status">
       <div class="feed-badges" id="feed-badges" aria-live="polite">
@@ -101,6 +102,7 @@
         <div class="seg" id="param-seg" role="group" aria-label="River parameter" hidden>
           <button type="button" data-param="flow" aria-pressed="true">FLOW</button>
           <button type="button" data-param="stage" aria-pressed="false">STAGE</button>
+          <button type="button" data-param="temp" aria-pressed="false">TEMP</button>
         </div>
         <div class="seg" role="group" aria-label="Time range">
           <button type="button" data-range="24h" aria-pressed="false">24 H</button>
@@ -133,9 +135,18 @@
     <section id="rivers">
       <div class="section-head">
         <h2>River Stations</h2>
-        <span class="panel-tag mono">USGS NWIS · FLOW · STAGE · TEMP</span>
+        <span class="panel-tag mono">USGS NWIS · FLOW · STAGE · TEMP · NWS FLOOD</span>
       </div>
       <div class="card-grid" id="river-cards"></div>
+    </section>
+
+    <section class="panel" id="snow">
+      <div class="panel-head">
+        <h2>Snowpack (SNOTEL)</h2>
+        <span class="panel-tag mono">NRCS AWDB · DAILY · LIVE</span>
+      </div>
+      <div id="snow-grid" class="snow-grid"></div>
+      <p class="hint snow-note">Snow water equivalent (SWE) and snow depth, inches, from NRCS SNOTEL stations in the Willamette basin (HUC 170900). Daily values; the latest report is usually from the previous day. Zero is a real reading. Median normals are not shown. Source: <a href="https://wcc.sc.egov.usda.gov/awdbRestApi/" target="_blank" rel="noopener">NRCS AWDB REST API ↗</a></p>
     </section>
     </div>
 
@@ -164,6 +175,8 @@
   <script src="js/data.js"></script>
   <script src="js/cwms-levels.js"></script>
   <script src="js/nwps.js"></script>
+  <script src="js/tdg.js"></script>
+  <script src="js/snotel.js"></script>
   <script src="js/teacup-core.js"></script>
   <script src="js/ratings.js"></script>
   <script src="js/views/teacup.js"></script>
