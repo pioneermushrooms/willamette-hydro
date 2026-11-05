@@ -199,10 +199,24 @@
       // Share the live snapshot with other views (Teacup) — they must not refetch it.
       H.live = { snap: state.snap, nwps: state.nwps, tdg: state.tdg };
       document.dispatchEvent(new CustomEvent('hydro:data'));
+      loadConsLimits();
       state.fetching = false;
       state.nextPollAt = Date.now() + POLL_MS;
       state.pollTimer = setTimeout(poll, POLL_MS);
       renderAll(true);
+    });
+  }
+
+  // Fall Creek / Blue River: conservation limits from CWMS location levels (once per page load).
+  function loadConsLimits() {
+    if (!H.levels || !H.teacupCore) return;
+    H.projects.forEach(function (p) {
+      if (!p.consFromLevels || p.consTried) return;
+      p.consTried = 'loading';
+      H.levels.fetchProjectLevels(p.code).then(function (lv) {
+        var c = H.teacupCore.consLimits(lv, null, Date.now());
+        if (c.elevBottom != null && c.elevTop != null && c.elevTop > c.elevBottom) p.cons = c;
+      }, function () {}).then(function () { p.consTried = true; renderAll(false); });
     });
   }
 
@@ -403,6 +417,18 @@
 
   function reservoirGauge(p, key) {
     var d = projData(p), e = d && H.latest(d.elev), r = d && H.ruleToday(d.rule);
+    if (!p.cons && !p.powerPool) {
+      // Conservation limits not loaded yet (or not published): scale on recent pool and rule values.
+      var vals = [];
+      if (d && d.elev) vals = vals.concat(d.elev.v);
+      if (r) vals.push(r.v);
+      var lo = vals.length ? Math.floor(Math.min.apply(null, vals) - 5) : 0, hi = vals.length ? Math.ceil(Math.max.apply(null, vals) + 5) : 1;
+      return gaugeSVG(key, {
+        min: lo, max: hi, value: e ? e.v : null, marker: r ? r.v : null,
+        center: !d ? '…' : e ? fmt(e.v, 1) + ' ft' : '—', small: true, caption: p.consFromLevels && p.consTried !== true ? 'LIMITS LOADING' : '7-DAY RANGE',
+        aria: p.name + ' pool elevation ' + (e ? fmt(e.v, 1) + ' ft' : 'no data')
+      });
+    }
     if (!p.cons) {
       var b = p.powerPool;
       return gaugeSVG(key, {
@@ -597,14 +623,16 @@
       var pf = st ? H.percentFull(p, st.v) : null;
       h += kv('% full <span class="hint">derived</span>', !d ? LOADING : !pf ? NA : pf.below ? 'Below cons. pool' : fmt(pf.clamped, 1),
         pf && !pf.below ? '%' : '', pf && pf.below ? 'watchtext' : '', pf ? '(storage − bottom) ÷ conservation capacity' : '');
-    } else {
+    } else if (p.powerPool) {
       h += kv('% full', 'n/a', '', 'na', 'No conservation pool (run-of-river). Band ' + p.powerPool.elevBottom + '–' + p.powerPool.elevTop + ' ft');
+    } else {
+      h += kv('% full', p.consFromLevels && p.consTried !== true ? LOADING : NA, '', 'na', 'needs CWMS conservation limits');
     }
     h += kvVal('Outflow', val(out, 0, 'cfs', '', p.cbt ? 'hourly average' : ''));
     h += kvVal('Computed inflow', val(inn, 0, 'cfs', inn && inn.v < 0 ? 'neg' : '', inn ? (inn.v < 0 ? 'computed from storage change; negative as reported' : 'computed by USACE') : ''));
     if (full) {
       h += kvVal('Storage', p.noStorage ? { html: 'n/a', unit: '', cls: 'na', sub: 'not published' } : val(st, 0, 'ac-ft'));
-      if (p.cons) h += kv('Conservation pool', fmt(p.cons.elevBottom, 1) + '–' + fmt(p.cons.elevTop, 1), 'ft', '', 'CWMS bottom/top of conservation');
+      if (p.cons) h += kv('Conservation pool', fmt(p.cons.elevBottom, 1) + '–' + fmt(p.cons.elevTop, 1), 'ft', '', 'CWMS bottom/top of conservation' + (p.consFromLevels ? ' (read at runtime)' : ''));
     }
     return '<dl class="kv">' + h + '</dl>';
   }

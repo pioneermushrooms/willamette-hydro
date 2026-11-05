@@ -16,7 +16,7 @@
 
   var TZ = 'America/Los_Angeles';
   var DAY = 24 * 3600 * 1000;
-  var ORDER = ['LOP', 'HCR', 'DEX', 'GPR', 'CGR', 'FRN', 'COT', 'DOR'];
+  var ORDER = ['LOP', 'HCR', 'DEX', 'FAL', 'GPR', 'CGR', 'BLU', 'FRN', 'COT', 'DOR'];
   var INJUNCTION_URL = 'https://www.nwp.usace.army.mil/Locations/Willamette-Valley/Injunction/';
   var byCode = {};
   H.projects.forEach(function (p) { byCode[p.code] = p; });

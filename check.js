@@ -49,13 +49,14 @@ const eug = H.stations.find((s) => s.id === 'willamette-eugene');
 check(!eug.params.includes('flow') && eug.primary === 'stage', 'Eugene has no discharge; charts stage');
 check(H.stations.find((s) => s.id === 'mckenzie-coburg').name === 'McKenzie near Coburg', 'Coburg label');
 
-const expectProjects = { 'lookout-point': 'LOP', 'hills-creek': 'HCR', dexter: 'DEX', 'green-peter': 'GPR', cougar: 'CGR', 'fern-ridge': 'FRN', 'cottage-grove': 'COT', dorena: 'DOR' };
+const expectProjects = { 'lookout-point': 'LOP', 'hills-creek': 'HCR', dexter: 'DEX', 'green-peter': 'GPR', cougar: 'CGR', 'fern-ridge': 'FRN', 'cottage-grove': 'COT', dorena: 'DOR', 'fall-creek': 'FAL', 'blue-river': 'BLU' };
 const hydro = ['LOP', 'HCR', 'DEX', 'GPR', 'CGR'];
 const consLimits = {
   LOP: [825.0, 926.0, 113619, 438179], HCR: [1448.0, 1541.0, 155400, 350000], GPR: [922.0, 1010.0, 165628, 424402],
   CGR: [1532.0, 1690.0, 52200, 189000], COT: [750.0, 790.0, 3140, 31780], DOR: [770.5, 832.0, 7100, 72100], FRN: [353.0, 373.5, 2800, 97280]
 };
-check(H.projects.length === 8, '8 USACE projects');
+check(H.projects.length === 10, '10 USACE projects');
+['FAL', 'COT', 'DOR', 'FRN', 'BLU', 'CGR', 'LOP', 'DEX', 'HCR'].forEach((c) => check(H.projects.some((p) => p.code === c), 'required project present: ' + c));
 H.projects.forEach((p) => {
   const pre = 'project ' + p.code + ': ';
   check(expectProjects[p.id] === p.code, pre + 'id/code');
@@ -72,6 +73,9 @@ H.projects.forEach((p) => {
   if (p.code === 'DEX') {
     check(p.cons === null && p.series.stor === null, 'DEX: no conservation pool / no storage series');
     check(p.powerPool.elevBottom === 690 && p.powerPool.elevTop === 695, 'DEX: power pool band 690-695');
+  } else if (p.consFromLevels) {
+    check(p.cons === null && !p.powerPool, pre + 'conservation limits read from CWMS levels at runtime');
+    check(p.series.stor.name === p.code + '.Stor.Inst.0.0.MIXED-COMPUTED-REV', pre + 'storage series name');
   } else {
     const c = consLimits[p.code];
     check(p.cons.elevBottom === c[0] && p.cons.elevTop === c[1] && p.cons.storBottom === c[2] && p.cons.storTop === c[3], pre + 'CWMS conservation limits');
@@ -590,7 +594,7 @@ async function live() {
   });
   console.table(srows);
   const odeqRows = [];
-  for (const c of ['LOP', 'HCR', 'DEX', 'GPR', 'CGR', 'FRN', 'COT', 'DOR']) {
+  for (const c of ['LOP', 'HCR', 'DEX', 'FAL', 'GPR', 'CGR', 'BLU', 'FRN', 'COT', 'DOR']) {
     const d = got[c];
     if (!d || d instanceof Error) continue;
     const e = LV.pick(d, LV.IDS.odeqTemp), v = e ? LV.evalSeasonal(e, Date.now()) : null;

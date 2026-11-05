@@ -21,7 +21,7 @@ Willamette Valley, Oregon, built on **live public data** from USGS and USACE.
 | Gage height / stage (ft) | river cards, details, Eugene trend | USGS NWIS IV | parameter `00065`, all 6 sites | **live** |
 | Water temperature | river cards | USGS NWIS IV | parameter `00010` (°C), all 6 sites | **live** (converted to °F for display, °C shown too) |
 | 24 h change | river cards | this site | difference over the last 24 h of the series | **derived** |
-| Pool elevation (ft) | reservoir cards, gauge needle, trend | USACE CWMS Data API, office NWDP | `<P>.Elev-Forebay.Inst.0.0.MIXED-REV`, all 8 projects | **live** |
+| Pool elevation (ft) | reservoir cards, gauge needle, trend | USACE CWMS Data API, office NWDP | `<P>.Elev-Forebay.Inst.0.0.MIXED-REV`, all 10 projects | **live** |
 | Rule curve (ft) | gauge marker, "vs rule curve", dashed trend line | USACE CWMS | `<P>.Elev-RuleCurve.Inst.~1Day.0.CENWP-CALC` (daily values incl. the coming days) | **live** |
 | vs rule curve (ft) | reservoir cards | this site | pool elevation − today's rule-curve value | **derived** |
 | Storage (ac-ft) | details | USACE CWMS | `<P>.Stor.Inst.0.0.MIXED-COMPUTED-REV` (not DEX) | **live**; Dexter **unavailable** |
@@ -29,7 +29,7 @@ Willamette Valley, Oregon, built on **live public data** from USGS and USACE.
 | Outflow (cfs) | reservoir cards | USACE CWMS | LOP, GPR: `<P>.Flow-Out.Ave.1Hour.1Hour.CBT-REV` (hourly avg); others: `<P>.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV` | **live** |
 | Computed inflow (cfs) | reservoir cards | USACE CWMS | LOP, GPR: `<P>.Flow-In.Ave.15Minutes.6Hours.CBT-COMPUTED-REV`; others: `...MIXED-COMPUTED-REV` | **live (computed by USACE)**; can be negative and is shown as reported |
 | Conservation-pool limits | gauge scale, % full | CWMS location levels `<P>.Elev.Inst.0.Top/Bottom of Conservation`, `<P>.Stor.Inst.0.Top/Bottom of Conservation` (Dexter: Bottom/Top of Power, 690–695 ft) | hardcoded constants in `js/data.js`, effective 2026-10-30 | static reference |
-| Total reservoir release | totals bar | this site | sum of latest fresh (≤ 3 h) outflows, "N of 8 reporting" | **derived** |
+| Total reservoir release | totals bar | this site | sum of latest fresh (≤ 3 h) outflows, "N of 10 reporting" | **derived** |
 | Basin conservation storage % | totals bar | this site | Σ max(0, stor − bottom) ÷ Σ (top − bottom) over the 7 projects with storage | **derived** |
 | BPA-wide hydro (MW) | totals bar | BPA balancing-authority file `baltwg.txt` | "Hydro" column, 5-minute MW | **live, copied every 30 min** by GitHub Actions. All hydro in BPA's balancing authority, **not** Willamette-specific |
 | Hourly Snapshot: forebay elevation (HCR, LOP, DEX, CGR), Dexter tailwater (ft) | Snapshot strip, top of every page | USACE CWMS | `<P>.Elev-Forebay.Inst.0.0.MIXED-REV`, `DEX.Elev-Tailwater.Inst.0.0.MIXED-REV` (15-min) | **live**, refreshed every 5 min |
@@ -45,8 +45,10 @@ Willamette Valley, Oregon, built on **live public data** from USGS and USACE.
 | Status lights | map, cards | this site | see below | **derived** (not an agency determination) |
 
 Project codes: LOP Lookout Point, HCR Hills Creek, DEX Dexter, GPR Green Peter, CGR Cougar,
-COT Cottage Grove, DOR Dorena, FRN Fern Ridge. LOP, HCR, DEX, GPR and CGR are labelled
-"hydropower" as static project information. FRN, COT and DOR are flood-control projects.
+COT Cottage Grove, DOR Dorena, FRN Fern Ridge, FAL Fall Creek, BLU Blue River. LOP, HCR, DEX, GPR and CGR are labelled
+"hydropower" as static project information. FRN, COT, DOR, FAL and BLU are flood-control projects.
+
+**Fall Creek and Blue River** use the same CWMS series patterns as the other projects. Their conservation-pool limits are not hardcoded: they are read at runtime from the CWMS location levels `<P>.Elev.Inst.0.Top/Bottom of Conservation` and `<P>.Stor.Inst.0.Top/Bottom of Conservation`. Until those load (or if CWMS has none), the gauge scales to the recent pool and rule-curve values and % full shows no data. They are not yet on the Tables page.
 
 Endpoints:
 

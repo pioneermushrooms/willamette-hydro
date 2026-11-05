@@ -117,7 +117,15 @@
     { id: 'dorena', code: 'DOR', name: 'Dorena', river: 'Row River',
       purpose: 'Flood control', hydro: false,
       cons: { elevBottom: 770.5, elevTop: 832.0, storBottom: 7100, storTop: 72100 },
-      map: { x: 245, y: 455, lx: 10, ly: 18, anchor: 'start' } }
+      map: { x: 245, y: 455, lx: 10, ly: 18, anchor: 'start' } },
+    // Fall Creek and Blue River: conservation limits are read from CWMS location levels at
+    // runtime (consFromLevels) instead of hardcoded; until then the gauge shows elevation only.
+    { id: 'fall-creek', code: 'FAL', name: 'Fall Creek', river: 'Fall Creek',
+      purpose: 'Flood control', hydro: false, cons: null, consFromLevels: true,
+      map: { x: 318, y: 342, lx: 12, ly: 16, anchor: 'start' } },
+    { id: 'blue-river', code: 'BLU', name: 'Blue River', river: 'Blue River',
+      purpose: 'Flood control', hydro: false, cons: null, consFromLevels: true,
+      map: { x: 352, y: 176, lx: -12, ly: 4, anchor: 'end' } }
   ];
 
   projects.forEach(function (p) {
@@ -148,12 +156,18 @@
       { id: 'mckenzie', label: 'McKENZIE',
         points: [[425, 174], [360, 202], [330, 215], [290, 225], [260, 238], [235, 248], [205, 250]],
         labelAt: [372, 188], labelRotate: -18 },
+      { id: 'blue', label: 'BLUE R.',
+        points: [[368, 140], [358, 160], [352, 176], [348, 192], [345, 208]],
+        labelAt: [372, 152], labelRotate: -70 },
       { id: 'sf-mckenzie', label: 'S.F. McKENZIE',
         points: [[352, 310], [348, 285], [345, 262], [338, 238], [330, 215]],
         labelAt: [366, 318], labelRotate: -80 },
       { id: 'middle-fork', label: 'MIDDLE FORK',
         points: [[425, 492], [355, 455], [325, 430], [295, 405], [268, 382], [245, 360], [220, 335]],
         labelAt: [314, 447], labelRotate: 40 },
+      { id: 'fall-creek', label: 'FALL CR.',
+        points: [[372, 318], [342, 330], [318, 342], [290, 360], [262, 377]],
+        labelAt: [278, 380], labelRotate: -32 },
       { id: 'coast-fork', label: 'COAST FORK',
         points: [[178, 498], [185, 465], [195, 435], [208, 400], [215, 365], [220, 335]],
         labelAt: [178, 446], labelRotate: -72 },
@@ -402,7 +416,7 @@
 
   // USACE "teacup" definition, from live storage. pct may be < 0 or > 100; clamp only for display.
   function percentFull(p, stor) {
-    if (!p.cons || stor == null) return null;
+    if (!p.cons || stor == null || p.cons.storBottom == null || p.cons.storTop == null) return null;
     var pct = ((stor - p.cons.storBottom) / (p.cons.storTop - p.cons.storBottom)) * 100;
     return { pct: pct, clamped: Math.max(0, Math.min(100, pct)), below: stor < p.cons.storBottom, above: stor > p.cons.storTop };
   }
@@ -448,7 +462,7 @@
   function basinStorage(snap, now) {
     var num = 0, den = 0, n = 0, total = 0;
     projects.forEach(function (p) {
-      if (!p.cons) return;
+      if (!p.cons || p.cons.storBottom == null || p.cons.storTop == null) return;
       total++;
       var d = snap && snap.projects[p.id];
       var s = d && latest(d.stor);
