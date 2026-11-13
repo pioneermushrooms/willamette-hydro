@@ -312,8 +312,8 @@ console.log('ratings');
     RT.cwmsUrl('LOP-RegulatingOutlets.Opening,Elev-Forebay;Flow.Standard.CENWP').includes('Opening%2CElev-Forebay%3BFlow'), 'ratings: ids URL-encoded (; and ,)');
   check(RT.cwmsDefs('area', 'DEX').length === 0 && RT.cwmsDefs('area', 'LOP').length === 1 && RT.cwmsDefs('storage', 'DEX').length === 1, 'ratings: catalog (no DEX area)');
   const allR = RT.allDefs();
-  check(allR.filter((d) => d.group === 'storage').length === 8 && allR.filter((d) => d.group === 'area').length === 7 &&
-    allR.filter((d) => d.key === 'spillway').length === 8 && allR.filter((d) => d.group === 'usgs').length === 6, 'ratings: catalog counts storage 8 / area 7 / spillway 8 / USGS 6');
+  check(allR.filter((d) => d.group === 'storage').length === 10 && allR.filter((d) => d.group === 'area').length === 9 &&
+    allR.filter((d) => d.key === 'spillway').length === 8 && allR.filter((d) => d.group === 'usgs').length === 6, 'ratings: catalog counts storage 10 / area 9 / spillway 8 / USGS 6 (FAL, BLU: storage + area)');
 }
 
 // ---- 2f. TDG, SNOTEL, ODEQ (fixtures) -----------------------------------------------------

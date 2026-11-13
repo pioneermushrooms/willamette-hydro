@@ -184,8 +184,8 @@ These are **published** rating tables, not live data.
 
 | Type | CWMS / USGS id | Available | Unavailable |
 |---|---|---|---|
-| Elevation–storage | `<P>.Elev-Forebay;Stor.Standard.CENWP` | all 8 | — |
-| Elevation–area | `<P>.Elev-Forebay;Area.Standard.CENWP` | 7 | DEX (CWMS returns HTTP 500) |
+| Elevation–storage | `<P>.Elev-Forebay;Stor.Standard.CENWP` | all 10 (FAL, BLU not yet verified live) | — |
+| Elevation–area | `<P>.Elev-Forebay;Area.Standard.CENWP` | 9 (FAL, BLU not yet verified live) | DEX (CWMS returns HTTP 500) |
 | Spillway, free flow | `<P>-Spillway.Elev-Forebay;Flow-Free.Standard.CENWP` | all 8 | — |
 | Spillway gates (2-D) | `<P>-Spillway.Opening,Elev-Forebay;Flow.Standard.CENWP` | LOP, HCR, DEX, GPR, CGR, FRN | COT, DOR (HTTP 500) |
 | Regulating outlets (2-D) | `<P>-RegulatingOutlets.Opening,Elev-Forebay;Flow…`, CGR `-RegOutlets`, `-1Gate`, `-2Gates`, FRN `-SluiceGate` | LOP, HCR, GPR, FRN, COT, DOR, CGR (variants), FRN sluice | DEX, CGR base id (HTTP 500) |

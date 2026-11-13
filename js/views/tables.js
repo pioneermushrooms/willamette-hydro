@@ -116,7 +116,7 @@
     } else {
       h += '<div class="tc-chips" role="group" aria-label="Project">' + R.CODES.map(function (code) {
         var avail = R.cwmsDefs(st.group, code).length > 0;
-        var why = st.group === 'area' && R.UNAVAILABLE.area[code] ? R.UNAVAILABLE.area[code] : 'No rating of this type published for ' + code + '.';
+        var why = st.group === 'area' && R.UNAVAILABLE.area[code] ? R.UNAVAILABLE.area[code] : 'No rating of this type is catalogued on this site for ' + code + '.';
         return '<button type="button" class="chip" data-code="' + code + '" aria-pressed="' + (code === st.code) + '"' +
           (avail ? '' : ' disabled title="' + esc(why) + '" aria-label="' + esc(byCode[code].name + ': ' + why) + '"') + '>' + esc(byCode[code].name) + '</button>';
       }).join('') + '</div>';

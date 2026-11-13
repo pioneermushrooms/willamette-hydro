@@ -29,7 +29,10 @@
   var USGS = 'https://nwis.waterdata.usgs.gov/nwisweb/get_ratings?file_type=exsa&site_no=';
   var TTL_MS = 7 * 24 * 3600 * 1000;
   var CACHE_PREFIX = 'wvhd:rating:v1:';
-  var CODES = ['LOP', 'HCR', 'DEX', 'GPR', 'CGR', 'FRN', 'COT', 'DOR'];
+  var CODES = ['LOP', 'HCR', 'DEX', 'FAL', 'GPR', 'CGR', 'BLU', 'FRN', 'COT', 'DOR'];
+  // Spillway ratings verified for these eight; Fall Creek and Blue River list only storage and area
+  // (CWMS ids follow the same pattern but were not verified from this environment).
+  var SPILLWAY_CODES = ['LOP', 'HCR', 'DEX', 'GPR', 'CGR', 'FRN', 'COT', 'DOR'];
 
   // ---- Catalog (verified live 2026-10-30) --------------------------------------
   // Ratings that CWMS lists but answers with HTTP 500 are recorded as unavailable.
@@ -43,7 +46,7 @@
 
   var STRUCTURES = [
     { key: 'spillway', label: 'Spillway (free flow)', id: function (c) { return c + '-Spillway.Elev-Forebay;Flow-Free.Standard.CENWP'; },
-      codes: CODES },
+      codes: SPILLWAY_CODES },
     { key: 'spillwayGated', label: 'Spillway gates (2-D)', id: function (c) { return c + '-Spillway.Opening,Elev-Forebay;Flow.Standard.CENWP'; },
       codes: ['LOP', 'HCR', 'DEX', 'GPR', 'CGR', 'FRN'] },
     { key: 'ro', label: 'Regulating outlets (2-D)', id: function (c) { return c + '-RegulatingOutlets.Opening,Elev-Forebay;Flow.Standard.CENWP'; },
