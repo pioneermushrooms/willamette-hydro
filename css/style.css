@@ -1003,3 +1003,44 @@ i.yr-key-rule { display: inline-block; width: 18px; height: 0; border-top: 2px d
 .an-dots circle { fill: var(--cyan); stroke: #0a0c0e; stroke-width: 1.5; }
 .an-cross { stroke: var(--text-2); stroke-width: 1; stroke-dasharray: 2 3; }
 @media (max-width: 640px) { .zm-hint { margin-left: 0; width: 100%; } }
+
+/* ---- Trend Recorder layers and strips (js/layers.js) ------------------------ */
+.tl-bar { display: grid; gap: 6px; margin: 0 0 8px; }
+.tl-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tl-h { font: 600 10.5px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); min-width: 92px; }
+.tl-note { font-size: 11px; }
+.lvl-line { stroke: #8b939b; stroke-width: 1; stroke-dasharray: 6 3; }
+.lvl-line.lvl-topFlood, .lvl-line.lvl-topMaxFlood, .lvl-line.lvl-topDam { stroke: #c9ced3; stroke-dasharray: 2 3; }
+.lvl-line.lvl-spillwayCrest { stroke: #c9ced3; stroke-dasharray: 8 3 2 3; }
+.lvl-lab { fill: var(--text-2); font: 10px var(--mono); paint-order: stroke; stroke: #0a0c0e; stroke-width: 3px; }
+.chart-legend i.lg-lvl, .an-legend i.lg-lvl { border-top: 1px dashed #c9ced3; }
+.chart-legend i.lg-p95 { height: 10px; border: 0; background: rgba(200,200,190,0.18); }
+.chart-legend i.lg-p75 { height: 10px; border: 0; background: rgba(200,200,190,0.42); }
+.chart-legend i.lg-mean { border-top: 2px solid #f0efec; }
+.chart-legend i.lg-target { border-top: 2px dotted var(--tgt); }
+.strips { display: grid; gap: 6px; margin-top: 6px; }
+.strip { background: #0a0c0e; border: 1px solid var(--bezel-lo); border-radius: 4px; padding: 4px 0 2px; }
+.st-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 0 10px; font-size: 12px; color: var(--text-2); }
+.st-head b { color: var(--text); font-weight: 600; }
+.st-unit { color: var(--muted); font-size: 11px; }
+.st-key { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; }
+.st-key i { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--st); }
+.st-read { margin-left: auto; color: var(--text); font-size: 12px; }
+.st-svg { display: block; touch-action: pan-y; }
+.st-svg .axis line { stroke: var(--grid); } .st-svg .axis text { fill: var(--muted); font: 10px var(--mono); }
+.st-out { --st: #3987e5; } .st-in { --st: #d95926; } .st-a { --st: #3987e5; }
+.st-line { fill: none; stroke: var(--st); stroke-width: 1.75; stroke-linejoin: round; }
+.st-ref { stroke: var(--crit); stroke-width: 1; stroke-dasharray: 4 3; }
+.st-ref-lab { fill: var(--text-2); font: 9.5px var(--mono); }
+.st-cursor { stroke: var(--text-2); stroke-width: 1; stroke-dasharray: 2 3; }
+.st-msg { margin: 6px 10px; }
+.st-src { margin: 0 10px 2px; font-size: 10.5px; color: var(--muted); overflow-wrap: anywhere; }
+.years-box { min-width: 0; }
+.py-title { margin: 0 0 6px; }
+.tc-open { margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (max-width: 640px) { .tl-h { min-width: 0; width: 100%; } .st-read { margin-left: 0; width: 100%; } }
+@media (max-width: 640px) {
+  .trend-controls .seg[aria-label="Time range"] { display: flex; flex-wrap: wrap; width: 100%; }
+  .trend-controls .seg[aria-label="Time range"] button { flex: 1 0 22%; border-bottom: 1px solid #0a0b0c; }
+}
+#trends [hidden] { display: none !important; }

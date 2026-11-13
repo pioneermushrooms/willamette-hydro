@@ -103,7 +103,7 @@ A compact strip above the page tabs with the values recorded hourly:
 
 ## Long ranges on the rule-curve views (30 D, 6 MO, 1 YR)
 
-The Trend Recorder (Overview) has **24 H · 7 D · 30 D · 6 MO · 1 YR**; the Teacup lake chart has **YEAR · 30 D · 6 MO · 1 YR**. Code: `js/history.js`.
+The Trend Recorder (Overview) is the one time chart: **24 H · 7 D · 30 D · 6 MO · 1 YR · YEAR (this calendar year, Jan–Dec) · PAST YEARS**. The Teacup page links to it ("Open in Trend Recorder"). Code: `js/history.js`.
 
 - **30 D:** CWMS 15-minute pool elevation (same series as live). Daily grid lines, Mondays labelled.
 - **6 MO / 1 YR:** USGS daily lake elevation (62614, observation at 24:00) plus live CWMS readings (last one per hour) since the last daily value. Month grid lines and labels.
@@ -136,9 +136,24 @@ Plain anchors (`#trends`, `#rivers`, …) stay on Overview and scroll.
 
 ## Teacup view (`#/teacup`)
 
-**PAST YEARS** (next to YEAR / 30 D / 6 MO / 1 YR on the lake chart) overlays up to six calendar years of pool elevation on one Jan–Dec axis, each with its own rule curve (dashed) and the 30-yr statistics bands for context. Pick years from the last 20; hover or tap for every year's value on that date; the year summary table gives the lowest and highest pool with dates and the Nov 15–Dec 15 mean. Pool comes from USGS daily lake elevation (62614, 24:00) at the lake gage, or CWMS 6-hour means where there is no gage. Each year keeps a fixed colour from a six-hue palette checked for colour-vision deficiency and contrast.
+**PAST YEARS** (Trend Recorder, reservoirs; `js/pastyears.js`) overlays up to six calendar years of pool elevation on one Jan–Dec axis, each with its own rule curve (dashed) and the 30-yr statistics bands for context. Pick years from the last 20; hover or tap for every year's value on that date; the year summary table gives the lowest and highest pool with dates and the Nov 15–Dec 15 mean. Pool comes from USGS daily lake elevation (62614, 24:00) at the lake gage, or CWMS 6-hour means where there is no gage. Each year keeps a fixed colour from a six-hue palette checked for colour-vision deficiency and contrast.
 
-**Zoom (all time charts):** the Trend Recorder and the Teacup lake chart (YEAR / 30 D / 6 MO / 1 YR) use the same controls (`js/zoom.js`): drag across the chart to zoom, double-click to zoom out, or − / + / ◀ / ▶ / Reset above the chart. The axes re-fit to the visible window and ticks switch months → days → hours; zoom resets when the range or point changes. The Teacup chart also has a hover/tap readout (pool, rule curve with the difference, published target, 30-yr mean and p05–p95).
+**Zoom:** the Trend Recorder uses `js/zoom.js`: drag across the chart to zoom, double-click to zoom out, or − / + / ◀ / ▶ / Reset above the chart. The axes re-fit to the visible window and ticks switch months → days → hours; zoom resets when the range or point changes.
+
+**Layers (`js/layers.js`), all toggleable; choices are remembered in the browser:**
+
+| Where | Layer | Source | Default |
+|---|---|---|---|
+| On chart (reservoirs) | Rule curve | CWMS `<P>.Elev-RuleCurve.Inst.~1Day.0.CENWP-CALC` | on |
+| | 30-yr bands (p05–p95, p25–p75, mean) | CWMS stats location levels thru 2023 | on |
+| | Published target | CWMS `Injunction-Target` (LOP, GPR, CGR) / `Interim Risk Reduction Measure` (HCR) | on |
+| | Level lines: top of dam, top of max flood, top of flood, top of conservation, spillway crest, top/bottom of power pool, bottom of conservation | CWMS location levels `<P>.Elev.Inst.0.<name>` (only those published) | off |
+| Below chart (reservoirs) | Inflow / outflow (cfs) | CWMS `Flow-In` / `Flow-Out` (live 7 days; history as reported ≤ 35 days, else 6-hour means) | on |
+| | Water temperature (°F), turbidity (FNU) below the dam | USGS 00010 / 63680 at 14145500 (HCR), 14150000 (DEX), 14159500 (CGR) | off |
+| | TDG (% saturation) with the 110% reference line | CWMS `DEXO` / `CGRO.%-Saturation-TDG` | off |
+| Below chart (rivers) | Discharge, gage height, water temperature, turbidity (whichever is not on the main chart) | USGS IV (≤ 120 days) or daily means | off |
+
+Each strip is its own small chart (its own axis and units) on the main chart's time axis; hovering anywhere shows a cursor and the value at that time on every strip. A layer a site does not publish says "not reported". In PAST YEARS the level lines and 30-yr bands apply; the strips are hidden.
 
 **PAST YEARS zoom:** drag across the chart to zoom into that span (horizontal drags work on touch screens; vertical swipes still scroll), tap a month name to zoom to that month, double-click to zoom out, or use − / + / ◀ / ▶ and the presets (Full year, Fall drawdown Oct–Dec, Refill Jan–May, Summer Jun–Sep). The elevation axis re-fits to the visible window (grid down to 0.05 ft), dates switch to day ticks, and each daily reading is marked once the window is two months or less.
 

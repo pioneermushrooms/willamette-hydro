@@ -407,7 +407,7 @@ console.log('snapshot / history');
   check(['24h', '7d', '30d', '6m', '1y'].every((r) => html2.includes('data-range="' + r + '"')), 'trend: 24 H, 7 D, 30 D, 6 MO, 1 YR buttons');
   check(html2.indexOf('js/snapshot.js') > html2.indexOf('js/data.js') && html2.indexOf('js/history.js') < html2.indexOf('js/views/teacup.js'), 'script order: snapshot/history after data, before views');
   const tcs = fs.readFileSync(path.join(__dirname, 'js', 'views', 'teacup.js'), 'utf8');
-  check(['year', '30d', '6m', '1y'].every((r) => tcs.includes("['" + r + "'")), 'teacup: YEAR / 30 D / 6 MO / 1 YR range buttons');
+  check(/data-open-trend/.test(tcs) && !/renderAnnual/.test(tcs), 'teacup: lake chart moved to the Trend Recorder (Open in Trend Recorder button)');
 }
 
 // ---- 2d. Storage / drawdown calculator (js/drawdown.js) ------------------------
@@ -489,8 +489,8 @@ console.log('past years');
   const sm = HS.yearSummary(pool, y);
   check(sm.min === 1502.07 && sm.minT === pool.t[2] && sm.max === 1690 && sm.fallMean === (1505 + 1502.07) / 2 && sm.fallN === 2, 'years: summary low/high with dates, Nov 15–Dec 15 mean');
   check(HS.yearSummary(null, y) === null && typeof HS.loadYear === 'function', 'years: empty summary; loader exported');
-  const tc = fs.readFileSync(path.join(__dirname, 'js', 'views', 'teacup.js'), 'utf8');
-  check(/\['years', 'PAST YEARS'\]/.test(tc) && /MAX_YEARS = 6/.test(tc), 'years: PAST YEARS range on the Teacup chart, up to 6 years');
+  const tc = fs.readFileSync(path.join(__dirname, 'js', 'pastyears.js'), 'utf8'), idxY = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  check(idxY.includes('data-range="years"') && idxY.includes('data-range="year"') && /MAX_YEARS = 6/.test(tc), 'years: YEAR and PAST YEARS ranges on the Trend Recorder, up to 6 years');
   const TCZ = require('./js/teacup-core.js'), eq = (z, a, b) => Math.abs(z[0] - a) < 1e-9 && Math.abs(z[1] - b) < 1e-9;
   check(eq(TCZ.zoomBy([0, 1], 0.5), 0.25, 0.75) && eq(TCZ.zoomBy([0.25, 0.75], 2), 0, 1) && eq(TCZ.zoomBy([0, 0.5], 4), 0, 1), 'zoom: in/out about the centre, clamped to the year');
   check(eq(TCZ.zoomBy([0, 1], 0.5, 0.1), 0, 0.5), 'zoom: about a point near the edge stays inside the year');
@@ -504,9 +504,34 @@ console.log('past years');
   check(eq(ZM.apply([0, 0.5], 'left', 0.01), 0, 0.5) && eq(ZM.apply([0.25, 0.5], 'right', 0.01), 0.375, 0.625) && eq(ZM.apply([0, 1], 'in', 0.01, 0.9), 0.5, 1), 'shared zoom: pan stops at the ends; zoom about a point');
   const zmin = ZM.clamp([0.5, 0.5], 2 / 24);
   check(Math.abs(zmin[1] - zmin[0] - 2 / 24) < 1e-9 && eq(ZM.clamp([0.7, 0.3], 0.01), 0.3, 0.7), 'shared zoom: per-chart minimum window (2 h of 24 H); reversed drag ordered');
-  check(/ZM|bar\(/.test(fs.readFileSync(path.join(__dirname, 'js', 'zoom.js'), 'utf8')) && /data-tcazoom/.test(tc) && /H\.zoom\.attach/.test(tc), 'teacup chart: YEAR / 30 D / 6 MO / 1 YR zoom wired');
+  check(/function bar\(/.test(fs.readFileSync(path.join(__dirname, 'js', 'zoom.js'), 'utf8')) && /setYearsMode/.test(fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8')), 'trend recorder: PAST YEARS hosted in the Trend Recorder');
   const appSrc = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8'), idx = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   check(/H\.zoom\.attach\(svg/.test(appSrc) && /state\.tzoom = \[0, 1\]/.test(appSrc) && idx.includes('id="trend-zoom"') && idx.indexOf('js/zoom.js') < idx.indexOf('js/app.js'), 'trend recorder: zoom wired, reset on range/point change');
+}
+
+// ---- 2f. Chart layers (js/layers.js) ---------------------------------------------
+console.log('layers');
+{
+  const H0 = require('./js/data.js');
+  H0.levels = require('./js/cwms-levels.js');
+  H0.history = require('./js/history.js');
+  const LY = require('./js/layers.js');
+  check(LY.LEVELS.map((l) => l.key).join() === 'topDam,topMaxFlood,topFlood,topCons,spillwayCrest,topPower,bottomPower,bottomCons' && LY.LEVELS.every((l) => H0.levels.IDS[l.key]), 'layers: level lines map to CWMS level ids');
+  const lvFix = H0.levels.compact({ levels: [
+    { 'location-level-id': 'CGR.Elev.Inst.0.Top of Conservation', 'level-units-id': 'ft', 'level-date': '2020-01-01T08:00:00Z', 'constant-value': 1690 },
+    { 'location-level-id': 'CGR.Elev.Inst.0.Spillway Crest', 'level-units-id': 'ft', 'level-date': '2020-01-01T08:00:00Z', 'constant-value': 1656 },
+    { 'location-level-id': 'CGR.Elev.Inst.0.Bottom of Conservation', 'level-units-id': 'ft', 'level-date': '2020-01-01T08:00:00Z', 'constant-value': 1532 }] }, 'CGR', Date.now());
+  const lvv = LY.levelValues(lvFix, Date.now());
+  check(lvv.map((l) => l.key + '=' + Math.round(l.v)).join() === 'topCons=1690,spillwayCrest=1656,bottomCons=1532', 'layers: level values only for published levels, top to bottom — got ' + lvv.map((l) => l.key + '=' + l.v).join());
+  check(LY.TARGETS.CGR.idKey === 'injunctionTarget' && LY.TARGETS.HCR.idKey === 'interimRisk' && !LY.TARGETS.DEX, 'layers: published targets for LOP/GPR/CGR (injunction) and HCR (IRRM)');
+  const res = H0.projects.find((p) => p.code === 'CGR'), riv = H0.stations.find((s) => s.id === 'middle-fork-jasper'), eug = H0.stations.find((s) => s.id === 'willamette-eugene');
+  check(LY.stripsFor(res).map((x) => x.key).join() === 'flows,temp,turb,tdg', 'layers: reservoir strips = inflow/outflow, temp, turbidity, TDG');
+  check(LY.stripsFor(riv, 'flow').map((x) => x.key).join() === 'stage,temp,turb' && LY.stripsFor(eug, 'stage').map((x) => x.key).join() === 'temp,turb', 'layers: river strips exclude the main parameter (and flow where none is published)');
+  check(LY.PCODE.turb === '63680' && LY.PCODE.temp === '00010' && LY.TDG.DEX && LY.TDG.CGR && LY.BELOW_DAM.CGR.site === '14159500', 'layers: USGS turbidity 63680 / temp 00010; TDG for DEX, CGR; CGR downstream gage 14159500');
+  check(LY.CHART_TOGGLES.filter((t) => t.on).map((t) => t.key).join() === 'rule,stats,target' && LY.STRIPS.reservoir.filter((t) => t.on).map((t) => t.key).join() === 'flows', 'layers: defaults (rule curve, bands, target; inflow/outflow strip)');
+  const appS = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8'), idxL = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  check(idxL.includes('id="trend-layers"') && idxL.includes('id="trend-strips"') && idxL.includes('id="years-box"') && /H\.trend = \{/.test(appS) && /syncStrips\(t\)/.test(appS), 'layers: toggle bar, strips with synced cursor, PAST YEARS box and open() wired');
+  check(idxL.indexOf('js/layers.js') > idxL.indexOf('js/cwms-levels.js') && idxL.indexOf('js/pastyears.js') < idxL.indexOf('js/app.js'), 'script order: layers and pastyears before app');
 }
 
 // ---- 3. Page wiring ---------------------------------------------------------

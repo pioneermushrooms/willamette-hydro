@@ -261,6 +261,6 @@
     RANGES: RANGES, LAKE_SITE: LAKE_SITE,
     pacificOffset: pacificOffset, pacificMidnight: pacificMidnight, dvTime: dvTime,
     bucketMean: bucketMean, parseUsgs: parseUsgs, monthTicks: monthTicks, dayTicks: dayTicks, appendLive: appendLive,
-    load: load, loadYear: loadYear, yearFrac: yearFrac, yearSummary: yearSummary, _cache: cache
+    load: load, loadYear: loadYear, yearFrac: yearFrac, yearSummary: yearSummary, cwmsChunks: cwmsChunks, _cache: cache
   };
 });

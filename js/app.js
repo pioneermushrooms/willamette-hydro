@@ -7,6 +7,7 @@
 
   var TZ = 'America/Los_Angeles';
   var HOUR = 3600 * 1000;
+  var DAY = 24 * HOUR;
   var POLL_MS = H.SETTINGS.pollMinutes * 60 * 1000;
   var BPA_URL = 'data/bpa.json';
   var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -28,6 +29,8 @@
     chartId: 'lookout-point',
     range: '7d',          // '24h' | '7d' live series; '30d' | '6m' | '1y' long history (js/history.js)
     tzoom: [0, 1],        // Trend Recorder zoom window as fractions of the selected range (js/zoom.js)
+    lv: {},               // project code -> { loading } | { data: CWMS levels } (level lines, 30-yr bands, target)
+    strips: {},           // '<id>|<strip>|<range>' -> js/layers.js load result, or { loading: true }
     hist: {},             // '<id>:<range>' -> history result (or { loading: true })
     riverParam: 'flow',   // trend chart for river gauges: 'flow' | 'stage' (flood bands + NWS stage forecast)
     nwps: null,           // { <stationId>: { lid, gauge, error } } from js/nwps.js
@@ -814,9 +817,31 @@
     return { ticks: t, step: step };
   }
 
-  var RANGE_H = { '24h': 24, '7d': 168, '30d': 30 * 24, '6m': 182 * 24, '1y': 365 * 24 };
-  var RANGE_TAG = { '24h': 'LAST 24 H', '7d': 'LAST 7 D', '30d': 'LAST 30 D', '6m': 'LAST 6 MO', '1y': 'LAST 1 YR' };
-  function isLong(r) { return r === '30d' || r === '6m' || r === '1y'; }
+  var RANGE_H = { '24h': 24, '7d': 168, '30d': 30 * 24, '6m': 182 * 24, '1y': 365 * 24, year: 365 * 24, years: 365 * 24 };
+  var RANGE_TAG = { '24h': 'LAST 24 H', '7d': 'LAST 7 D', '30d': 'LAST 30 D', '6m': 'LAST 6 MO', '1y': 'LAST 1 YR', year: 'CALENDAR YEAR', years: 'PAST YEARS' };
+  function isLong(r) { return r === '30d' || r === '6m' || r === '1y' || r === 'year'; }
+  var fYearNum = new Intl.DateTimeFormat('en-US', { timeZone: TZ, year: 'numeric' });
+  function curYear() { return +fYearNum.format(new Date()); }
+
+  // ---- Chart layers (js/layers.js): level lines, 30-yr bands, target, strips ------------
+
+  var L = H.layers;
+  function chartItem(key) { return L ? L.CHART_TOGGLES.filter(function (x) { return x.key === key; })[0] : null; }
+  function layerOn(key) { var it = chartItem(key); return !!(it && L.isOn(it)); }
+  function stripItem(e, def) { return { key: 'strip:' + (e.kind === 'reservoir' ? 'res' : 'riv') + ':' + def.key, on: def.on }; }
+
+  // CWMS location levels for a project (cached by js/cwms-levels.js); re-renders when they land.
+  function levelsFor(e) {
+    if (e.kind !== 'reservoir' || !H.levels) return null;
+    var c = state.lv[e.code];
+    if (c && !c.loading) return c.data;
+    if (!c) {
+      state.lv[e.code] = { loading: true };
+      H.levels.fetchProjectLevels(e.code).then(function (lv) { state.lv[e.code] = { data: lv }; }, function () { state.lv[e.code] = { data: null }; })
+        .then(function () { if (state.chartId === e.id) renderChart(false); });
+    }
+    return null;
+  }
 
   // Long-range history for the charted point (cached in js/history.js); re-renders when it lands.
   function histFor(e) {
@@ -826,7 +851,11 @@
     if (!hv) {
       state.hist[key] = { loading: true };
       var d = e.kind === 'reservoir' ? projData(e) : null;
-      H.history.load(e, state.range, d && d.elev).then(function (r) {
+      // Calendar YEAR: reservoirs read the year's lake record (plus live readings); rivers use the 1-yr history.
+      var pr = state.range !== 'year' ? H.history.load(e, state.range, d && d.elev)
+        : e.kind === 'reservoir' ? H.history.loadYear(e, curYear()).then(function (r) { if (r.pool && d && d.elev) r.pool = H.history.appendLive(r.pool, d.elev); return r; })
+          : H.history.load(e, '1y', null);
+      pr.then(function (r) {
         state.hist[key] = r;
         if (state.chartId === e.id && e.id + ':' + state.range === key) renderChart(true);
         setTimeout(function () { if (state.hist[key] === r) delete state.hist[key]; }, 30 * 60 * 1000);
@@ -839,6 +868,7 @@
     var e = byId[state.chartId], res = e.kind === 'reservoir';
     var long = isLong(state.range), hist = long ? histFor(e) : null, hLoading = !!(hist && hist.loading);
     var now = Date.now(), end = now, start = now - RANGE_H[state.range] * HOUR;
+    if (state.range === 'year') { start = H.history.pacificMidnight(curYear(), 1, 1); end = H.history.pacificMidnight(curYear() + 1, 1, 1); }
     var s, ref = null, unit, dec, title, src, param = null, g = null;
     if (res) {
       var d = projData(e);
@@ -922,6 +952,7 @@
       if (n > 0 && t[t.length - 1] !== s.t[i1]) { t.push(s.t[i1]); v.push(s.v[i1]); q.push(s.q ? s.q[i1] : null); }
     }
     var rt = [], rv = [];
+    if (res && !layerOn('rule')) ref = null;
     if (ref && ref.t.length) {
       var a = H.interpolate(ref, start); if (a != null) { rt.push(start); rv.push(a); }
       for (var k = 0; k < ref.t.length; k++) if (ref.t[k] > start && ref.t[k] < end) { rt.push(ref.t[k]); rv.push(ref.v[k]); }
@@ -940,7 +971,23 @@
         src += ' Dashed: ' + oq.cfg.code + '.Temp-Water.Inst.0.ODEQ-2006TMDL-Target (CWMS level, monthly steps).';
       }
     }
+    // Reservoir layers: 30-yr statistics bands, published target, level lines (CWMS location levels).
+    var lv = res ? levelsFor(e) : null, LVm = H.levels, stats = null, target = null, levels = [];
+    if (lv && LVm) {
+      if (layerOn('stats')) {
+        stats = {};
+        ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].forEach(function (k) { stats[k] = LVm.seasonalSeries(LVm.pick(lv, LVm.IDS[k], now), start - DAY, end + DAY).filter(function (p) { return p[1] != null; }); });
+        if (!stats.statsAve.length) stats = null;
+      }
+      var tg = L && L.TARGETS[e.code];
+      if (tg && layerOn('target')) {
+        var te = LVm.pick(lv, LVm.IDS[tg.idKey], now);
+        if (te) target = { label: tg.label, pts: LVm.seasonalSeries(te, start - DAY, end + DAY) };
+      }
+      levels = L.levelValues(lv, now).filter(function (l) { return layerOn('lvl:' + l.key); });
+    }
     return { e: e, res: res, start: start, end: end, now: now, t: t, v: v, q: q, rt: rt, rv: rv, unit: unit, dec: dec, title: title, src: src,
+      lv: lv, stats: stats, target: target, levels: levels,
       tt: tt, tv: tv, tLabel: tLabel, tNote: tNote,
       param: param, fc: fc, issued: issued, bands: bands, fcNote: fcNote, peak: g && g.peak, long: long,
       fullStart: fullStart, fullEnd: fullEnd, zoomed: zoomed,
@@ -948,6 +995,11 @@
   }
 
   function renderChart(animate) {
+    var yrBtn = document.querySelector('[data-range="years"]'), isRes = byId[state.chartId].kind === 'reservoir';
+    if (yrBtn) { yrBtn.disabled = !isRes; yrBtn.title = isRes ? 'Compare up to six past calendar years' : 'PAST YEARS is for reservoirs'; }
+    if (state.range === 'years' && !isRes) setRange('1y');
+    setYearsMode(state.range === 'years');
+    if (state.range === 'years') { renderYearsView(); return; }
     var M = chartModel();
     var wrap = $('#chart-wrap'), svg = $('#chart'), msg = $('#chart-msg');
     var W = Math.max(260, Math.floor(wrap.clientWidth)), H2 = W < 520 ? 230 : 300;
@@ -981,6 +1033,10 @@
     var inView = function (arr, ts) { return M.zoomed ? arr.filter(function (v, k) { return ts[k] >= M.start && ts[k] <= M.end; }) : arr; };
     var vals = inView(M.v, M.t).concat(M.rv, M.fc.v, M.tv.filter(function (v) { return v != null; }));
     if (!vals.length) vals = M.v.slice();
+    var inWin = function (p) { return p[0] >= M.start && p[0] <= M.end && p[1] != null; };
+    if (M.stats) ['statsP05', 'statsP95'].forEach(function (k) { M.stats[k].forEach(function (p) { if (inWin(p)) vals.push(p[1]); }); });
+    if (M.target) M.target.pts.forEach(function (p) { if (inWin(p)) vals.push(p[1]); });
+    M.levels.forEach(function (l) { vals.push(l.v); });
     if (M.bands.length) vals.push(M.bands[0].lo); // always show at least the first flood band
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     var pad = (hi - lo || Math.abs(hi) * 0.01 || 1) * 0.08;
@@ -1080,6 +1136,7 @@
         s += '<text class="tgt-label" x="' + (W - mr - 6) + '" y="' + (tAbove ? tyy - 6 : tyy + 14).toFixed(1) + '" text-anchor="end">ODEQ TARGET ' + fmt(lastT, 1) + ' °F</text>';
       }
     }
+    s += layerSVG(M, x, y, ml, pw, mt, ph);
     s += '<path class="series' + (animate && !REDUCED ? ' draw' : '') + '" id="chart-line" d="' + d + '"/>';
     if (M.fc.t.length > 1) {
       var fd = '';
@@ -1090,7 +1147,7 @@
     if (M.end > M.now + HOUR) {
       var xnow = x(M.now).toFixed(1);
       s += '<line class="now-line" x1="' + xnow + '" x2="' + xnow + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
-      s += '<text class="now-label" x="' + (+xnow + 4) + '" y="' + (mt + ph - 6) + '">NOW · NWS FORECAST →</text>';
+      s += '<text class="now-label" x="' + (+xnow + 4) + '" y="' + (mt + ph - 6) + '">' + (M.fc.t.length > 1 ? 'NOW · NWS FORECAST →' : 'TODAY') + '</text>';
     }
     s += '<circle class="now" cx="' + x(M.t[n - 1]).toFixed(1) + '" cy="' + y(M.v[n - 1]).toFixed(1) + '" r="4.5"/>';
     s += '<g id="cross" style="display:none"><line class="cross" id="cross-line" y1="' + mt + '" y2="' + (mt + ph) + '"/><circle class="cross-dot" id="cross-dot" r="5"/></g>';
@@ -1102,13 +1159,18 @@
     }
     state.geom = { M: M, x: x, y: y, ml: ml, pw: pw, W: W, mt: mt, ph: ph };
     renderTrendZoom(M);
+    renderLayerBar(M);
+    renderStrips();
 
     $('#chart-legend').innerHTML = '<span><i></i>' + (M.res ? (M.long && /^USGS/.test(M.src) ? 'Pool elevation (USGS daily + USACE live)' : 'Pool elevation (USACE)') : M.param === 'flow' ? 'Discharge (USGS)' : M.param === 'temp' ? 'Water temperature (USGS)' : 'Gage height (USGS)') + '</span>' +
       (M.tt.length ? '<span><i class="tgt"></i>' + esc(M.tLabel) + '</span>' : '') + (M.tNote ? '<span class="na">' + esc(M.tNote) + '</span>' : '') +
       (M.rt.length > 1 ? '<span><i class="ref"></i>USACE rule curve</span>' : M.res ? '<span class="na">Rule curve: no data</span>' : '') +
       (M.fc.t.length > 1 ? '<span><i class="fc"></i>NWS/NWRFC forecast (via NOAA NWPS), issued ' + stamp(M.issued) + '</span>' : '') +
       (M.bands.length ? '<span><i class="fb"></i>NWS flood categories</span>' : '') +
-      (M.fcNote ? '<span class="na">' + esc(M.fcNote) + '</span>' : '');
+      (M.fcNote ? '<span class="na">' + esc(M.fcNote) + '</span>' : '') +
+      (M.stats ? '<span><i class="lg-p95"></i>30-yr p05–p95</span><span><i class="lg-p75"></i>p25–p75</span><span><i class="lg-mean"></i>30-yr mean</span>' : '') +
+      (M.target ? '<span><i class="lg-target"></i>' + esc(M.target.label) + ' (published)</span>' : '') +
+      (M.levels.length ? '<span><i class="lg-lvl"></i>Level lines (CWMS)</span>' : '');
 
     var lo2 = Math.min.apply(null, M.v), hi2 = Math.max.apply(null, M.v), ch = M.v[n - 1] - M.v[0];
     var stats = '<div><dt>Latest</dt><dd>' + fmt(M.v[n - 1], M.dec) + ' ' + M.unit + '</dd></div>' +
@@ -1135,7 +1197,7 @@
   }
 
   function renderTable(M) {
-    var step = ({ '24h': 1, '7d': 6, '30d': 24, '6m': 7 * 24, '1y': 7 * 24 })[state.range] * HOUR, rows = [], seen = {};
+    var step = ({ '24h': 1, '7d': 6, '30d': 24, '6m': 7 * 24, '1y': 7 * 24, year: 7 * 24 })[state.range] * HOUR, rows = [], seen = {};
     for (var target = M.t[M.t.length - 1]; target >= M.start; target -= step) {
       var i = lastIndexBefore(target, M.t);
       if (i < 0 || seen[i]) continue;
@@ -1178,6 +1240,7 @@
     if (i < 0) i = 0;
     if (i < g.M.t.length - 1 && Math.abs(g.M.t[i + 1] - t) < Math.abs(g.M.t[i] - t)) i++;
     var cx = g.x(g.M.t[i]), cy = g.y(g.M.v[i]);
+    syncStrips(t);
     $('#cross').style.display = '';
     $('#cross-line').setAttribute('x1', cx); $('#cross-line').setAttribute('x2', cx);
     $('#cross-dot').setAttribute('cx', cx); $('#cross-dot').setAttribute('cy', cy);
@@ -1203,6 +1266,7 @@
   function hideCross() {
     var c = $('#cross');
     if (c) c.style.display = 'none';
+    syncStrips(null);
     $('#tooltip').hidden = true;
   }
 
@@ -1214,13 +1278,179 @@
   }
 
   // Smallest zoom window: 2 h on 24 H, 6 h on 7 D, 1 day on 30 D, 7 days on 6 MO / 1 YR.
-  function trendMinZoom() { return ({ '24h': 2, '7d': 6, '30d': 24, '6m': 168, '1y': 168 })[state.range] / RANGE_H[state.range]; }
+  function trendMinZoom() { return ({ '24h': 2, '7d': 6, '30d': 24, '6m': 168, '1y': 168, year: 72, years: 72 })[state.range] / RANGE_H[state.range]; }
   function setTrendZoom(z) { state.tzoom = H.zoom.clamp(z, trendMinZoom()); hideCross(); renderChart(false); }
   function renderTrendZoom(M) {
     var el = $('#trend-zoom');
     if (!el || !H.zoom) return;
     el.innerHTML = H.zoom.bar(state.tzoom, 'tzoom', state.tzoom[0] > 0 || state.tzoom[1] < 1 ? esc(stamp(M.start) + ' – ' + stamp(M.end)) : '');
   }
+
+  function setRange(r) {
+    state.range = r;
+    state.tzoom = [0, 1];
+    document.querySelectorAll('[data-range]').forEach(function (o) { o.setAttribute('aria-pressed', o.getAttribute('data-range') === r ? 'true' : 'false'); });
+  }
+
+  // PAST YEARS replaces the time chart, its strips, stats and table with js/pastyears.js.
+  function setYearsMode(on) {
+    ['#chart-wrap', '#trend-strips', '#chart-legend', '#chart-stats', '#trend-zoom', '#chart-src'].forEach(function (sel) { var el = $(sel); if (el) el.hidden = on; });
+    var tv = $('#trends .table-view');
+    if (tv) tv.hidden = on;
+    $('#years-box').hidden = !on;
+  }
+
+  function renderYearsView() {
+    var e = byId[state.chartId], box = $('#years-box');
+    if (!H.pastYears || !box) return;
+    $('#param-seg').hidden = true;
+    $('#chart-title').textContent = e.name + ' · pool elevation by calendar year (ft)';
+    $('#trend-tag').textContent = 'PAST YEARS · HISTORY';
+    var lv = levelsFor(e);
+    renderLayerBar(null);
+    var levels = lv && L ? L.levelValues(lv).filter(function (l) { return layerOn('lvl:' + l.key); }) : [];
+    H.pastYears.render(box, { p: e, code: e.code, lv: lv, levels: levels, stats: layerOn('stats') }, function () { if (state.range === 'years') renderYearsView(); });
+  }
+
+  // 30-yr bands, published target and level lines on the main chart (inside its clip group).
+  function layerSVG(M, x, y, ml, pw, mt, ph) {
+    var out = '';
+    var path = function (pts) {
+      var d = '', pen = false;
+      pts.forEach(function (p) { if (p[1] == null) { pen = false; return; } d += (pen ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1); pen = true; });
+      return d;
+    };
+    var band = function (a, b) {
+      if (!a.length || !b.length) return '';
+      return 'M' + a.map(function (p) { return x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1); }).join('L') + 'L' +
+        b.slice().reverse().map(function (p) { return x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1); }).join('L') + 'Z';
+    };
+    if (M.stats) {
+      out += '<path class="an-p95" d="' + band(M.stats.statsP95, M.stats.statsP05) + '"/><path class="an-p75" d="' + band(M.stats.statsP75, M.stats.statsP25) + '"/>' +
+        '<path class="an-mean" d="' + path(M.stats.statsAve) + '"/>';
+    }
+    if (M.target && M.target.pts.length) out += '<path class="an-target" d="' + path(M.target.pts) + '"/>';
+    if (M.levels.length) {
+      var items = M.levels.map(function (l) { return { y: y(l.v), l: l }; });
+      M.levels.forEach(function (l) { out += '<line class="lvl-line lvl-' + l.key + '" x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(l.v).toFixed(1) + '" y2="' + y(l.v).toFixed(1) + '"/>'; });
+      H.teacupCore.spreadLabels(items, 12, mt + 10, mt + ph - 2).forEach(function (it) {
+        out += '<text class="lvl-lab" x="' + (ml + 6) + '" y="' + (it.ly - 3).toFixed(1) + '">' + esc(it.l.label) + ' ' + fmt(it.l.v, 1) + '</text>';
+      });
+    }
+    return out;
+  }
+
+  // Toggle chips: "On chart" (reservoirs) and "Below chart" (strips).
+  function renderLayerBar(M) {
+    var el = $('#trend-layers');
+    if (!el || !L) return;
+    var e = M ? M.e : byId[state.chartId], h = '';
+    var chip = function (it, label, dis) {
+      return '<button type="button" class="chip small tl-chip" data-layer="' + esc(it.key) + '" aria-pressed="' + L.isOn(it) + '"' + (dis ? ' disabled' : '') + '>' + esc(label) + '</button>';
+    };
+    if (e.kind === 'reservoir') {
+      var lv = levelsFor(e), have = lv ? L.levelValues(lv).map(function (l) { return l.key; }) : null;
+      var items = L.CHART_TOGGLES.filter(function (it) {
+        if (it.key === 'target') return !!L.TARGETS[e.code] && state.range !== 'years';
+        if (it.key === 'rule') return state.range !== 'years';
+        return !it.level || (have && have.indexOf(it.level) >= 0);
+      });
+      h += '<div class="tl-group" role="group" aria-label="Layers on the chart"><span class="tl-h">On chart</span>' +
+        items.map(function (it) { return chip(it, it.label); }).join('') + (have ? '' : '<span class="na loading tl-note">loading level lines…</span>') + '</div>';
+    }
+    if (state.range !== 'years') {
+      var defs = L.stripsFor(e, M ? M.param : null);
+      h += '<div class="tl-group" role="group" aria-label="Charts below"><span class="tl-h">Below chart</span>' +
+        defs.map(function (d) { return chip(stripItem(e, d), d.label); }).join('') + '</div>';
+    }
+    el.innerHTML = h;
+  }
+
+  // Strips: each enabled quantity as its own small chart on the main chart's time axis.
+  function renderStrips() {
+    var box = $('#trend-strips'), g = state.geom;
+    if (!box || !L) return;
+    if (state.range === 'years' || !g) { box.innerHTML = ''; return; }
+    var M = g.M, e = M.e, defs = L.stripsFor(e, M.param).filter(function (d) { return L.isOn(stripItem(e, d)); });
+    state.stripView = [];
+    if (!defs.length) { box.innerHTML = ''; return; }
+    var live = e.kind === 'reservoir' ? projData(e) : null;
+    box.innerHTML = defs.map(function (def) {
+      var ck = e.id + '|' + def.key + '|' + state.range, sd = state.strips[ck];
+      if (!sd || (!sd.loading && Date.now() - sd.at > 10 * 60 * 1000)) {
+        state.strips[ck] = sd = { loading: true };
+        L.load(e, def.key, M.fullStart, Math.min(M.fullEnd, Date.now()), live).then(function (r) {
+          r.at = Date.now(); state.strips[ck] = r;
+          if (state.geom && state.geom.M.e === e) renderStrips();
+        });
+      }
+      return stripHTML(def, sd, g);
+    }).join('');
+  }
+
+  function stripHTML(def, sd, g) {
+    var M = g.M, unit = esc(def.unit);
+    var keys = sd.lines && sd.lines.length > 1 ? sd.lines.map(function (l) { return '<span class="st-key"><i class="' + l.cls + '"></i>' + esc(l.label) + '</span>'; }).join('') : '';
+    var head = '<div class="st-head"><b>' + esc(def.label) + '</b> <span class="st-unit">' + unit + '</span>' + keys + '<span class="st-read mono"></span></div>';
+    var wrap = function (inner, src) { return '<div class="strip" data-strip="' + def.key + '">' + head + inner + (src ? '<p class="st-src">' + esc(src) + '</p>' : '') + '</div>'; };
+    if (sd.loading) return wrap('<p class="na loading st-msg">loading…</p>');
+    if (sd.empty) return wrap('<p class="na st-msg">' + (sd.error ? 'unavailable (' + esc(sd.error) + ')' : 'not reported for this window') + '</p>', sd.src);
+    var vals = [];
+    sd.lines.forEach(function (l) { l.t.forEach(function (t, i) { if (t >= M.start && t <= M.end) vals.push(l.v[i]); }); });
+    if (!vals.length) return wrap('<p class="na st-msg">no readings in this window</p>', sd.src);
+    if (def.ref) vals.push(def.ref);
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo || Math.abs(hi) * 0.05 || 1) * 0.12;
+    var nt = niceTicks(lo - pad, hi + pad, 3), yMin = Math.min(nt.ticks[0], lo - pad), yMax = Math.max(nt.ticks[nt.ticks.length - 1], hi + pad);
+    var Hs = 84, mt = 6, mb = 6, ph = Hs - mt - mb, W = g.W, ml = g.ml, pw = g.pw;
+    var x = function (t) { return ml + ((t - M.start) / (M.end - M.start)) * pw; }, y = function (v) { return mt + (1 - (v - yMin) / (yMax - yMin)) * ph; };
+    var dec = nt.step < 1 ? (nt.step < 0.1 ? 2 : 1) : 0;
+    var svg = '<svg class="st-svg" viewBox="0 0 ' + W + ' ' + Hs + '" width="100%" height="' + Hs + '" aria-hidden="true"><defs><clipPath id="st-clip-' + def.key + '"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath></defs><g class="axis">';
+    nt.ticks.forEach(function (v) { if (v < yMin || v > yMax) return; svg += '<line x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/><text x="' + (ml - 8) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, dec) + '</text>'; });
+    svg += '</g><g clip-path="url(#st-clip-' + def.key + ')">';
+    if (def.ref) svg += '<line class="st-ref" x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(def.ref).toFixed(1) + '" y2="' + y(def.ref).toFixed(1) + '"/><text class="st-ref-lab" x="' + (ml + pw - 4) + '" y="' + (y(def.ref) - mt < 12 ? y(def.ref) + 11 : y(def.ref) - 3).toFixed(1) + '" text-anchor="end">' + esc(def.refLabel) + '</text>';
+    sd.lines.forEach(function (l) {
+      var i0 = Math.max(0, lastIndexBefore(M.start, l.t)), i1 = Math.min(l.t.length - 1, lastIndexBefore(M.end, l.t) + 1), step = Math.max(1, Math.ceil((i1 - i0 + 1) / 700)), d = '';
+      for (var i = i0; i <= i1; i += step) d += (d ? 'L' : 'M') + x(l.t[i]).toFixed(1) + ' ' + y(l.v[i]).toFixed(1);
+      svg += '<path class="st-line ' + l.cls + '" d="' + d + '"/>';
+    });
+    svg += '</g><line class="st-cursor" y1="' + mt + '" y2="' + (mt + ph) + '" style="display:none"/></svg>';
+    state.stripView.push({ def: def, sd: sd });
+    return wrap(svg, sd.src);
+  }
+
+  // Cursor + "value at cursor" readout on every strip (t = null hides them).
+  function syncStrips(t) {
+    var g = state.geom, box = $('#trend-strips');
+    if (!box || !g || !state.stripView) return;
+    var x = g.ml + ((t - g.M.start) / (g.M.end - g.M.start)) * g.pw;
+    box.querySelectorAll('.strip').forEach(function (el) {
+      var view = state.stripView.filter(function (v) { return v.def.key === el.getAttribute('data-strip'); })[0], cur = el.querySelector('.st-cursor'), rd = el.querySelector('.st-read');
+      if (!view || !cur || !rd) return;
+      if (t == null) { cur.style.display = 'none'; rd.textContent = ''; return; }
+      cur.setAttribute('x1', x.toFixed(1)); cur.setAttribute('x2', x.toFixed(1)); cur.style.display = '';
+      var tol = Math.max(2 * HOUR, (g.M.end - g.M.start) / 150);
+      rd.textContent = view.sd.lines.map(function (l) {
+        var i = lastIndexBefore(t, l.t);
+        if (i < 0) i = 0;
+        if (i < l.t.length - 1 && Math.abs(l.t[i + 1] - t) < Math.abs(l.t[i] - t)) i++;
+        var ok = Math.abs(l.t[i] - t) <= Math.max(tol, 36 * HOUR * (l.t.length > 1 && l.t[1] - l.t[0] >= 20 * HOUR ? 1 : 0));
+        return (view.sd.lines.length > 1 ? l.label + ' ' : '') + (ok ? fmt(l.v[i], view.def.dec) + ' ' + view.def.unit : '—');
+      }).join(' · ');
+    });
+  }
+
+  // Lets other pages (Teacup) open a point in the Trend Recorder.
+  H.trend = {
+    open: function (id, range) {
+      if (!byId[id]) return;
+      if (state.chartId !== id) state.tzoom = [0, 1];
+      state.chartId = id;
+      $('#trend-select').value = id;
+      if (range) setRange(range);
+      location.hash = '#/overview';
+      setTimeout(function () { renderChart(true); var t = $('#trends'); if (t) t.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth' }); }, 60);
+    }
+  };
 
   function initTrends() {
     var sel = $('#trend-select');
@@ -1232,9 +1462,8 @@
 
     document.querySelectorAll('[data-range]').forEach(function (b) {
       b.addEventListener('click', function () {
-        state.range = b.getAttribute('data-range');
-        state.tzoom = [0, 1];
-        document.querySelectorAll('[data-range]').forEach(function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
+        if (b.disabled) return;
+        setRange(b.getAttribute('data-range'));
         renderChart(true);
       });
     });
@@ -1247,6 +1476,21 @@
       });
     });
 
+    $('#trend-layers').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-layer]');
+      if (!b || b.disabled || !L) return;
+      L.setOn(b.getAttribute('data-layer'), b.getAttribute('aria-pressed') !== 'true');
+      renderChart(false);
+    });
+    var stripT = function (ev) {
+      var sv = ev.target.closest && ev.target.closest('svg.st-svg'), g = state.geom;
+      if (!sv || !g) return null;
+      var r = sv.getBoundingClientRect(), px = (ev.clientX - r.left) * (g.W / r.width);
+      return px < g.ml || px > g.ml + g.pw ? null : g.M.start + ((px - g.ml) / g.pw) * (g.M.end - g.M.start);
+    };
+    $('#trend-strips').addEventListener('pointermove', function (ev) { syncStrips(stripT(ev)); });
+    $('#trend-strips').addEventListener('pointerdown', function (ev) { syncStrips(stripT(ev)); });
+    $('#trend-strips').addEventListener('pointerleave', function () { syncStrips(null); });
     var svg = $('#chart');
     if (H.zoom) {
       // Drag across the chart to zoom into that span; double-click to zoom out; toolbar above the chart.
