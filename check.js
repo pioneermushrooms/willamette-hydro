@@ -496,6 +496,12 @@ console.log('past years');
   const band = (v) => Array.from({ length: 366 }, (_, i) => [i / 365, v]);
   const bc = TCZ.bandCheck([[0.1, 99], [0.2, 100], [0.3, 104], [0.4, 105], [0.5, 106], [0.6, 110], [0.7, 111], [0.8, 108], [0.9, 107], [0.95, 103]], band(100), band(110), band(105));
   check(bc.n === 10 && bc.inside === 0.8 && bc.below === 0.1 && bc.above === 0.1 && bc.medianVsMean === 1, 'band check: share inside / below / above p05–p95 and median vs mean');
+  // Derived bands: 20 years, each a constant level 100..119 -> p05 ≈ 100.95, mean 109.5, p95 ≈ 118.05 every day; a one-day spike in one year barely moves it.
+  const yrs = Array.from({ length: 20 }, (_, k) => Array.from({ length: 365 }, (_, d) => [d / 365, 100 + k + (k === 19 && d === 100 ? 300 : 0)]));
+  const dbs = TCZ.derivedBands(yrs, 7, 5), at = (arr, f) => arr.reduce((b, p) => (Math.abs(p[0] - f) < Math.abs(b[0] - f) ? p : b))[1];
+  check(dbs.statsAve.length >= 360 && Math.abs(at(dbs.statsP05, 0.5) - 100.95) < 0.01 && Math.abs(at(dbs.statsP95, 0.5) - 118.05) < 0.01 && Math.abs(at(dbs.statsAve, 0.5) - 109.5) < 0.01, 'derived bands: percentiles pooled across years');
+  check(at(dbs.statsP95, 100 / 365) < 120 && at(dbs.statsP05, 100 / 365) > 100, 'derived bands: a one-day spike in one year does not make the band edge spike');
+  check(TCZ.derivedBands([[[0.5, 1]]], 7, 5).statsAve.length === 0, 'derived bands: too few readings -> no band');
   const off = TCZ.bandCheck([[0.5, 120]], band(100), band(110), band(105));
   check(off.above === 1 && off.medianVsMean === 15 && TCZ.bandCheck([[0.5, 1]], [], [], []).n === 0, 'band check: offset shows as a steady difference; no band -> no readings counted');
   check(eq(TCZ.zoomBy([0, 1], 0.5), 0.25, 0.75) && eq(TCZ.zoomBy([0.25, 0.75], 2), 0, 1) && eq(TCZ.zoomBy([0, 0.5], 4), 0, 1), 'zoom: in/out about the centre, clamped to the year');

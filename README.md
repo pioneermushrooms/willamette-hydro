@@ -138,6 +138,8 @@ Plain anchors (`#trends`, `#rivers`, …) stay on Overview and scroll.
 
 **PAST YEARS** (Trend Recorder, reservoirs; `js/pastyears.js`) overlays up to six calendar years of pool elevation on one Jan–Dec axis, each with its own rule curve (dashed) and the 30-yr statistics bands for context. Pick years from the last 20; hover or tap for every year's value on that date; the year summary table gives the lowest and highest pool with dates and the Nov 15–Dec 15 mean. Pool comes from USGS daily lake elevation (62614, 24:00) at the lake gage, or CWMS 6-hour means where there is no gage. Each year keeps a fixed colour from a six-hue palette checked for colour-vision deficiency and contrast.
 
+**Grey band source (PAST YEARS):** *USACE 30-yr (published)* draws USACE's daily statistics thru 2023 as published. Each day is ranked on its own from ~30 values, so the p05/p95 edges follow the one or two most extreme years on that day (e.g. Cougar's very deep construction-era drawdowns) and can look jagged. *Lake record (derived)* computes p05/p25/mean/p75/p95 from the lake's own daily record for the years offered (this year −19 to last year), pooling ±7 days around each date, so it is smooth and matches the years you can select. In both cases the elevation axis follows the pool lines and the bands are clipped to the chart; the band check underneath uses the selected band.
+
 **Zoom:** the Trend Recorder uses `js/zoom.js`: drag across the chart to zoom, double-click to zoom out, or − / + / ◀ / ▶ / Reset above the chart. The axes re-fit to the visible window and ticks switch months → days → hours; zoom resets when the range or point changes.
 
 **Layers (`js/layers.js`), all toggleable; choices are remembered in the browser:**

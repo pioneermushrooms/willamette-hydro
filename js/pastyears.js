@@ -15,7 +15,7 @@
   var byCode = {};
   H.projects.forEach(function (p) { byCode[p.code] = p; });
   var MNAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  var ps = { years: null, yearData: {}, zoom: null, code: null, rerender: null };
+  var ps = { years: null, yearData: {}, zoom: null, code: null, rerender: null, band: 'usace', derived: {} };
   function rerender() { if (ps.rerender) ps.rerender(); }
   function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function fmt(n, d) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 }); }
@@ -97,6 +97,10 @@
     var head = '<h4 class="tc-h4 py-title">Past years, ' + esc(m.p.name) + ' <span class="hint">pool elevation by calendar year; pick up to ' + MAX_YEARS + '</span></h4>' +
       '<div class="tc-chips yr-chips" role="group" aria-label="Years to compare (up to ' + MAX_YEARS + ')">' + chips + '</div>';
     var zbtn = function (a, label, title, dis) { return '<button type="button" class="btn yr-zb" data-tczoom="' + a + '" title="' + title + '" aria-label="' + title + '"' + (dis ? ' disabled' : '') + '>' + label + '</button>'; };
+    var bandChips = '<div class="tc-chips py-band" role="group" aria-label="Grey band source"><span class="tl-h">Grey band</span>' +
+      '<button type="button" class="chip small" data-pyband="usace" aria-pressed="' + (ps.band === 'usace') + '" title="USACE published daily statistics, 30 years thru 2023">USACE 30-yr (published)</button>' +
+      '<button type="button" class="chip small" data-pyband="record" aria-pressed="' + (ps.band === 'record') + '" title="Percentiles from this lake’s daily record, ' + (cy - YEARS_BACK + 1) + '–' + (cy - 1) + ', pooling ±7 days">Lake record ' + (cy - YEARS_BACK + 1) + '–' + (cy - 1) + ' (derived)</button></div>';
+    head += bandChips;
     var zoomBar = '<div class="yr-zoom" role="group" aria-label="Zoom the chart">' +
       zbtn('out', '−', 'Zoom out', !zoomed) + zbtn('in', '+', 'Zoom in', z1 - z0 <= T.MIN_SPAN + 1e-9) + zbtn('left', '◀', 'Earlier', z0 <= 0) + zbtn('right', '▶', 'Later', z1 >= 1) +
       '<span class="yr-presets">' + ZOOM_PRESETS.map(function (p) {
@@ -120,6 +124,28 @@
     ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].forEach(function (k) {
       ser[k] = (lv ? T.annualSeries(LV.pick(lv, LV.IDS[k], now), cy) : []).filter(function (p) { return p[1] != null; }).map(function (p) { return [frac(p[0], cy), p[1]]; });
     });
+    // Band source: USACE published 30-yr statistics, or percentiles derived from this lake's own
+    // daily record for the years offered here (smooth, ±7-day pooling; DERIVED).
+    var recFrom = cy - YEARS_BACK + 1, recTo = cy - 1, recNote = '';
+    if (ps.band === 'record') {
+      var rec = ps.derived[m.code];
+      if (!rec) {
+        var got = [], pending = 0;
+        for (var ry = recFrom; ry <= recTo; ry++) {
+          var rd = yearFor(m.code, ry);
+          if (rd.loading) pending++;
+          else if (rd.pool && rd.pool.t.length) got.push(rd);
+        }
+        if (!pending) {
+          rec = ps.derived[m.code] = {
+            n: got.length, src: got.length ? got[got.length - 1].src : '',
+            ser: T.derivedBands(got.map(function (r) { return r.pool.t.map(function (t, i) { return [frac(t, r.year), r.pool.v[i]]; }); }), 7, 5)
+          };
+        } else recNote = 'loading lake record ' + (recTo - recFrom + 1 - pending) + '/' + (recTo - recFrom + 1) + '…';
+      }
+      ser = rec ? rec.ser : { statsP05: [], statsP25: [], statsAve: [], statsP75: [], statsP95: [] };
+    }
+    var bandName = ps.band === 'record' ? 'Lake record ' + recFrom + '–' + recTo : '30-yr';
     var hasStats = ser.statsAve.length > 0 && m.stats !== false;
     // Check: where the selected years' daily readings fall against the published 30-yr band.
     var checks = {}, allPts = [];
@@ -138,7 +164,7 @@
       if (d.r.rule) d.r.rule.t.forEach(function (t, i) { var f = frac(t, d.y); if (f >= z0 && f < 1 && f <= z1) vals.push(d.r.rule.v[i]); });
     });
     var poolVals = vals.length;
-    if (hasStats) ['statsP05', 'statsP95'].forEach(function (k) { ser[k].forEach(function (p) { if (p[0] >= z0 && p[0] <= z1) vals.push(p[1]); }); });
+    // Bands do not stretch the axis (their extremes can be decided by one unusual year); they are clipped.
     var lvls = m.levels || [];
     lvls.forEach(function (l) { vals.push(l.v); });
     if (!vals.length) vals = [0, 1];
@@ -227,7 +253,8 @@
 
     var leg = shown.map(function (d) { return '<span><i class="yr-key yr-c' + yearSlot(d.y) + '"></i>' + d.y + '</span>'; });
     leg.push('<span><i class="yr-key-rule"></i>dashed: that year’s rule curve</span>');
-    if (hasStats) leg.push('<span><i class="lg-p95"></i>30-yr p05–p95</span><span><i class="lg-p75"></i>p25–p75</span>');
+    if (hasStats) leg.push('<span><i class="lg-p95"></i>' + bandName + ' p05–p95</span><span><i class="lg-p75"></i>p25–p75</span>');
+    if (recNote) leg.push('<span class="na loading">' + recNote + '</span>');
     if (lvls.length) leg.push('<span><i class="lg-lvl"></i>level lines (CWMS)</span>');
     if (loading.length) leg.push('<span class="na loading">loading ' + loading.join(', ') + '…</span>');
 
@@ -241,16 +268,19 @@
         '<td>' + (checks[d.y] && checks[d.y].n ? pct(checks[d.y].inside) + ' · ' + pct(checks[d.y].below) + ' · ' + pct(checks[d.y].above) + (checks[d.y].medianVsMean == null ? '' : ' · ' + (checks[d.y].medianVsMean >= 0 ? '+' : '−') + fmt(Math.abs(checks[d.y].medianVsMean), 1) + ' ft') : '—') + '</td>' +
         '<td class="yr-src">' + esc(d.r.src || '') + '</td></tr>';
     }).join('');
-    var checkLine = allCheck && allCheck.n ? '<p class="py-check"><b>Check against the 30-yr band</b> (selected years, ' + fmt(allCheck.n) + ' daily readings): ' +
+    var checkLine = allCheck && allCheck.n ? '<p class="py-check"><b>Check against the ' + (ps.band === 'record' ? 'lake-record' : '30-yr') + ' band</b> (selected years, ' + fmt(allCheck.n) + ' daily readings): ' +
       '<b>' + pct(allCheck.inside) + '</b> inside p05–p95 · ' + pct(allCheck.below) + ' below · ' + pct(allCheck.above) + ' above' +
-      (allCheck.medianVsMean == null ? '' : ' · median ' + (allCheck.medianVsMean >= 0 ? '+' : '−') + fmt(Math.abs(allCheck.medianVsMean), 1) + ' ft vs the 30-yr mean') +
-      '. <span class="hint">For years run like the 30 years behind the band (thru 2023), about 90% should be inside. A similar offset in every year and season would suggest the band and the lake record use different datums; misses concentrated in recent years or in Oct–Dec reflect changed operations (e.g. deep fall drawdowns since 2021). Per-year figures are in the table.</span></p>' : '';
+      (allCheck.medianVsMean == null ? '' : ' · median ' + (allCheck.medianVsMean >= 0 ? '+' : '−') + fmt(Math.abs(allCheck.medianVsMean), 1) + ' ft vs the ' + (ps.band === 'record' ? 'band' : '30-yr') + ' mean') +
+      '. <span class="hint">' + (ps.band === 'record'
+        ? 'The lake-record band is built from the ' + (cy - YEARS_BACK + 1) + '–' + (cy - 1) + ' readings themselves, so about 90% of those years’ readings fall inside it.'
+        : 'For years run like the 30 years behind the band (thru 2023), about 90% should be inside; misses concentrated in recent years or in Oct–Dec reflect changed operations (e.g. deep fall drawdowns since 2021).') +
+      ' Per-year figures are in the table.</span></p>' : '';
     var table = '<details class="table-view"><summary>Year summary table</summary><div class="table-scroll"><table><thead><tr><th>Year</th><th>Lowest pool (ft) · date</th><th>Highest pool (ft) · date</th><th>Mean Nov 15–Dec 15 (ft)</th><th title="Share of that year’s daily readings inside / below / above the USACE 30-yr p05–p95 band, and the median difference from the 30-yr mean">vs 30-yr band: inside · below · above · median vs mean</th><th>Source</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
 
     box.innerHTML = head + zoomBar + '<div class="yr-wrap">' + s + '<div class="tooltip mono yr-tip" hidden></div></div>' +
       '<p class="hint yr-howto">Drag across the chart to zoom in · tap a month name to zoom to that month · double-click to zoom out.</p>' +
       '<div class="an-legend">' + leg.join('') + '</div>' + checkLine + table +
-      '<p class="hint">Each year is drawn on the same calendar axis. Pool: USGS daily lake elevation (24:00) at the project’s lake gage where one exists, otherwise USACE CWMS as 6-hour means. Rule curve: CWMS ' + esc(m.p.series.rule.name) + ' for that year, where published. Bands: 30-yr statistics thru 2023 (DERIVED from published CWMS levels). Provisional data. Hover or tap the chart for values.</p>' + yearErrors(data);
+      '<p class="hint">Each year is drawn on the same calendar axis. Pool: USGS daily lake elevation (24:00) at the project’s lake gage where one exists, otherwise USACE CWMS as 6-hour means. Rule curve: CWMS ' + esc(m.p.series.rule.name) + ' for that year, where published. Grey band: ' + (ps.band === 'record' ? 'percentiles DERIVED by this site from the lake record ' + (cy - YEARS_BACK + 1) + '–' + (cy - 1) + ' (each day pools ±7 days of every year, so it is smooth)' : 'USACE published 30-yr daily statistics thru 2023 (each day ranked on its own, so its edges follow the one or two most extreme years and can look jagged)') + '; bands are clipped to the chart, the axis follows the lines. ' + 'Provisional data. Hover or tap the chart for values.</p>' + yearErrors(data);
     bindYearChart(box, shown, { ml: ml, pw: pw, W: W, cy: cy, z0: z0, z1: z1 });
   }
 
@@ -320,7 +350,9 @@
       var mb = ev.target.closest('[data-tcmonth]');
       if (mb) { var mo = +mb.getAttribute('data-tcmonth'), cyy = thisYear(); setZoom([monthFrac(cyy, mo), monthFrac(cyy, mo + 1)]); return; }
       var yb = ev.target.closest('[data-tcyear]');
-      if (yb && !yb.disabled) toggleYear(+yb.getAttribute('data-tcyear'));
+      if (yb && !yb.disabled) { toggleYear(+yb.getAttribute('data-tcyear')); return; }
+      var bb = ev.target.closest('[data-pyband]');
+      if (bb) { ps.band = bb.getAttribute('data-pyband'); rerender(); }
     });
   }
 

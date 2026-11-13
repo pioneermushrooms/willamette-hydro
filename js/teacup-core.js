@@ -176,6 +176,39 @@
   }
 
   /*
+   * Percentile bands derived from a set of years' daily records. series: one [[f, elev], ...] per
+   * year (f = fraction of that year, 0..1). Each day of the year pools every year's readings within
+   * ±half days (wrapping at the year end), so the bands are smooth rather than decided by one or
+   * two extreme years on a single day. Returns { statsP05, statsP25, statsAve (mean), statsP75,
+   * statsP95 } as [[f, v]] arrays (days with fewer than minN pooled readings are left out).
+   */
+  function derivedBands(series, half, minN) {
+    var NB = 366, h = half == null ? 7 : half, need = minN || 5, bins = [];
+    for (var i = 0; i < NB; i++) bins.push([]);
+    series.forEach(function (pts) {
+      var sum = {}, cnt = {};
+      pts.forEach(function (p) {
+        if (p[0] < 0 || p[0] > 1 || p[1] == null || !isFinite(p[1])) return;
+        var b = Math.min(NB - 1, Math.floor(p[0] * NB));
+        sum[b] = (sum[b] || 0) + p[1]; cnt[b] = (cnt[b] || 0) + 1;
+      });
+      Object.keys(sum).forEach(function (b) { bins[+b].push(sum[b] / cnt[b]); });   // one value per year per day
+    });
+    var q = function (a, p) { var x = (a.length - 1) * p, lo = Math.floor(x), hi = Math.ceil(x); return a[lo] + (a[hi] - a[lo]) * (x - lo); };
+    var out = { statsP05: [], statsP25: [], statsAve: [], statsP75: [], statsP95: [] };
+    for (var d = 0; d < NB; d++) {
+      var vals = [];
+      for (var k = -h; k <= h; k++) vals = vals.concat(bins[((d + k) % NB + NB) % NB]);
+      if (vals.length < need) continue;
+      vals.sort(function (x, y) { return x - y; });
+      var f = (d + 0.5) / NB, mean = vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+      out.statsP05.push([f, q(vals, 0.05)]); out.statsP25.push([f, q(vals, 0.25)]); out.statsAve.push([f, mean]);
+      out.statsP75.push([f, q(vals, 0.75)]); out.statsP95.push([f, q(vals, 0.95)]);
+    }
+    return out;
+  }
+
+  /*
    * How a pool record sits against the 30-yr statistics: pts = [[f, elev]] (year fraction 0..1),
    * band arrays [[f, v]] sorted by f. Returns { n, inside, below, above, medianVsMean } where
    * inside/below/above are shares of readings (0..1) relative to p05–p95, and medianVsMean is the
@@ -212,6 +245,7 @@
     annualSeries: annualSeries,
     consLimits: consLimits,
     bandCheck: bandCheck,
+    derivedBands: derivedBands,
     MIN_SPAN: MIN_SPAN, clampZoom: clampZoom, zoomBy: zoomBy, panBy: panBy, dayTickStep: dayTickStep, niceStep: niceStep
   };
 });

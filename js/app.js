@@ -1034,7 +1034,7 @@
     var vals = inView(M.v, M.t).concat(M.rv, M.fc.v, M.tv.filter(function (v) { return v != null; }));
     if (!vals.length) vals = M.v.slice();
     var inWin = function (p) { return p[0] >= M.start && p[0] <= M.end && p[1] != null; };
-    if (M.stats) ['statsP05', 'statsP95'].forEach(function (k) { M.stats[k].forEach(function (p) { if (inWin(p)) vals.push(p[1]); }); });
+    // 30-yr bands do not stretch the axis (their extremes can follow one unusual year); they are clipped.
     if (M.target) M.target.pts.forEach(function (p) { if (inWin(p)) vals.push(p[1]); });
     M.levels.forEach(function (l) { vals.push(l.v); });
     if (M.bands.length) vals.push(M.bands[0].lo); // always show at least the first flood band
