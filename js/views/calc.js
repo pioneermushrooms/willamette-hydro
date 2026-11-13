@@ -115,7 +115,9 @@
       '<label class="field dd-f"><span class="field-label">Target as</span><select id="c2-tk"><option value="elev">Elevation (ft)</option><option value="stor">Storage (ac-ft)</option></select></label>' +
       field('c2-tv', 'Target value', 'inputmode="decimal"') +
       field('c2-t1', 'Target time (Pacific)', 'type="datetime-local" step="900" value="' + wall(start + 2 * DAY) + '"') +
-      '<div class="field dd-f"><span class="field-label">&nbsp;</span><button type="button" class="btn" id="c2-rule">Target = rule curve at target time</button><span class="dd-hint" id="c2-rule-msg"></span></div>' +
+      '<label class="field dd-f"><span class="field-label">Target from</span><select id="c2-tsrc"><option value="rule">Rule curve</option>' +
+        '<option value="interim" disabled>Published interim / injunction target (loading…)</option><option value="limit">Most limiting (lower of the two)</option></select></label>' +
+      '<div class="field dd-f"><span class="field-label">&nbsp;</span><button type="button" class="btn" id="c2-rule">Set target at target time</button><span class="dd-hint" id="c2-rule-msg"></span></div>' +
       field('c2-q0', 'Current outflow Q0 (cfs)', 'inputmode="decimal" value="' + (lv.out ? Math.round(lv.out.v) : '') + '"') +
       '<label class="field dd-f"><span class="field-label">Inflow</span><select id="c2-im"><option value="const">Constant</option><option value="series">Hourly series (paste)</option></select></label>' +
       field('c2-ic', 'Inflow (cfs, constant)', 'inputmode="decimal" value="' + (lv.inflow ? Math.max(0, Math.round(lv.inflow.v)) : '') + '"', lv.inflow ? 'default: latest USACE computed inflow' : '') +
@@ -266,18 +268,51 @@
     return H.fetchCwms(p.series.rule, t0 - 2 * DAY, t1 + 2 * DAY).then(function (s) { st.rule = { key: key, s: s }; return s; });
   }
 
+  // Published interim / injunction elevation target for the project (CWMS levels via js/layers.js).
+  function loadTarget() {
+    var code = st.code;
+    st.tgt = { code: code, loading: true };
+    var done = function (lv) {
+      if (st.code !== code) return;
+      var tg = lv && H.layers ? H.layers.targetFor(code, lv) : null, entry = tg ? H.levels.pick(lv, tg.id, Date.now()) : null;
+      st.tgt = { code: code, entry: entry, label: tg ? tg.label : null, id: tg ? tg.id : null };
+      var opt = st.el && st.el.querySelector('#c2-tsrc option[value="interim"]');
+      if (opt) {
+        opt.disabled = !entry;
+        opt.textContent = entry ? 'Published ' + tg.label.toLowerCase() : 'Published interim / injunction target (none published for ' + byCode[code].name + ')';
+      }
+    };
+    if (!H.levels) return done(null);
+    H.levels.fetchProjectLevels(code).then(done, function () { done(null); });
+  }
+  function targetAt(t) {
+    var g = st.tgt;
+    if (!g || g.code !== st.code || !g.entry) return null;
+    return H.levels.evalSeasonal(g.entry, t);
+  }
+
+  // Target elevation at the target time: rule curve, published interim/injunction target, or the
+  // lower (more limiting) of the two.
   function useRule() {
-    var msg = st.el.querySelector('#c2-rule-msg'), t1 = pacific(val('c2-t1')), t0 = pacific(val('c2-t0'));
+    var msg = st.el.querySelector('#c2-rule-msg'), t1 = pacific(val('c2-t1')), t0 = pacific(val('c2-t0')), src = val('c2-tsrc') || 'rule';
     if (t1 == null) { msg.textContent = 'Set the target time first.'; return; }
     msg.textContent = 'Loading rule curve…';
-    ruleFor(t0 || t1, t1).then(function (s) {
-      var v = H.interpolate(s, t1);
-      if (v == null) { msg.textContent = 'No rule-curve value published for that time.'; return; }
+    ruleFor(t0 || t1, t1).then(function (s) { return H.interpolate(s, t1); }, function () { return null; }).then(function (rv) {
+      var tv = targetAt(t1), label = st.tgt && st.tgt.label ? st.tgt.label : 'Published target';
+      var parts = [rv == null ? 'Rule curve: none published for that time' : 'Rule curve ' + fmt(rv, 2) + ' ft',
+        tv == null ? label + ': none for that time' : label + ' ' + fmt(tv, 2) + ' ft'];
+      var use = null, why = '';
+      if (src === 'rule') { use = rv; why = 'rule curve'; }
+      else if (src === 'interim') { use = tv; why = label.toLowerCase(); }
+      else if (rv != null && tv != null) { use = Math.min(rv, tv); why = (tv < rv ? label.toLowerCase() : 'rule curve') + ', the lower and more limiting'; }
+      else { use = rv != null ? rv : tv; why = rv != null ? 'rule curve (no published target then)' : label.toLowerCase() + ' (no rule curve then)'; }
+      if (use == null) { msg.textContent = parts.join(' · ') + '. Nothing to set.'; return; }
       st.el.querySelector('#c2-tk').value = 'elev';
-      st.el.querySelector('#c2-tv').value = v.toFixed(2);
-      msg.textContent = 'Rule curve ' + fmt(v, 2) + ' ft at ' + stamp(t1) + ' (' + byCode[st.code].series.rule.name + ')';
-    }, function (e) { msg.textContent = 'Rule curve unavailable: ' + e.message; });
+      st.el.querySelector('#c2-tv').value = use.toFixed(2);
+      msg.textContent = parts.join(' · ') + ' at ' + stamp(t1) + ' → using ' + fmt(use, 2) + ' ft (' + why + ').';
+    });
   }
+
 
   function runC2() {
     var box = st.el.querySelector('#c2-out-box');
@@ -328,7 +363,8 @@
     Promise.all([ruleFor(t0, t1).then(function (s) { return s; }, function () { return null; }), gateP]).then(function (res) {
       var rule = res[0];
       if (st.plan !== r) return;
-      r.schedule.forEach(function (row) { row.rule = rule ? H.interpolate(rule, row.t) : null; });
+      r.schedule.forEach(function (row) { row.rule = rule ? H.interpolate(rule, row.t) : null; row.tgt = targetAt(row.t); });
+      r.tgtLabel = st.tgt && st.tgt.code === st.code && st.tgt.entry ? st.tgt.label : null;
       r.gate = res[1];
       renderPlan(r, !!(rule && rule.t.length));
     });
@@ -371,11 +407,11 @@
     };
     var rows = r.schedule.map(function (x, i) {
       return '<tr' + (below[i] ? ' class="dd-below"' : '') + '><td>' + stamp(x.t) + '</td><td>' + fmt(x.O) + '</td><td>' + fmt(x.I) + '</td><td>' + fmt(x.net) + '</td><td>' + fmt(x.S) + '</td><td>' + fmt(x.E, 2) + '</td>' + (r.stage ? '<td>' + fmt(x.h, 2) + '</td>' : '') +
-        (hasRule ? '<td>' + fmt(x.rule, 2) + '</td>' : '') + (gs ? gcell(gs.rows[i]) : '') + '</tr>';
+        (hasRule ? '<td>' + fmt(x.rule, 2) + '</td>' : '') + (r.tgtLabel ? '<td>' + fmt(x.tgt, 2) + '</td>' : '') + (gs ? gcell(gs.rows[i]) : '') + '</tr>';
     }).join('');
     h += gateSection(r, gs, gdec);
     h += '<div class="rt-table-head"><h3 class="dd-ch">Schedule (' + (r.dtHr === 1 ? 'hourly' : r.dtHr * 60 + '-min') + ')</h3><button type="button" class="btn" id="c2-csv">Download CSV</button></div>' +
-      '<div class="table-scroll dd-table"><table><thead><tr><th>Time (PT)</th><th>Outflow cfs</th><th>Inflow cfs</th><th>Net cfs</th><th>Storage ac-ft</th><th>Elev ft</th>' + (r.stage ? '<th>Gage ht ft</th>' : '') + (hasRule ? '<th>Rule curve ft</th>' : '') + (gs ? '<th>Gate opening ' + esc(r.gate.def.ou || 'ft') + '</th><th>Change</th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+      '<div class="table-scroll dd-table"><table><thead><tr><th>Time (PT)</th><th>Outflow cfs</th><th>Inflow cfs</th><th>Net cfs</th><th>Storage ac-ft</th><th>Elev ft</th>' + (r.stage ? '<th>Gage ht ft</th>' : '') + (hasRule ? '<th>Rule curve ft</th>' : '') + (r.tgtLabel ? '<th>' + esc(r.tgtLabel) + ' ft</th>' : '') + (gs ? '<th>Gate opening ' + esc(r.gate.def.ou || 'ft') + '</th><th>Change</th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     h += '<p class="hint">Outflow is held for each step from its start time; storage S[i+1] = S[i] + (I − O) × 0.082645 × Δt hr. Elevations from the CWMS elevation–storage table.' + (hasRule ? ' Rule curve: ' + esc(byCode[st.code].series.rule.name) + ', daily, linearly joined.' : ' Rule curve not available for this window.') + '</p>' + labelLine();
     box.innerHTML = h;
   }
@@ -385,12 +421,12 @@
     if (!r) return;
     var gs = r.gate && r.gate.g;
     var rows = r.schedule.map(function (x, i) {
-      var row = [wall(x.t).replace('T', ' '), Math.round(x.O), Math.round(x.I), Math.round(x.net), Math.round(x.S), x.E == null ? '' : x.E.toFixed(2), x.rule == null ? '' : x.rule.toFixed(2), x.h == null ? '' : x.h.toFixed(2)];
+      var row = [wall(x.t).replace('T', ' '), Math.round(x.O), Math.round(x.I), Math.round(x.net), Math.round(x.S), x.E == null ? '' : x.E.toFixed(2), x.rule == null ? '' : x.rule.toFixed(2), x.h == null ? '' : x.h.toFixed(2), x.tgt == null ? '' : x.tgt.toFixed(2)];
       if (gs) { var g = gs.rows[i]; row.push(g.opening == null ? '' : g.opening, g.change == null ? '' : +g.change.toFixed(4), g.status); }
       return row;
     });
     rows.push([D.LABEL]);
-    var text = R.toCSV(['time_pt', 'outflow_cfs', 'inflow_cfs', 'net_cfs', 'storage_acft', 'elev_ft', 'rule_curve_ft', 'gage_height_ft'].concat(gs ? ['gate_opening_' + (r.gate.def.ou || 'ft'), 'gate_change', 'gate_status'] : []), rows);
+    var text = R.toCSV(['time_pt', 'outflow_cfs', 'inflow_cfs', 'net_cfs', 'storage_acft', 'elev_ft', 'rule_curve_ft', 'gage_height_ft', 'published_target_ft'].concat(gs ? ['gate_opening_' + (r.gate.def.ou || 'ft'), 'gate_change', 'gate_status'] : []), rows);
     var a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
     a.download = st.code + '-drawdown-plan.csv';
@@ -405,6 +441,7 @@
     var rows = r.schedule, W = Math.max(300, Math.min(1100, (st.el.querySelector('#c2-out-box').clientWidth || 700) - 4)), Hh = 220;
     var lines = kind === 'elev'
       ? [{ v: rows.map(function (x) { return x.E; }), cls: 'dd-l-elev' }].concat(hasRule ? [{ v: rows.map(function (x) { return x.rule; }), cls: 'dd-l-rule' }] : [])
+        .concat(r.tgtLabel ? [{ v: rows.map(function (x) { return x.tgt; }), cls: 'dd-l-pubtgt' }] : [])
         .concat([{ v: rows.map(function () { return st.rating.elev(r.St); }), cls: 'dd-l-target' }])
       : [{ v: rows.map(function (x) { return x.O; }), cls: 'dd-l-out' }, { v: rows.map(function (x) { return x.I; }), cls: 'dd-l-in' }];
     var all = [].concat.apply([], lines.map(function (l) { return l.v; })).filter(function (v) { return v != null && isFinite(v); });
@@ -431,7 +468,7 @@
       s += '<path class="' + l.cls + '" d="' + d + '"/>';
     });
     var legend = kind === 'elev'
-      ? '<span><i class="dd-k-elev"></i>Planned elevation</span>' + (hasRule ? '<span><i class="dd-k-rule"></i>USACE rule curve</span>' : '') + '<span><i class="dd-k-target"></i>Target</span>'
+      ? '<span><i class="dd-k-elev"></i>Planned elevation</span>' + (hasRule ? '<span><i class="dd-k-rule"></i>USACE rule curve</span>' : '') + (r.tgtLabel ? '<span><i class="dd-k-pubtgt"></i>' + esc(r.tgtLabel) + ' (published)</span>' : '') + '<span><i class="dd-k-target"></i>Your target</span>'
       : '<span><i class="dd-k-out"></i>Planned outflow</span><span><i class="dd-k-in"></i>Inflow</span>';
     return '<div class="dd-chart"><svg viewBox="0 0 ' + W + ' ' + Hh + '" width="100%" role="img" aria-label="' + (kind === 'elev' ? 'Planned elevation' : 'Planned outflow and inflow') + ' over time">' + s + '</svg></div><div class="rt-legend">' + legend + '</div>';
   }
@@ -441,7 +478,7 @@
   function bind() {
     st.el.addEventListener('click', function (e) {
       var c = e.target.closest('[data-code]');
-      if (c) { st.code = c.getAttribute('data-code'); st.plan = null; st.rule = null; render(); loadRating(); return; }
+      if (c) { st.code = c.getAttribute('data-code'); st.plan = null; st.rule = null; render(); loadRating(); loadTarget(); return; }
       if (e.target.id === 'c1-go') runC1();
       else if (e.target.id === 'c2-go') runC2();
       else if (e.target.id === 'c2-rule') useRule();
@@ -485,6 +522,7 @@
       render();
       bind();
       loadRating();
+      loadTarget();
     },
     _pacific: pacific
   };

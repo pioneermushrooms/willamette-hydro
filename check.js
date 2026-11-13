@@ -494,6 +494,7 @@ console.log('drawdown calculator');
   check(/outside the stage–discharge rating/.test(outErr), 'stage ramp: flows outside the rating are reported');
   const calcSrc = fs.readFileSync(path.join(__dirname, 'js', 'views', 'calc.js'), 'utf8');
   const RTs = require('./js/ratings.js'), belowSites = RTs.SITES.filter((x) => x.below);
+  check(/id="c2-tsrc"/.test(calcSrc) && /value="limit"/.test(calcSrc) && /Math\.min\(rv, tv\)/.test(calcSrc) && /dd-l-pubtgt/.test(calcSrc), 'calc2: target from rule curve, published interim/injunction target, or the lower (more limiting) of the two; target curve on the chart');
   const rg = {}; (calcSrc.match(/^\s{4}([A-Z]{3}): \{ site: '(\d{8})'/gm) || []).forEach((l) => { const m = /([A-Z]{3}): \{ site: '(\d{8})'/.exec(l); rg[m[1]] = m[2]; });
   check(['HCR', 'LOP', 'DEX', 'FAL', 'CGR', 'BLU', 'GPR', 'COT', 'DOR'].every((c) => rg[c]) && !rg.FRN && rg.HCR === '14145500' && rg.DEX === '14150000' && rg.CGR === '14159500' && !/c2-rg|gageList/.test(calcSrc),
     'stage ramp: one fixed downstream gage per dam (no gage list); none for Fern Ridge (FRNO not published)');
