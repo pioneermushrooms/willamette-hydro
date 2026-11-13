@@ -408,24 +408,44 @@
   }
 
   /*
-   * Gate setting for every schedule row. opts = { powerhouse: cfs not through these gates,
-   * gates: number of gates opened equally (the rating's flow is per gate), step: opening
-   * increment to round to (ft) }. Returns rows [{ q, opening, change, status }] and the list of
-   * changes [{ i, opening, change }] (rows where the rounded opening differs from the previous).
+   * Gate setting for every schedule row. The gate step is not an input: on a ramp step it is the
+   * opening change that produces that step's ramp-limited flow change (cfs/hr, or the flow
+   * equivalent of a gage-height limit) at that step's planned pool elevation.
+   * opts = { powerhouse: cfs not through these gates, gates: number opened equally (the rating's
+   * flow is per gate), trim: during a hold, re-set the gate only once the opening needed to keep
+   * the same flow has drifted this far (ft, default 0.1; the head changes as the pool moves) }.
+   * Returns
+   *   rows    [{ q, opening (0.01 ft), change (vs previous row), dq (release change), kind, status }]
+   *           kind 'start' | 'ramp' (release changes) | 'hold' (release unchanged)
+   *   changes [{ i, opening, change (vs previous setting), dq, kind: 'start' | 'ramp' | 'trim' }]
+   *   steps   { up, down }: per-step gate movement while ramping { min, max, eMin, eMax, n } or null
    */
   function gateSchedule(schedule, rt, opts) {
-    var ph = num(opts && opts.powerhouse) || 0, n = Math.max(1, Math.round(num(opts && opts.gates) || 1)), st = num(opts && opts.step) || 0;
-    var round = function (v) { return v == null || !st ? v : +(Math.round(v / st) * st).toFixed(4); };
-    var prev = null, changes = [];
+    var ph = num(opts && opts.powerhouse) || 0, n = Math.max(1, Math.round(num(opts && opts.gates) || 1));
+    var trim = num(opts && opts.trim) || 0.1;
+    var r2 = function (v) { return v == null ? null : Math.round(v * 100) / 100; };
+    var prev = null, last = null, lastQ = null, changes = [];
+    var stat = function () { return { min: Infinity, max: -Infinity, eMin: Infinity, eMax: -Infinity, n: 0 }; };
+    var up = stat(), down = stat();
     var rows = schedule.map(function (row, i) {
-      var q = (row.O - ph) / n, g = gateOpening(rt, row.E, q), op = round(g.opening);
-      var change = op != null && prev != null ? op - prev : null;
-      if (op != null && (prev == null || Math.abs(op - prev) > 1e-9)) changes.push({ i: i, opening: op, change: change });
-      if (op != null) prev = op;
-      return { q: q, opening: op, change: change, status: g.status, qMax: g.qMax };
+      var q = (row.O - ph) / n, g = gateOpening(rt, row.E, q), op = r2(g.opening);
+      var dq = i ? row.O - schedule[i - 1].O : null, kind = !i ? 'start' : Math.abs(dq) > 0.5 ? 'ramp' : 'hold';
+      var change = op != null && prev != null ? r2(op - prev) : null;
+      if (op != null) {
+        if (last == null) { changes.push({ i: i, opening: op, change: null, dq: null, kind: 'start' }); last = op; lastQ = row.O; }
+        else if (kind === 'ramp' && op !== last) { changes.push({ i: i, opening: op, change: r2(op - last), dq: row.O - lastQ, kind: 'ramp' }); last = op; lastQ = row.O; }
+        else if (kind === 'hold' && Math.abs(op - last) >= trim - 1e-9) { changes.push({ i: i, opening: op, change: r2(op - last), dq: row.O - lastQ, kind: 'trim' }); last = op; lastQ = row.O; }
+        if (kind === 'ramp' && change != null && g.status === 'ok') {
+          var s2 = dq > 0 ? up : down, m = Math.abs(change);
+          s2.min = Math.min(s2.min, m); s2.max = Math.max(s2.max, m); s2.eMin = Math.min(s2.eMin, row.E); s2.eMax = Math.max(s2.eMax, row.E); s2.n++;
+        }
+        prev = op;
+      }
+      return { q: q, opening: op, change: change, dq: dq, kind: kind, status: g.status, qMax: g.qMax };
     });
-    return { rows: rows, changes: changes, gates: n, powerhouse: ph, step: st };
+    return { rows: rows, changes: changes, gates: n, powerhouse: ph, trim: trim, steps: { up: up.n ? up : null, down: down.n ? down : null } };
   }
+
 
   return {
     FT3_PER_AF: FT3_PER_AF, AF_PER_CFS_HR: AF_PER_CFS_HR, LABEL: LABEL,

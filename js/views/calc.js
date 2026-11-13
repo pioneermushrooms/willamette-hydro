@@ -189,29 +189,45 @@
         '<label class="field dd-f"><span class="field-label">Release through</span><select id="c2-gk">' + opts + '</select><span class="dd-hint">rating also on the Tables page</span></label>' +
         field('c2-ph', 'Other release (cfs)', 'inputmode="decimal" value="0"', 'flow not through these gates, e.g. powerhouse') +
         field('c2-gn', 'Gates opened equally', 'inputmode="numeric" value="1"', 'the rating’s flow is per gate unless its name says otherwise') +
-        '<label class="field dd-f"><span class="field-label">Opening steps</span><select id="c2-gs"><option value="0.1">0.1 ft</option><option value="0.25">0.25 ft</option><option value="0.5">0.5 ft</option><option value="1">1 ft</option><option value="0.01">0.01 ft</option></select></label>' +
+        '<label class="field dd-f"><span class="field-label">Trim during holds at</span><select id="c2-gt"><option value="0.1">0.1 ft drift</option><option value="0.05">0.05 ft drift</option><option value="0.25">0.25 ft drift</option><option value="0.5">0.5 ft drift</option></select><span class="dd-hint">gate steps while ramping come from the ramp limit</span></label>' +
         '</div>' : '<p class="na">No gate ratings are catalogued on this site for ' + esc(byCode[st.code].name) + '.</p>') + '</div>';
   }
 
   // Gate change list under the summary.
-  function gateSection(r, gs, gdec) {
+  function gateSection(r, gs) {
     if (!r.gate) return '';
     if (r.gate.error) return '<p class="dd-err">Gate rating unavailable (' + esc(r.gate.def.label) + '): ' + esc(r.gate.error) + '</p>';
     var u = esc(r.gate.def.ou || 'ft'), label = esc(r.gate.def.label.replace(/ \(2-D\)$/, ''));
+    var per = r.dtHr === 1 ? 'hour' : r.dtHr * 60 + ' min';
     var atMax = gs.rows.filter(function (g) { return g.status === 'max'; }).length, noElev = gs.rows.filter(function (g) { return g.status === 'elev'; }).length;
+    var sgn = function (v, d) { return (v > 0 ? '+' : v < 0 ? '−' : '±') + fmt(Math.abs(v), d); };
+    var span = function (a, b, d) { return Math.abs(a - b) < 0.005 ? fmt(a, d) : fmt(a, d) + '–' + fmt(b, d); };
+    // The gate step is set by the ramp limit, not chosen: report it.
+    var rate = function (up) { var v = up ? r.ru : r.rd; return r.stage ? fmt(v, 2) + ' ft/hr gage height at ' + esc(r.stage.label.split(' (')[0]) : fmt(v) + ' cfs/hr'; };
+    var stepLine = function (st2, up) {
+      return st2 ? '<li>Ramping ' + (up ? 'up' : 'down') + ' at ' + rate(up) + ': <b>' + (up ? '+' : '−') + span(st2.min, st2.max, 2) + ' ' + u + '</b> of gate per ' + per +
+        ' (pool ' + span(st2.eMin, st2.eMax, 2) + ' ft)</li>' : '';
+    };
     var items = gs.changes.map(function (c) {
-      var row = r.schedule[c.i], g = gs.rows[c.i];
-      return '<li><b>' + esc(stamp(row.t)) + '</b> — ' + (c.change == null ? 'set' : c.change > 0 ? 'open' : 'close') + ' to <b>' + fmt(c.opening, gdec) + ' ' + u + '</b>' +
-        (c.change == null ? '' : ' (' + (c.change > 0 ? '+' : '−') + fmt(Math.abs(c.change), gdec) + ')') +
-        ' · ' + fmt(g.q) + ' cfs' + (gs.gates > 1 ? ' per gate × ' + gs.gates : '') + ' at ' + fmt(row.E, 2) + ' ft' + (g.status === 'max' ? ' <span class="badge warn">FULL OPENING</span>' : '') + '</li>';
+      var row = r.schedule[c.i], g = gs.rows[c.i], qtxt = fmt(g.q) + ' cfs' + (gs.gates > 1 ? ' per gate × ' + gs.gates : '');
+      var head = '<li class="dd-g-' + c.kind + '"><b>' + esc(stamp(row.t)) + '</b> — ';
+      var tail = (g.status === 'max' ? ' <span class="badge warn">FULL OPENING</span>' : '') + '</li>';
+      if (c.kind === 'start') return head + 'set to <b>' + fmt(c.opening, 2) + ' ' + u + '</b> · ' + qtxt + ' at ' + fmt(row.E, 2) + ' ft' + tail;
+      if (c.kind === 'trim') return head + 'trim to <b>' + fmt(c.opening, 2) + ' ' + u + '</b> (' + sgn(c.change, 2) + ') · holds ' + qtxt + ' as the pool ' + (c.change > 0 ? 'falls' : 'rises') + ' to ' + fmt(row.E, 2) + ' ft' + tail;
+      return head + (c.change > 0 ? 'open' : 'close') + ' to <b>' + fmt(c.opening, 2) + ' ' + u + '</b> (' + sgn(c.change, 2) + ') · ' + qtxt + ' (' + sgn(c.dq / gs.gates, 0) + ' cfs) at ' + fmt(row.E, 2) + ' ft' + tail;
     });
+    var nr = gs.changes.filter(function (c) { return c.kind === 'ramp'; }).length, nt = gs.changes.filter(function (c) { return c.kind === 'trim'; }).length;
     return '<h3 class="dd-ch">Gate changes · ' + label + '</h3>' +
-      '<p class="hint">' + gs.changes.length + ' setting' + (gs.changes.length === 1 ? '' : 's') + ' in ' + fmt(gs.step, gdec) + ' ' + u + ' steps' + (gs.gates > 1 ? ', ' + gs.gates + ' gates opened equally' : '') +
-      (gs.powerhouse ? ', ' + fmt(gs.powerhouse) + ' cfs released elsewhere' : '') + '. Opening for each step’s outflow at that step’s planned pool elevation, from ' + esc(r.gate.def.id) + '.</p>' +
+      '<p class="hint">Gate step set by the ramp limit: on each ramp step the opening changes by whatever passes that step’s ramp-limited flow change at that step’s pool elevation (' + esc(r.gate.def.id) + ').' +
+      (gs.gates > 1 ? ' ' + gs.gates + ' gates opened equally.' : '') + (gs.powerhouse ? ' ' + fmt(gs.powerhouse) + ' cfs released elsewhere.' : '') + '</p>' +
+      '<ul class="dd-gstep">' + stepLine(gs.steps.up, true) + stepLine(gs.steps.down, false) + '</ul>' +
+      '<p class="hint">' + (1 + nr + nt) + ' settings: start, ' + nr + ' ramp step' + (nr === 1 ? '' : 's') + ', ' + nt + ' trim' + (nt === 1 ? '' : 's') +
+      ' (during holds the same flow needs a little more opening as the pool falls; a trim is listed once that reaches ' + fmt(gs.trim, 2) + ' ' + u + ').</p>' +
       (atMax ? '<p class="dd-err">' + atMax + ' step' + (atMax > 1 ? 's' : '') + ' need more than this structure passes at full opening: add gates or other release.</p>' : '') +
       (noElev ? '<p class="dd-err">' + noElev + ' step' + (noElev > 1 ? 's are' : ' is') + ' at a pool elevation outside the gate rating.</p>' : '') +
       '<ol class="dd-gates mono">' + items.join('') + '</ol>';
   }
+
 
   // ---- "Use current conditions": latest live pool, outflow and USACE computed inflow -------
 
@@ -353,7 +369,7 @@
   function finishC2(t0, t1) {
     var box = st.el.querySelector('#c2-out-box');
     box.innerHTML = '<p class="na loading">Loading rule curve…</p>';
-    var r = st.plan, gdef = gateDef(), gopts = { powerhouse: numv('c2-ph'), gates: numv('c2-gn'), step: +val('c2-gs') };
+    var r = st.plan, gdef = gateDef(), gopts = { powerhouse: numv('c2-ph'), gates: numv('c2-gn'), trim: +val('c2-gt') };
     var gateP = !gdef ? Promise.resolve(null) : R.load(gdef).then(function (e) {
       var d = e.data;
       if (d.kind !== '2d') throw new Error('not a 2-D gate rating');
@@ -398,7 +414,7 @@
     h += '<h3 class="dd-ch">Outflow / inflow (cfs)</h3>' + chart(r, 'flow');
     var below = {};
     r.belowMin.forEach(function (i) { below[i] = true; });
-    var gs = r.gate && r.gate.g, gdec = gs ? (gs.step && gs.step < 0.1 ? 2 : gs.step >= 1 ? 0 : gs.step % 0.1 ? 2 : 1) : 1;
+    var gs = r.gate && r.gate.g, gdec = 2;
     var gcell = function (gr) {
       if (!gr) return '<td></td><td></td>';
       var flag = { max: ' ▲ at full opening', low: ' (below rated openings)', elev: '', closed: ' closed' }[gr.status] || '';
@@ -409,7 +425,7 @@
       return '<tr' + (below[i] ? ' class="dd-below"' : '') + '><td>' + stamp(x.t) + '</td><td>' + fmt(x.O) + '</td><td>' + fmt(x.I) + '</td><td>' + fmt(x.net) + '</td><td>' + fmt(x.S) + '</td><td>' + fmt(x.E, 2) + '</td>' + (r.stage ? '<td>' + fmt(x.h, 2) + '</td>' : '') +
         (hasRule ? '<td>' + fmt(x.rule, 2) + '</td>' : '') + (r.tgtLabel ? '<td>' + fmt(x.tgt, 2) + '</td>' : '') + (gs ? gcell(gs.rows[i]) : '') + '</tr>';
     }).join('');
-    h += gateSection(r, gs, gdec);
+    h += gateSection(r, gs);
     h += '<div class="rt-table-head"><h3 class="dd-ch">Schedule (' + (r.dtHr === 1 ? 'hourly' : r.dtHr * 60 + '-min') + ')</h3><button type="button" class="btn" id="c2-csv">Download CSV</button></div>' +
       '<div class="table-scroll dd-table"><table><thead><tr><th>Time (PT)</th><th>Outflow cfs</th><th>Inflow cfs</th><th>Net cfs</th><th>Storage ac-ft</th><th>Elev ft</th>' + (r.stage ? '<th>Gage ht ft</th>' : '') + (hasRule ? '<th>Rule curve ft</th>' : '') + (r.tgtLabel ? '<th>' + esc(r.tgtLabel) + ' ft</th>' : '') + (gs ? '<th>Gate opening ' + esc(r.gate.def.ou || 'ft') + '</th><th>Change</th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     h += '<p class="hint">Outflow is held for each step from its start time; storage S[i+1] = S[i] + (I − O) × 0.082645 × Δt hr. Elevations from the CWMS elevation–storage table.' + (hasRule ? ' Rule curve: ' + esc(byCode[st.code].series.rule.name) + ', daily, linearly joined.' : ' Rule curve not available for this window.') + '</p>' + labelLine();
