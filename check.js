@@ -485,13 +485,21 @@ const header = (html.match(/<header[\s\S]*?<\/header>/) || [''])[0];
 const footer = (html.match(/<footer[\s\S]*?<\/footer>/) || [''])[0];
 const NOTICE = 'Live data from USGS and USACE; provisional, not official.';
 check(header.includes(NOTICE) && footer.includes(NOTICE), 'header + footer carry the live-data notice');
+{
+  // Every local script/stylesheet carries the same ?v= tag, so a new index.html never runs with old cached code.
+  const assets = html.match(/(?:src|href)="(?:js|css)\/[^"]+"/g) || [];
+  const tags = new Set(assets.map((a) => (a.match(/\?v=([\w.-]+)"$/) || [])[1]));
+  check(assets.length >= 15 && tags.size === 1 && !tags.has(undefined), 'all ' + assets.length + ' local scripts/styles share one ?v= cache-busting tag');
+  const SV = require('./scripts/stamp-version.js');
+  check(tags.has(SV.tag()), 'cache-busting tag is current (?v=' + SV.tag() + '); run node scripts/stamp-version.js after code changes');
+}
 check(/not affiliated with USGS, USACE or BPA/.test(header) && /not affiliated with USGS, USACE or BPA/.test(footer), 'not-affiliated text in header + footer');
 check(!/illustrative/i.test(html), 'no "illustrative" wording left in page');
 (html.match(/(?:src|href)="([^"#:]+)"/g) || []).forEach((m) => {
-  const ref = m.replace(/^(?:src|href)="/, '').replace(/"$/, '');
+  const ref = m.replace(/^(?:src|href)="/, '').replace(/"$/, '').replace(/\?.*$/, '');
   check(fs.existsSync(path.join(__dirname, ref)), 'referenced file exists: ' + ref);
 });
-['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'js/router.js', 'js/teacup-core.js', 'js/ratings.js', 'scripts/check-links.js', 'js/tdg.js', 'js/snotel.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
+['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'scripts/stamp-version.js', 'js/router.js', 'js/teacup-core.js', 'js/ratings.js', 'scripts/check-links.js', 'js/tdg.js', 'js/snotel.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
 ['overview', 'teacup', 'tables', 'calc', 'docs'].forEach((r) => {
   check(html.includes('href="#/' + r + '"') && html.includes('data-view="' + r + '"'), 'route + view exist: ' + r);
 });

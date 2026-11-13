@@ -124,6 +124,9 @@ A planning aid — verify against the water control manual and current operating
 
 ### Picking up new deploys
 
+Every local script and stylesheet in `index.html` is loaded as `?v=<hash of js/ and css/>`, so a newly deployed page can never run with code the browser cached from the previous version (GitHub Pages allows 10-minute browser caching). After changing anything in `js/` or `css/`, run `node scripts/stamp-version.js`; `check.js` fails if the tag is stale.
+
+
 `js/update-check.js` fingerprints the deployed code (index.html plus every same-origin script and stylesheet, fetched uncached) when the page loads, then re-checks every 10 minutes and when the tab becomes visible. If the code changed, an open page reloads itself on the same route. On the Calculator page, or while a form field has focus, it shows a "new version available · Reload" banner instead so inputs are not lost. Data files are not part of the fingerprint, so the BPA data commits do not trigger reloads.
 
 ## Pages (hash routes)
