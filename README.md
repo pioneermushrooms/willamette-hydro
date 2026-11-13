@@ -136,6 +136,8 @@ Plain anchors (`#trends`, `#rivers`, …) stay on Overview and scroll.
 
 ## Teacup view (`#/teacup`)
 
+**PAST YEARS** (next to YEAR / 30 D / 6 MO / 1 YR on the lake chart) overlays up to six calendar years of pool elevation on one Jan–Dec axis, each with its own rule curve (dashed) and the 30-yr statistics bands for context. Pick years from the last 20; hover or tap for every year's value on that date; the year summary table gives the lowest and highest pool with dates and the Nov 15–Dec 15 mean. Pool comes from USGS daily lake elevation (62614, 24:00) at the lake gage, or CWMS 6-hour means where there is no gage. Each year keeps a fixed colour from a six-hue palette checked for colour-vision deficiency and contrast.
+
 - **Basin teacup:** 8 cups in 2 columns on mobile and 4 on desktop.
   - Cup height is the conservation pool, from bottom to top elevation in CWMS levels. The water line is the **live** pool elevation and the dashed line is the **live** CWMS rule curve. The number is % full, **derived** from live storage: (storage − bottom of conservation) ÷ (top − bottom).
   - Below the conservation pool, cups say so rather than showing 0 %.
