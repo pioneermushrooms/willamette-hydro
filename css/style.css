@@ -914,3 +914,48 @@ i.lg-livept { width: 10px !important; height: 10px !important; border-radius: 50
 .tc-an-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 6px; }
 .tc-an-head .tc-h4 { margin: 0; }
 .tc-range button { min-height: 36px; }
+
+/* ---- Storage / Drawdown Calculator (#/calc) -------------------------------- */
+.view-calc .view-body { display: grid; gap: var(--gap); min-width: 0; padding: 0 6px 6px; }
+.dd-label { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border: 1px solid var(--amber-dim); border-radius: 4px; color: var(--amber); font-weight: 600; font-size: 13.5px; }
+.dd-rating, .dd-live { margin: 0; font-size: 12.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.dd-panel { margin: 0; }
+.dd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px 14px; padding: 0 6px; }
+.dd-f { flex: none; }
+.dd-f input, .dd-f select, .dd-f textarea {
+  min-height: 44px; width: 100%; padding: 0 10px; color: var(--text); font: 15px var(--mono);
+  background: #050607; border: 1px solid var(--line); border-radius: 4px; color-scheme: dark;
+}
+.dd-f textarea { padding: 8px 10px; min-height: 90px; resize: vertical; }
+.dd-f select { appearance: auto; -webkit-appearance: auto; }
+.dd-f .btn { min-height: 44px; width: 100%; }
+.dd-wide { grid-column: 1 / -1; }
+.dd-hint { font-size: 11px; color: var(--muted); }
+.dd-actions { padding: 12px 6px 4px; }
+.dd-actions .btn { min-height: 44px; padding: 0 22px; color: #000; background: var(--amber); font-weight: 700; }
+.dd-out { padding: 8px 6px 0; min-width: 0; }
+.dd-err { color: var(--crit); margin: 4px 0; }
+.dd-sum { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin: 8px 0; }
+.dd-sum div { background: #0a0c0e; border: 1px solid var(--bezel-lo); border-radius: 4px; padding: 8px 10px; }
+.dd-sum dt { font-size: 10.5px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.dd-sum dd { margin: 2px 0 0; color: var(--text); font-size: 14.5px; }
+.dd-steps { margin: 6px 0; padding-left: 22px; color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
+.dd-status { margin: 4px 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.dd-plain { margin: 6px 0; font-size: 15px; color: var(--text); }
+.dd-msgs { margin: 4px 0 8px; padding-left: 20px; color: var(--warn); font-size: 13px; }
+.dd-ch { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-2); margin: 14px 0 6px; }
+.dd-chart { background: #0a0c0e; border: 1px solid var(--bezel-lo); border-radius: 4px; }
+.dd-chart svg { display: block; }
+.dd-chart .axis line { stroke: var(--grid); }
+.dd-chart .axis text { fill: var(--muted); font: 10.5px var(--mono); }
+.dd-chart path { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.dd-l-elev, .dd-l-out { stroke: var(--cyan); }
+.dd-l-rule { stroke: var(--amber) !important; stroke-width: 1.5 !important; stroke-dasharray: 5 4; }
+.dd-l-target { stroke: #8b939b !important; stroke-width: 1 !important; stroke-dasharray: 2 3; }
+.dd-l-in { stroke: var(--ok) !important; stroke-width: 1.5 !important; }
+i.dd-k-elev, i.dd-k-out { border-top: 2px solid var(--cyan); } i.dd-k-rule { border-top: 2px dashed var(--amber); }
+i.dd-k-target { border-top: 1px dotted #8b939b; } i.dd-k-in { border-top: 2px solid var(--ok); }
+.dd-table { max-height: 380px; }
+.dd-table tr.dd-below td { color: var(--warn); }
+.dd-plabel { margin: 10px 0 0; font-size: 12px; color: var(--amber); }
+.dd-f[hidden] { display: none; }

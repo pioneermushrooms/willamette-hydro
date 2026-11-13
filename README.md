@@ -111,9 +111,20 @@ The Trend Recorder (Overview) has **24 H · 7 D · 30 D · 6 MO · 1 YR**; the T
 - **Rule curve:** the CWMS daily rule curve for the whole window. Rivers use USGS IV (30 D) or USGS daily means (6 MO / 1 YR); NWS forecasts are only drawn on 24 H / 7 D.
 - History is fetched when a range is picked and cached for 30 minutes.
 
+### Storage / Drawdown Calculator (`#/calc`)
+
+A planning aid — verify against the water control manual and current operating orders. Every output carries that label.
+
+- **Data:** the project's published CWMS elevation–storage rating (`<P>.Elev-Forebay;Stor.Standard.CENWP`, same loader and 7-day cache as the Tables page), linear interpolation both ways; values outside the table are errors. Current pool, outflow and USACE computed inflow prefill the inputs from the live data. The rule curve for the window is read from `<P>.Elev-RuleCurve.Inst.~1Day.0.CENWP-CALC`.
+- **Units:** cfs, ac-ft, ft. 1 ac-ft = 43,560 ft³; 1 cfs·hr = 3600 / 43,560 = 0.082645 ac-ft.
+- **1 · Volume / Flow / Time:** enter any two of volume change, net flow (or outflow and inflow) and duration; the third is solved with the arithmetic shown. With a starting elevation, the end elevation and change are given (positive volume = net release).
+- **2 · Target Drawdown Planner:** a trapezoid release Q0 → plateau Qp → Q_end, ramp-limited (separate up/down rates), arriving exactly at the target time; Q_end defaults to the inflow at the target time. Simulation per step: `S[i+1] = S[i] + (I[i] − O[i]) × 0.082645 × Δt` (outflow held from each step's start; 1 h, 30 min or 15 min). Qp is found by bisection on the ending storage (±1 ac-ft). Reports: not reachable by the deadline (elevation reached, earliest achievable time within 90 days), ramps alone longer than the window (best achievable ramp), overshoot below target even at the lowest plateau, and any step below the minimum outflow. Outputs a summary, a plain-language schedule line, elevation vs rule curve and outflow/inflow charts, the step table and a CSV. Optional rounding of the plateau to 25/50/100 cfs.
+- **Inflow:** constant, or an hourly series pasted one value per line (last value held). No inflow forecasting, tailwater/stage ramp limits or unit dispatch (out of scope).
+- **Code / tests:** `js/drawdown.js` (pure, tested in `check.js` against 1,000 ac-ft @ 700 cfs = 17.29 hr, @ 1,200 cfs = 10.08 hr, a hand-checked constant-inflow plan, and an infeasible target), `js/views/calc.js` (page).
+
 ## Pages (hash routes)
 
-`#/overview` is the live dashboard (default). `#/teacup` is the basin teacup and lake ruler. `#/tables` has the published rating tables and `#/docs` the documents and data sources.
+`#/overview` is the live dashboard (default). `#/teacup` is the basin teacup and lake ruler. `#/tables` has the published rating tables, `#/calc` the storage / drawdown calculator and `#/docs` the documents and data sources.
 Plain anchors (`#trends`, `#rivers`, …) stay on Overview and scroll.
 
 ## Teacup view (`#/teacup`)

@@ -410,6 +410,73 @@ console.log('snapshot / history');
   check(['year', '30d', '6m', '1y'].every((r) => tcs.includes("['" + r + "'")), 'teacup: YEAR / 30 D / 6 MO / 1 YR range buttons');
 }
 
+// ---- 2d. Storage / drawdown calculator (js/drawdown.js) ------------------------
+console.log('drawdown calculator');
+{
+  const D = require('./js/drawdown.js');
+  const close = (a, b, e) => Math.abs(a - b) <= e;
+  check(close(D.AF_PER_CFS_HR, 0.082645, 1e-6) && D.FT3_PER_AF === 43560, 'calc: 1 cfs·hr = 0.082645 ac-ft, 1 ac-ft = 43,560 ft³');
+
+  // Interpolation on an elevation–storage table, both directions; out of range is an error.
+  const rt = D.makeRating([800, 850, 900], [0, 40000, 100000]);
+  check(rt.stor(825) === 20000 && rt.stor(850) === 40000 && rt.stor(875) === 70000, 'calc: elevation -> storage (linear)');
+  check(rt.elev(20000) === 825 && rt.elev(70000) === 875 && rt.elev(100000) === 900, 'calc: storage -> elevation (linear)');
+  const throws = (f) => { try { f(); return false; } catch (e) { return e instanceof RangeError && /outside/.test(e.message); } };
+  check(throws(() => rt.stor(799.9)) && throws(() => rt.stor(900.1)) && throws(() => rt.elev(-1)) && throws(() => rt.elev(100001)), 'calc: out-of-table values are errors');
+
+  // Calculator 1 acceptance values.
+  const c1 = D.convert({ volume: 1000, netFlow: 700 });
+  check(c1.hours.toFixed(2) === '17.29', 'calc1: 1000 ac-ft @ 700 cfs net -> 17.29 hr');
+  check(c1.steps[0] === '1,000 ac-ft × 43,560 = 43,560,000 ft³ ÷ 700 cfs = 62,229 s = 17.29 hr', 'calc1: math steps shown');
+  check(D.convert({ volume: 1000, netFlow: 1200 }).hours.toFixed(2) === '10.08', 'calc1: 1000 ac-ft @ 1200 cfs net -> 10.08 hr');
+  check(D.convert({ volume: 1000, outflow: 1500, inflow: 800 }).hours.toFixed(2) === '17.29', 'calc1: net flow = outflow − inflow');
+  check(close(D.convert({ netFlow: 700, hours: 24 }).volume, 700 * 24 * 0.0826446, 0.01) && close(D.convert({ volume: 1000, hours: 10 }).netFlow, 1210, 0.01), 'calc1: solves for volume and for flow');
+  const c1e = D.convert({ volume: 4000, netFlow: 1000, startElev: 850, rating: rt });
+  check(c1e.elev.storStart === 40000 && c1e.elev.storEnd === 36000 && close(c1e.elev.end, 845, 1e-9) && close(c1e.elev.change, -5, 1e-9), 'calc1: elevation change from the starting pool (800 ac-ft/ft below 850)');
+  const bad = (o) => { try { D.convert(o); return false; } catch (e) { return true; } };
+  check(bad({ volume: 1000 }) && bad({ volume: 1000, netFlow: 700, hours: 3 }) && bad({ volume: 1000, netFlow: -700 }), 'calc1: needs exactly two inputs with consistent signs');
+
+  // Calculator 2, hand-checked: linear table 800-900 ft <-> 0-100,000 ac-ft (1,000 ac-ft/ft),
+  // S0 = 50,000, inflow 500 cfs, Q0 = Q_end = 500, ramps 100 cfs/hr, 24 h, 1-h steps.
+  // With Qp = 1,000: outflows 500..900 (5 h), 1,000 x 14 h, then 1,000..600 (5 h)
+  // = 21,500 cfs·h; inflow 12,000; net 9,500 cfs·h = 785.12 ac-ft.
+  const lin = D.makeRating([800, 900], [0, 100000]);
+  const t0 = Date.UTC(2026, 10, 10, 8), HR = 3600e3;
+  const St = 50000 - 9500 * D.AF_PER_CFS_HR;
+  const base = { rating: lin, S0: 50000, St, t0, tEnd: t0 + 24 * HR, Q0: 500, inflow: 500, ru: 100, rd: 100, Qmin: 300, Qmax: 3000, dtHr: 1 };
+  const p1 = D.plan(base);
+  check(p1.status === 'ok' && close(p1.Qp, 1000, 1), 'calc2: plateau 1,000 cfs (bisection) — got ' + (p1.Qp && p1.Qp.toFixed(2)));
+  check(close(p1.Sfinal, St, 1) && close(p1.Efinal, 849.2149, 0.002), 'calc2: ends at target storage (±1 ac-ft) / 849.21 ft');
+  check(p1.tPlateau === t0 + 5 * HR && p1.tRampDown === t0 + 19 * HR && p1.schedule.length === 25, 'calc2: plateau at +5 h, ramp-down at +19 h, 24 hourly steps');
+  check(p1.schedule.slice(0, 6).map((r) => Math.round(r.O)).join() === '500,600,700,800,900,1000' && Math.round(p1.schedule[23].O) === 600, 'calc2: ramp-limited trapezoid steps');
+  check(close(p1.netReleased, 785.12, 0.5) && close(p1.released, 21500 * D.AF_PER_CFS_HR, 1), 'calc2: total and net volume released');
+  check(/^Ramp up from 500 to 1,000 cfs at 100 cfs\/hr by \d\d:00, hold until \d\d:00, ramp down to 500 cfs by \d\d:00/.test(p1.plain), 'calc2: plain-language line — ' + p1.plain);
+  check(p1.belowMin.length === 0 && p1.label === D.LABEL && /Planning aid/.test(D.LABEL), 'calc2: no min-flow flags; planning-aid label');
+
+  // Infeasible: max outflow 700 cfs. Net per hour at the plateau is 200 cfs, so
+  // 9,500 cfs·h needs 400 + 200 (T − 4) >= 9,500 -> T = 50 h.
+  const p2 = D.plan(Object.assign({}, base, { Qmax: 700 }));
+  check(p2.status === 'infeasible-max' && !p2.ok, 'calc2: infeasible target reported');
+  check(close(p2.Efinal, 849.636, 0.001), 'calc2: elevation reached at the deadline (849.64 ft)');
+  check(p2.earliest === t0 + 50 * HR, 'calc2: earliest achievable time = +50 h');
+
+  // Ramps alone exceed the window; overshoot below target; minimum-flow flag; rounding; 15-min steps.
+  const p3 = D.plan(Object.assign({}, base, { Qend: 3000, Qmax: 4000 }));
+  check(p3.status === 'ramp-window' && /longer than the 24\.00 hr window/.test(p3.messages[0]), 'calc2: ramp segments longer than the window reported');
+  check(D.plan(Object.assign({}, base, { St: 49990, Qmin: 1500, Qmax: 3000 })).status === 'infeasible-min', 'calc2: even the minimum plateau overshoots below target');
+  const p4 = D.plan(Object.assign({}, base, { Qmin: 600 }));
+  check(p4.belowMin.join() === '0' && p4.messages.some((m) => /below the 600 cfs minimum/.test(m)), 'calc2: steps below min outflow flagged');
+  const p5 = D.plan(Object.assign({}, base, { roundTo: 50, St: St - 10 }));
+  check(p5.Qp % 50 === 0, 'calc2: plateau rounded to 50 cfs steps');
+  const p6 = D.plan(Object.assign({}, base, { dtHr: 0.25 }));
+  check(p6.schedule.length === 97 && close(p6.Sfinal, St, 1), 'calc2: 15-minute steps');
+  check(D.parseSeries('900\n920, \n2026-11-10 03:00, 1,050\n\n') .join() === '900,920,1050', 'calc2: pasted hourly inflow series');
+  const p7 = D.plan(Object.assign({}, base, { inflow: [500, 500, 600] }));
+  check(p7.schedule[2].I === 600 && p7.schedule[10].I === 600 && p7.Qend === 600, 'calc2: hourly inflow series, last value held; Q_end defaults to inflow at target');
+  const html2 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  check(html2.indexOf('js/drawdown.js') > html2.indexOf('js/ratings.js') && html2.indexOf('js/views/calc.js') < html2.indexOf('js/router.js'), 'script order: drawdown after ratings, calc view before router');
+}
+
 // ---- 3. Page wiring ---------------------------------------------------------
 console.log('page');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
@@ -424,7 +491,7 @@ check(!/illustrative/i.test(html), 'no "illustrative" wording left in page');
   check(fs.existsSync(path.join(__dirname, ref)), 'referenced file exists: ' + ref);
 });
 ['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'js/router.js', 'js/teacup-core.js', 'js/ratings.js', 'scripts/check-links.js', 'js/tdg.js', 'js/snotel.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
-['overview', 'teacup', 'tables', 'docs'].forEach((r) => {
+['overview', 'teacup', 'tables', 'calc', 'docs'].forEach((r) => {
   check(html.includes('href="#/' + r + '"') && html.includes('data-view="' + r + '"'), 'route + view exist: ' + r);
 });
 check(html.indexOf('js/teacup-core.js') > html.indexOf('js/cwms-levels.js') && html.indexOf('js/teacup-core.js') < html.indexOf('js/views/teacup.js'), 'script order: teacup-core after levels, before teacup view');
