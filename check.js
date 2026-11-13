@@ -491,6 +491,14 @@ console.log('past years');
   check(HS.yearSummary(null, y) === null && typeof HS.loadYear === 'function', 'years: empty summary; loader exported');
   const tc = fs.readFileSync(path.join(__dirname, 'js', 'views', 'teacup.js'), 'utf8');
   check(/\['years', 'PAST YEARS'\]/.test(tc) && /MAX_YEARS = 6/.test(tc), 'years: PAST YEARS range on the Teacup chart, up to 6 years');
+  const TCZ = require('./js/teacup-core.js'), eq = (z, a, b) => Math.abs(z[0] - a) < 1e-9 && Math.abs(z[1] - b) < 1e-9;
+  check(eq(TCZ.zoomBy([0, 1], 0.5), 0.25, 0.75) && eq(TCZ.zoomBy([0.25, 0.75], 2), 0, 1) && eq(TCZ.zoomBy([0, 0.5], 4), 0, 1), 'zoom: in/out about the centre, clamped to the year');
+  check(eq(TCZ.zoomBy([0, 1], 0.5, 0.1), 0, 0.5), 'zoom: about a point near the edge stays inside the year');
+  check(eq(TCZ.panBy([0.5, 0.75], 1), 0.625, 0.875) && eq(TCZ.panBy([0.8, 1], 1), 0.8, 1) && eq(TCZ.panBy([0, 0.2], -1), 0, 0.2), 'zoom: pan by half a window, stopping at year ends');
+  const tiny = TCZ.clampZoom(0.5, 0.5001);
+  check(Math.abs(tiny[1] - tiny[0] - TCZ.MIN_SPAN) < 1e-9 && eq(TCZ.clampZoom(0.9, 0.2), 0.2, 0.9), 'zoom: minimum ~3-day window; reversed drags are ordered');
+  check(TCZ.dayTickStep(30, 800) <= 2 && TCZ.dayTickStep(90, 300) >= 14 && TCZ.niceStep(3) === 0.5 && TCZ.niceStep(0.3) === 0.05 && TCZ.niceStep(180) === 50, 'zoom: day-tick and elevation-grid steps adapt to the window');
+  check(/data-tczoom/.test(tc) && /data-tcmonth/.test(tc) && /setPointerCapture/.test(tc), 'zoom: buttons, month labels and drag-to-zoom wired');
 }
 
 // ---- 3. Page wiring ---------------------------------------------------------

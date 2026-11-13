@@ -49,6 +49,7 @@
     range: 'year',        // 'year' (calendar year) | '30d' | '6m' | '1y' (window ending now) | 'years' (past years overlaid)
     years: null,          // selected calendar years for 'years' (default: this year and the two before)
     yearData: {},         // '<code>:<year>' -> js/history.js loadYear result, or { loading: true }
+    zoom: null,           // 'years' chart window as year fractions [from, to]; null = full year
     hist: {},             // '<code>:<range>' -> js/history.js result, or { loading: true }
     ro: null
   };
@@ -459,9 +460,31 @@
     return Math.abs(s.t[k] - t) <= 2 * 24 * 3600 * 1000 ? s.v[k] : null;
   }
 
+  // Zoom presets (Pacific calendar months of the reference year; month 13 = next Jan 1).
+  var ZOOM_PRESETS = [['all', 'Full year', 1, 13], ['fall', 'Fall drawdown · Oct–Dec', 10, 13], ['refill', 'Refill · Jan–May', 1, 6], ['summer', 'Summer · Jun–Sep', 6, 10]];
+  function monthFrac(cy, mo) { return mo >= 13 ? 1 : H.history.yearFrac(H.history.pacificMidnight(cy, mo, 1), cy); }
+  function zoomWindow() { if (!st.zoom) st.zoom = [0, 1]; return st.zoom; }
+  function setZoom(z) { st.zoom = T.clampZoom(z[0], z[1]); renderAnnual(); }
+  function zoomAction(a) {
+    var z = zoomWindow(), cy = thisYear();
+    var pre = ZOOM_PRESETS.filter(function (p) { return p[0] === a; })[0];
+    if (pre) return setZoom([monthFrac(cy, pre[2]), monthFrac(cy, pre[3])]);
+    if (a === 'in') return setZoom(T.zoomBy(z, 0.5));
+    if (a === 'out') return setZoom(T.zoomBy(z, 2));
+    if (a === 'left') return setZoom(T.panBy(z, -1));
+    if (a === 'right') return setZoom(T.panBy(z, 1));
+  }
+  // "Oct 1 – Dec 31" for a window of the reference year.
+  function windowLabel(z, cy) {
+    var a = H.history.pacificMidnight(cy, 1, 1), b = H.history.pacificMidnight(cy + 1, 1, 1);
+    var d = function (f) { var t = a + f * (b - a); return fShort.format(new Date(t + H.history.pacificOffset(t))); };
+    return z[0] <= 0 && z[1] >= 1 ? 'Jan 1 – Dec 31' : d(z[0]) + ' – ' + d(Math.max(z[0], z[1] - 1e-6));
+  }
+
   function renderYears(box, m) {
-    var years = selectedYears(), cy = thisYear(), now = Date.now();
-    var W = Math.max(280, Math.floor(box.clientWidth || 600)), Ht = W < 520 ? 240 : 300;
+    var years = selectedYears(), cy = thisYear(), now = Date.now(), z = zoomWindow(), z0 = z[0], z1 = z[1];
+    var spanDays = (z1 - z0) * 365, zoomed = z0 > 0 || z1 < 1;
+    var W = Math.max(280, Math.floor(box.clientWidth || 600)), Ht = W < 520 ? 260 : 320;
     var seg = '<div class="seg tc-range" role="group" aria-label="Chart range">' + RANGE_BTNS.map(function (b) {
       return '<button type="button" data-tcrange="' + b[0] + '" aria-pressed="' + (st.range === b[0]) + '">' + b[1] + '</button>';
     }).join('') + '</div>';
@@ -472,77 +495,122 @@
         (full ? ' disabled title="Up to ' + MAX_YEARS + ' years at once; deselect one first"' : '') + '>' +
         (on ? '<i class="yr-sw yr-c' + yearSlot(y) + '" aria-hidden="true"></i>' : '') + y + '</button>';
     }
-    var head = '<div class="tc-an-head"><h4 class="tc-h4">Past years, ' + esc(m.p.name) + ' <span class="hint">pool elevation by calendar year, Jan–Dec</span></h4>' + seg + '</div>' +
+    var head = '<div class="tc-an-head"><h4 class="tc-h4">Past years, ' + esc(m.p.name) + ' <span class="hint">pool elevation by calendar year</span></h4>' + seg + '</div>' +
       '<div class="tc-chips yr-chips" role="group" aria-label="Years to compare (up to ' + MAX_YEARS + ')">' + chips + '</div>';
+    var zbtn = function (a, label, title, dis) { return '<button type="button" class="btn yr-zb" data-tczoom="' + a + '" title="' + title + '" aria-label="' + title + '"' + (dis ? ' disabled' : '') + '>' + label + '</button>'; };
+    var zoomBar = '<div class="yr-zoom" role="group" aria-label="Zoom the chart">' +
+      zbtn('out', '−', 'Zoom out', !zoomed) + zbtn('in', '+', 'Zoom in', z1 - z0 <= T.MIN_SPAN + 1e-9) + zbtn('left', '◀', 'Earlier', z0 <= 0) + zbtn('right', '▶', 'Later', z1 >= 1) +
+      '<span class="yr-presets">' + ZOOM_PRESETS.map(function (p) {
+        var pz = [monthFrac(cy, p[2]), monthFrac(cy, p[3])], cur = Math.abs(pz[0] - z0) < 1e-6 && Math.abs(pz[1] - z1) < 1e-6;
+        return '<button type="button" class="chip small" data-tczoom="' + p[0] + '" aria-pressed="' + cur + '">' + p[1] + '</button>';
+      }).join('') + '</span>' +
+      '<span class="yr-window mono">' + windowLabel(z, cy) + '</span></div>';
 
     var data = years.map(function (y) { return { y: y, r: yearFor(m.code, y) }; });
     var loading = data.filter(function (d) { return d.r.loading; }).map(function (d) { return d.y; });
     var shown = data.filter(function (d) { return !d.r.loading && d.r.pool && d.r.pool.t.length; });
-
-    // Reference context: the 30-yr statistics bands for this calendar year (DERIVED, published CWMS levels).
-    var lv = m.lv, ser = {};
-    ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].forEach(function (k) { ser[k] = T.annualSeries(LV.pick(lv, LV.IDS[k], now), cy); });
-    var hasStats = ser.statsAve.some(function (p) { return p[1] != null; });
-
-    var vals = [];
-    shown.forEach(function (d) { vals.push(Math.min.apply(null, d.r.pool.v), Math.max.apply(null, d.r.pool.v)); if (d.r.rule) d.r.rule.v.forEach(function (v) { vals.push(v); }); });
-    if (hasStats) ['statsP05', 'statsP95'].forEach(function (k) { ser[k].forEach(function (p) { if (p[1] != null) vals.push(p[1]); }); });
     if (!shown.length) {
       box.innerHTML = head + '<p class="na' + (loading.length ? ' loading' : '') + '">' + (loading.length ? 'Loading ' + loading.join(', ') + '…' : 'No pool history returned for the selected years.') + '</p>' + yearErrors(data);
       return;
     }
-    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo) * 0.06 || 1;
+
+    var frac = H.history.yearFrac, margin = 3 / 365;
+    var inWin = function (f) { return f >= z0 - margin && f <= z1 + margin; };
+    // Reference context: the 30-yr statistics bands for this calendar year (DERIVED, published CWMS levels).
+    var lv = m.lv, ser = {};
+    ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].forEach(function (k) {
+      ser[k] = T.annualSeries(LV.pick(lv, LV.IDS[k], now), cy).filter(function (p) { return p[1] != null; }).map(function (p) { return [frac(p[0], cy), p[1]]; });
+    });
+    var hasStats = ser.statsAve.length > 0;
+
+    // Elevation axis fits only what is inside the zoom window.
+    var vals = [];
+    shown.forEach(function (d) {
+      d.r.pool.t.forEach(function (t, i) { var f = frac(t, d.y); if (f >= z0 && f <= z1) vals.push(d.r.pool.v[i]); });
+      if (d.r.rule) d.r.rule.t.forEach(function (t, i) { var f = frac(t, d.y); if (f >= z0 && f < 1 && f <= z1) vals.push(d.r.rule.v[i]); });
+    });
+    var poolVals = vals.length;
+    if (hasStats) ['statsP05', 'statsP95'].forEach(function (k) { ser[k].forEach(function (p) { if (p[0] >= z0 && p[0] <= z1) vals.push(p[1]); }); });
+    if (!vals.length) vals = [0, 1];
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo) * 0.08 || 0.5;
     lo -= pad; hi += pad;
-    var ml = 46, mr = W < 520 ? 40 : 52, mt = 10, mb = 24, pw = W - ml - mr, ph = Ht - mt - mb;
-    var x = function (f) { return ml + f * pw; }, yv = function (v) { return mt + (1 - (v - lo) / (hi - lo)) * ph; };
-    var frac = H.history.yearFrac;
+    var ml = 54, mr = W < 520 ? 40 : 52, mt = 10, mb = 24, pw = W - ml - mr, ph = Ht - mt - mb;
+    var x = function (f) { return ml + ((f - z0) / (z1 - z0)) * pw; }, yv = function (v) { return mt + (1 - (v - lo) / (hi - lo)) * ph; };
     // Pool readings at 24:00 Dec 31 sit at f = 1 and belong to that year; a rule-curve value stamped
     // at the next Jan 1 midnight does not, so rule curves stop before f = 1.
     var path = function (s, yr, isRule) {
       var d = '', pen = false, prev = null;
       s.t.forEach(function (t, i) {
         var f = frac(t, yr);
-        if (f < 0 || f > 1 || (isRule && f >= 1)) return;
+        if (f < 0 || f > 1 || (isRule && f >= 1) || !inWin(f)) { pen = false; return; }
         if (prev != null && t - prev > 3 * 24 * 3600 * 1000) pen = false;   // gap in record
         d += (pen ? 'L' : 'M') + x(f).toFixed(1) + ' ' + yv(s.v[i]).toFixed(1); pen = true; prev = t;
       });
       return d;
     };
-    var pts = function (arr) { return arr.filter(function (p) { return p[1] != null; }).map(function (p) { return [frac(p[0], cy), p[1]]; }); };
     var band = function (a, b) {
-      var top = pts(a), bot = pts(b).reverse();
+      var top = a.filter(function (p) { return inWin(p[0]); }), bot = b.filter(function (p) { return inWin(p[0]); }).reverse();
       if (!top.length || !bot.length) return '';
       return 'M' + top.map(function (p) { return x(p[0]).toFixed(1) + ' ' + yv(p[1]).toFixed(1); }).join('L') + 'L' + bot.map(function (p) { return x(p[0]).toFixed(1) + ' ' + yv(p[1]).toFixed(1); }).join('L') + 'Z';
     };
 
-    var s = '<svg class="annual yr-svg" viewBox="0 0 ' + W + ' ' + Ht + '" width="100%" height="' + Ht + '" role="img" aria-label="' + esc(m.p.name + ' pool elevation for ' + years.join(', ')) + '">';
+    var s = '<svg class="annual yr-svg" viewBox="0 0 ' + W + ' ' + Ht + '" width="100%" height="' + Ht + '" role="img" aria-label="' + esc(m.p.name + ' pool elevation for ' + years.join(', ') + ', ' + windowLabel(z, cy)) + '">';
     s += '<defs><clipPath id="yr-clip"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath></defs>';
-    var span = hi - lo, step = span > 120 ? 50 : span > 60 ? 20 : span > 25 ? 10 : span > 10 ? 5 : span > 4 ? 2 : span > 2 ? 1 : 0.5;
-    for (var v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    var step = T.niceStep(hi - lo), dec = step < 0.1 ? 2 : step < 1 ? 1 : 0;
+    for (var v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) {
       s += '<line class="an-grid" x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + yv(v).toFixed(1) + '" y2="' + yv(v).toFixed(1) + '"/>' +
-        '<text class="an-lab" x="' + (ml - 6) + '" y="' + (yv(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, step < 1 ? 1 : 0) + '</text>';
+        '<text class="an-lab" x="' + (ml - 6) + '" y="' + (yv(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, dec) + '</text>';
     }
-    for (var mo = 0; mo < 12; mo++) {
-      var f0 = frac(H.history.pacificMidnight(cy, mo + 1, 1), cy), f1 = mo === 11 ? 1 : frac(H.history.pacificMidnight(cy, mo + 2, 1), cy);
-      s += '<line class="an-grid" x1="' + x(f0).toFixed(1) + '" x2="' + x(f0).toFixed(1) + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>' +
-        '<text class="an-lab" x="' + x((f0 + f1) / 2).toFixed(1) + '" y="' + (Ht - 7) + '" text-anchor="middle">' + (W < 520 ? 'JFMAMJJASOND'[mo] : MNAMES[mo]) + '</text>';
+    if (spanDays > 120) {
+      // Month columns; each month name zooms to that month.
+      for (var mo = 1; mo <= 12; mo++) {
+        var f0 = monthFrac(cy, mo), f1 = monthFrac(cy, mo + 1);
+        if (f1 <= z0 || f0 >= z1) continue;
+        if (f0 >= z0) s += '<line class="an-grid" x1="' + x(f0).toFixed(1) + '" x2="' + x(f0).toFixed(1) + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
+        var cx = x((Math.max(f0, z0) + Math.min(f1, z1)) / 2);
+        s += '<text class="an-lab yr-mlab" data-tcmonth="' + mo + '" x="' + cx.toFixed(1) + '" y="' + (Ht - 7) + '" text-anchor="middle"><title>Zoom to ' + MNAMES[mo - 1] + '</title>' + (W < 520 && spanDays > 250 ? 'JFMAMJJASOND'[mo - 1] : MNAMES[mo - 1]) + '</text>';
+      }
+    } else {
+      var dstep = T.dayTickStep(spanDays, pw, W < 520 ? 52 : 46);
+      for (var k = 0; k < 367; k++) {
+        var tk = H.history.pacificMidnight(cy, 1, 1 + k), fk = frac(tk, cy);
+        if (fk > z1) break;
+        if (fk < z0) continue;
+        var dt = new Date(Date.UTC(cy, 0, 1 + k, 12)), dom = dt.getUTCDate(), first = dom === 1;
+        if (!first && (dstep >= 7 ? (dom - 1) % dstep !== 0 || dom > 29 : (dom - 1) % dstep !== 0)) continue;
+        s += '<line class="an-grid" x1="' + x(fk).toFixed(1) + '" x2="' + x(fk).toFixed(1) + '" y1="' + mt + '" y2="' + (mt + ph) + '"' + (first ? '' : ' style="opacity:.45"') + '/>' +
+          '<text class="an-lab' + (first ? ' yr-mlab' : '') + '"' + (first ? ' data-tcmonth="' + (dt.getUTCMonth() + 1) + '"' : '') + ' x="' + x(fk).toFixed(1) + '" y="' + (Ht - 7) + '" text-anchor="middle">' + fShort.format(dt) + '</text>';
+      }
     }
     s += '<g clip-path="url(#yr-clip)">';
     if (hasStats) s += '<path class="an-p95" d="' + band(ser.statsP95, ser.statsP05) + '"/><path class="an-p75" d="' + band(ser.statsP75, ser.statsP25) + '"/>';
     shown.forEach(function (d) { if (d.r.rule && d.r.rule.t.length) s += '<path class="yr-rule yr-c' + yearSlot(d.y) + '" d="' + path(d.r.rule, d.y, true) + '"/>'; });
     shown.forEach(function (d) { s += '<path class="yr-pool yr-c' + yearSlot(d.y) + '" d="' + path(d.r.pool, d.y) + '"/>'; });
+    if (spanDays <= 60) {
+      // Zoomed in: mark each reading so individual daily values are visible.
+      shown.forEach(function (d) {
+        var dots = '';
+        d.r.pool.t.forEach(function (t, i) { var f = frac(t, d.y); if (f >= z0 && f <= z1) dots += '<circle cx="' + x(f).toFixed(1) + '" cy="' + yv(d.r.pool.v[i]).toFixed(1) + '" r="3"/>'; });
+        s += '<g class="yr-dots yr-c' + yearSlot(d.y) + '">' + dots + '</g>';
+      });
+    }
     s += '</g>';
-    // Direct labels at each line's last reading, spread so they never overlap.
-    var items = shown.map(function (d) {
-      var n = d.r.pool.t.length - 1;
-      return { y: yv(d.r.pool.v[n]), xe: x(Math.min(1, frac(d.r.pool.t[n], d.y))), yr: d.y };
+    // Direct labels at each line's last reading inside the window, spread so they never overlap.
+    var items = [];
+    shown.forEach(function (d) {
+      for (var n = d.r.pool.t.length - 1; n >= 0; n--) {
+        var f = frac(d.r.pool.t[n], d.y);
+        if (f <= z1 && f >= z0) { items.push({ y: yv(d.r.pool.v[n]), xe: x(Math.min(1, f)), yr: d.y }); break; }
+      }
     });
     T.spreadLabels(items, 12, mt + 6, mt + ph - 2).forEach(function (it) {
       var lx = Math.min(it.xe + 4, ml + pw + 4);
       s += '<line class="yr-lead yr-c' + yearSlot(it.yr) + '" x1="' + it.xe.toFixed(1) + '" x2="' + (lx + 2).toFixed(1) + '" y1="' + it.y.toFixed(1) + '" y2="' + it.ly.toFixed(1) + '"/>' +
         '<text class="yr-lab" x="' + (lx + 4).toFixed(1) + '" y="' + (it.ly + 3.5).toFixed(1) + '">' + it.yr + '</text>';
     });
+    if (!poolVals) s += '<text class="an-lab" x="' + (ml + pw / 2) + '" y="' + (mt + ph / 2) + '" text-anchor="middle">No readings in this window for the selected years</text>';
     s += '<g class="yr-cross" style="display:none"><line class="yr-cross-line" y1="' + mt + '" y2="' + (mt + ph) + '"/></g>';
+    s += '<rect class="yr-sel" x="0" y="' + mt + '" width="0" height="' + ph + '" style="display:none"/>';
     s += '<rect class="yr-hit" x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '" fill="transparent"/>';
     s += '</svg>';
 
@@ -561,9 +629,11 @@
     }).join('');
     var table = '<details class="table-view"><summary>Year summary table</summary><div class="table-scroll"><table><thead><tr><th>Year</th><th>Lowest pool (ft) · date</th><th>Highest pool (ft) · date</th><th>Mean Nov 15–Dec 15 (ft)</th><th>Source</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
 
-    box.innerHTML = head + '<div class="yr-wrap">' + s + '<div class="tooltip mono yr-tip" hidden></div></div><div class="an-legend">' + leg.join('') + '</div>' + table +
-      '<p class="hint">Each year is drawn on the same Jan–Dec axis. Pool: USGS daily lake elevation (24:00) at the project’s lake gage where one exists, otherwise USACE CWMS as 6-hour means. Rule curve: CWMS ' + esc(m.p.series.rule.name) + ' for that year, where published. Bands: 30-yr statistics thru 2023 (DERIVED from published CWMS levels). Provisional data. Hover or tap the chart for values.</p>' + yearErrors(data);
-    bindYearHover(box, shown, { ml: ml, pw: pw, W: W, cy: cy });
+    box.innerHTML = head + zoomBar + '<div class="yr-wrap">' + s + '<div class="tooltip mono yr-tip" hidden></div></div>' +
+      '<p class="hint yr-howto">Drag across the chart to zoom in · tap a month name to zoom to that month · double-click to zoom out.</p>' +
+      '<div class="an-legend">' + leg.join('') + '</div>' + table +
+      '<p class="hint">Each year is drawn on the same calendar axis. Pool: USGS daily lake elevation (24:00) at the project’s lake gage where one exists, otherwise USACE CWMS as 6-hour means. Rule curve: CWMS ' + esc(m.p.series.rule.name) + ' for that year, where published. Bands: 30-yr statistics thru 2023 (DERIVED from published CWMS levels). Provisional data. Hover or tap the chart for values.</p>' + yearErrors(data);
+    bindYearChart(box, shown, { ml: ml, pw: pw, W: W, cy: cy, z0: z0, z1: z1 });
   }
 
   function yearErrors(data) {
@@ -573,17 +643,23 @@
     return notes.length ? '<p class="hint yr-notes">' + esc(notes.join(' · ')) + '</p>' : '';
   }
 
-  function bindYearHover(box, shown, g) {
-    var svg = box.querySelector('.yr-svg'), tip = box.querySelector('.yr-tip'), cross = box.querySelector('.yr-cross'), line = box.querySelector('.yr-cross-line');
+  // Hover/tap readout, drag-to-zoom (horizontal drags; vertical swipes still scroll the page), double-click to zoom out.
+  function bindYearChart(box, shown, g) {
+    var svg = box.querySelector('.yr-svg'), tip = box.querySelector('.yr-tip'), cross = box.querySelector('.yr-cross'), line = box.querySelector('.yr-cross-line'), sel = box.querySelector('.yr-sel');
     if (!svg) return;
-    var move = function (ev) {
-      var r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (g.W / r.width), f = (px - g.ml) / g.pw;
-      if (f < 0 || f > 1) { hide(); return; }
+    var a = H.history.pacificMidnight(g.cy, 1, 1), b = H.history.pacificMidnight(g.cy + 1, 1, 1);
+    var pxOf = function (ev) { var r = svg.getBoundingClientRect(); return (ev.clientX - r.left) * (g.W / r.width); };
+    var fOf = function (px) { return g.z0 + ((px - g.ml) / g.pw) * (g.z1 - g.z0); };
+    var drag = null;
+    var hide = function () { cross.style.display = 'none'; tip.hidden = true; };
+    var show = function (ev) {
+      var px = pxOf(ev), f = fOf(px);
+      if (px < g.ml || px > g.ml + g.pw) { hide(); return; }
       line.setAttribute('x1', px.toFixed(1)); line.setAttribute('x2', px.toFixed(1)); cross.style.display = '';
-      var refT = H.history.pacificMidnight(g.cy, 1, 1) + f * (H.history.pacificMidnight(g.cy + 1, 1, 1) - H.history.pacificMidnight(g.cy, 1, 1));
+      var refT = a + f * (b - a);
       var lines = shown.map(function (d) {
         var v = valueAtFrac(d.r.pool, d.y, f), rv = valueAtFrac(d.r.rule, d.y, f);
-        return '<span><i class="yr-key yr-c' + yearSlot(d.y) + '"></i>' + d.y + ': <b>' + (v == null ? '—' : fmt(v, 2) + ' ft') + '</b>' + (rv == null ? '' : ' · rule ' + fmt(rv, 1)) + '</span>';
+        return '<span><i class="yr-key yr-c' + yearSlot(d.y) + '"></i>' + d.y + ': <b>' + (v == null ? '—' : fmt(v, 2) + ' ft') + '</b>' + (rv == null ? '' : ' · rule ' + fmt(rv, 2)) + '</span>';
       });
       tip.innerHTML = '<b>' + fShort.format(new Date(refT + H.history.pacificOffset(refT))) + '</b><br>' + lines.join('<br>');
       tip.hidden = false;
@@ -591,10 +667,30 @@
       if (left + tip.offsetWidth > bx.width) left = ev.clientX - bx.left - tip.offsetWidth - 12;
       tip.style.left = Math.max(0, left) + 'px'; tip.style.top = '8px';
     };
-    var hide = function () { cross.style.display = 'none'; tip.hidden = true; };
-    svg.addEventListener('pointermove', move);
-    svg.addEventListener('pointerdown', move);
-    svg.addEventListener('pointerleave', hide);
+    svg.addEventListener('pointerdown', function (ev) {
+      var px = pxOf(ev);
+      if (px < g.ml || px > g.ml + g.pw) return;
+      drag = { x0: px, id: ev.pointerId, moved: false };
+      show(ev);
+    });
+    svg.addEventListener('pointermove', function (ev) {
+      show(ev);
+      if (!drag || ev.pointerId !== drag.id) return;
+      var px = Math.max(g.ml, Math.min(g.ml + g.pw, pxOf(ev)));
+      if (!drag.moved && Math.abs(px - drag.x0) > 8) { drag.moved = true; try { svg.setPointerCapture(drag.id); } catch (e) { /* ignore */ } }
+      if (drag.moved) { sel.setAttribute('x', Math.min(px, drag.x0).toFixed(1)); sel.setAttribute('width', Math.abs(px - drag.x0).toFixed(1)); sel.style.display = ''; }
+    });
+    var end = function (ev) {
+      if (!drag || ev.pointerId !== drag.id) return;
+      var d = drag; drag = null; sel.style.display = 'none';
+      if (!d.moved) return;
+      var px = Math.max(g.ml, Math.min(g.ml + g.pw, pxOf(ev)));
+      setZoom([fOf(Math.min(px, d.x0)), fOf(Math.max(px, d.x0))]);
+    };
+    svg.addEventListener('pointerup', end);
+    svg.addEventListener('pointercancel', function () { drag = null; sel.style.display = 'none'; hide(); });
+    svg.addEventListener('pointerleave', function () { if (!drag) hide(); });
+    svg.addEventListener('dblclick', function (ev) { ev.preventDefault(); setZoom(T.zoomBy([g.z0, g.z1], 2.5, fOf(pxOf(ev)))); });
   }
 
   // ---- Detail ---------------------------------------------------------------------
@@ -710,6 +806,10 @@
         if (chip) { select(chip.getAttribute('data-code'), false); return; }
         var rb = ev.target.closest('[data-tcrange]');
         if (rb) { st.range = rb.getAttribute('data-tcrange'); renderAnnual(); return; }
+        var zb = ev.target.closest('[data-tczoom]');
+        if (zb && !zb.disabled) { zoomAction(zb.getAttribute('data-tczoom')); return; }
+        var mb = ev.target.closest('[data-tcmonth]');
+        if (mb) { var mo = +mb.getAttribute('data-tcmonth'), cyy = thisYear(); setZoom([monthFrac(cyy, mo), monthFrac(cyy, mo + 1)]); return; }
         var yb = ev.target.closest('[data-tcyear]');
         if (yb && !yb.disabled) { toggleYear(+yb.getAttribute('data-tcyear')); return; }
         var rt = ev.target.closest('[data-retry]');

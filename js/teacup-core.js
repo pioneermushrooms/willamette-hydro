@@ -145,6 +145,36 @@
     };
   }
 
+  // ---- Zoom on a year axis (fractions of a year, 0..1) --------------------------------
+
+  var MIN_SPAN = 3 / 365;   // zoom stops at about three days
+
+  // Clamp a [a, b] window into [0, 1] with at least MIN_SPAN width, keeping its centre where possible.
+  function clampZoom(a, b) {
+    if (b < a) { var t = a; a = b; b = t; }
+    var w = Math.min(1, Math.max(MIN_SPAN, b - a)), c = (a + b) / 2;
+    a = c - w / 2; b = c + w / 2;
+    if (a < 0) { b -= a; a = 0; }
+    if (b > 1) { a -= b - 1; b = 1; }
+    return [Math.max(0, a), Math.min(1, b)];
+  }
+  // Zoom by factor k (< 1 in, > 1 out) about centre c (default: the window centre).
+  function zoomBy(z, k, c) { var m = c == null ? (z[0] + z[1]) / 2 : c, w = (z[1] - z[0]) * k; return clampZoom(m - w / 2, m + w / 2); }
+  // Pan by `dir` half-windows (−1 left, +1 right).
+  function panBy(z, dir) { var w = z[1] - z[0], d = dir * w / 2; return clampZoom(z[0] + d, z[1] + d); }
+  // Day-tick spacing (days) so labels sit at least minPx apart.
+  function dayTickStep(spanDays, widthPx, minPx) {
+    var steps = [1, 2, 5, 7, 14, 30];
+    for (var i = 0; i < steps.length; i++) if (widthPx * steps[i] / spanDays >= (minPx || 44)) return steps[i];
+    return 30;
+  }
+  // Grid step for an elevation span (~4–7 lines), down to 0.05 ft when zoomed in.
+  function niceStep(span) {
+    var steps = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
+    for (var i = 0; i < steps.length; i++) if (span / steps[i] <= 7) return steps[i];
+    return 100;
+  }
+
   return {
     percentFull: percentFull,
     elevFraction: elevFraction,
@@ -153,6 +183,7 @@
     rulerScale: rulerScale,
     spreadLabels: spreadLabels,
     annualSeries: annualSeries,
-    consLimits: consLimits
+    consLimits: consLimits,
+    MIN_SPAN: MIN_SPAN, clampZoom: clampZoom, zoomBy: zoomBy, panBy: panBy, dayTickStep: dayTickStep, niceStep: niceStep
   };
 });
