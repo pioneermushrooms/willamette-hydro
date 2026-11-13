@@ -50,6 +50,7 @@
     years: null,          // selected calendar years for 'years' (default: this year and the two before)
     yearData: {},         // '<code>:<year>' -> js/history.js loadYear result, or { loading: true }
     zoom: null,           // 'years' chart window as year fractions [from, to]; null = full year
+    azoom: [0, 1],        // YEAR / 30 D / 6 MO / 1 YR chart window as fractions of that range (js/zoom.js)
     hist: {},             // '<code>:<range>' -> js/history.js result, or { loading: true }
     ro: null
   };
@@ -312,6 +313,9 @@
     var year = +fYear.format(new Date()), now = Date.now(), cal = st.range === 'year';
     var t0 = cal ? Date.UTC(year, 0, 1, 8) : now - RANGE_DAYS[st.range] * 24 * 3600 * 1000;
     var t1 = cal ? Date.UTC(year + 1, 0, 1, 8) : now;
+    // Zoom: [v0, v1] is the visible part of [t0, t1].
+    var z = st.azoom, zoomed = z[0] > 0 || z[1] < 1, v0 = t0 + z[0] * (t1 - t0), v1 = t0 + z[1] * (t1 - t0), spanDays = (v1 - v0) / 86400000;
+    var inV = function (t) { return t >= v0 && t <= v1; };
     var hist = cal ? null : histFor(m), hLoading = !!(hist && hist.loading);
     var ser = {};
     ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].forEach(function (k) {
@@ -329,21 +333,24 @@
       ry = { t: rt, v: rv };
     }
 
+    // Elevation axis fits only what is inside the visible window.
     var vals = [];
-    ['statsP05', 'statsP95'].forEach(function (k) { ser[k].forEach(function (p) { if (p[1] != null) vals.push(p[1]); }); });
-    tSer.forEach(function (p) { if (p[1] != null) vals.push(p[1]); });
-    if (ry) ry.v.forEach(function (v) { vals.push(v); });
-    if (pool) { vals.push(Math.min.apply(null, pool.v)); vals.push(Math.max.apply(null, pool.v)); }
+    ['statsP05', 'statsP95'].forEach(function (k) { ser[k].forEach(function (p) { if (p[1] != null && inV(p[0])) vals.push(p[1]); }); });
+    tSer.forEach(function (p) { if (p[1] != null && inV(p[0])) vals.push(p[1]); });
+    if (ry) ry.t.forEach(function (t, i) { if (inV(t)) vals.push(ry.v[i]); });
+    if (pool) pool.t.forEach(function (t, i) { if (inV(t)) vals.push(pool.v[i]); });
+    if (ry && zoomed) { var r0 = H.interpolate(ry, v0), r1 = H.interpolate(ry, v1); if (r0 != null) vals.push(r0); if (r1 != null) vals.push(r1); }
     var seg = '<div class="seg tc-range" role="group" aria-label="Chart range">' + RANGE_BTNS.map(function (b) {
       return '<button type="button" data-tcrange="' + b[0] + '" aria-pressed="' + (st.range === b[0]) + '">' + b[1] + '</button>';
     }).join('') + '</div>';
     var title = cal ? year + ' at a glance' : { '30d': 'Last 30 days', '6m': 'Last 6 months', '1y': 'Last 12 months' }[st.range];
-    var head = '<div class="tc-an-head"><h4 class="tc-h4">' + title + ' <span class="hint">30-yr stats thru 2023 are DERIVED from published CWMS levels</span></h4>' + seg + '</div>';
+    var head = '<div class="tc-an-head"><h4 class="tc-h4">' + title + ' <span class="hint">30-yr stats thru 2023 are DERIVED from published CWMS levels</span></h4>' + seg + '</div>' +
+      (H.zoom ? H.zoom.bar(z, 'tcazoom', zoomed ? esc(dayLabel(v0) + ' – ' + dayLabel(v1)) : '') : '');
     if (!vals.length) { box.innerHTML = head + '<p class="na">' + (hLoading ? 'Loading history…' : 'No series published for this project in this window.') + '</p>'; return; }
-    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo) * 0.06 || 1;
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo) * 0.06 || 0.5;
     lo -= pad; hi += pad;
-    var ml = 44, mr = 10, mt = 10, mb = 24, pw = W - ml - mr, ph = Ht - mt - mb;
-    var x = function (t) { return ml + ((t - t0) / (t1 - t0)) * pw; };
+    var ml = 52, mr = 10, mt = 10, mb = 24, pw = W - ml - mr, ph = Ht - mt - mb;
+    var x = function (t) { return ml + ((t - v0) / (v1 - v0)) * pw; };
     var y = function (v) { return mt + (1 - (v - lo) / (hi - lo)) * ph; };
     var path = function (pts) {
       var d = '', pen = false;
@@ -362,12 +369,34 @@
     var s = '<svg class="annual" viewBox="0 0 ' + W + ' ' + Ht + '" width="100%" height="' + Ht + '" role="img" aria-label="' + esc(m.p.name + ' ' + title + ' elevation chart') + '">';
     s += '<defs><clipPath id="an-clip"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath></defs>';
     // grid
-    var step = (hi - lo) > 120 ? 50 : (hi - lo) > 60 ? 20 : (hi - lo) > 25 ? 10 : (hi - lo) > 10 ? 5 : (hi - lo) > 4 ? 2 : (hi - lo) > 2 ? 1 : 0.5;
-    for (var v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    var step = T.niceStep(hi - lo), sdec = step < 0.1 ? 2 : step < 1 ? 1 : 0;
+    for (var v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) {
       s += '<line class="an-grid" x1="' + ml + '" x2="' + (W - mr) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>' +
-        '<text class="an-lab" x="' + (ml - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, step < 1 ? 1 : 0) + '</text>';
+        '<text class="an-lab" x="' + (ml - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, sdec) + '</text>';
     }
-    if (cal) {
+    if (zoomed && spanDays <= 45) {
+      // Zoomed in: day ticks, spaced so labels never collide.
+      var dstep = T.dayTickStep(spanDays, pw, W < 520 ? 52 : 46);
+      H.history.dayTicks(v0, v1, false).forEach(function (o, i) {
+        var dd = new Date(o.t + 12 * 3600 * 1000 + H.history.pacificOffset(o.t)), dom = dd.getUTCDate();
+        if ((dom - 1) % dstep !== 0 && dom !== 1) return;
+        var xd = x(o.t).toFixed(1);
+        s += '<line class="an-grid" x1="' + xd + '" x2="' + xd + '" y1="' + mt + '" y2="' + (mt + ph) + '"' + (dom === 1 ? '' : ' style="opacity:.5"') + '/>';
+        s += '<text class="an-lab" x="' + xd + '" y="' + (Ht - 7) + '" text-anchor="middle">' + fShort.format(dd) + '</text>';
+      });
+    } else if (zoomed && spanDays <= 120) {
+      H.history.dayTicks(v0, v1, false).forEach(function (o) {
+        var xd = x(o.t).toFixed(1), d = new Date(o.t + 12 * 3600 * 1000);
+        s += '<line class="an-grid" x1="' + xd + '" x2="' + xd + '" y1="' + mt + '" y2="' + (mt + ph) + '"' + (o.dow === 1 ? '' : ' style="opacity:.35"') + '/>';
+        if (o.dow === 1) s += '<text class="an-lab" x="' + xd + '" y="' + (Ht - 7) + '" text-anchor="middle">' + fDay.format(d) + '</text>';
+      });
+    } else if (zoomed) {
+      H.history.monthTicks(v0, v1).forEach(function (o) {
+        var xm3 = x(o.t).toFixed(1);
+        s += '<line class="an-grid" x1="' + xm3 + '" x2="' + xm3 + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
+        s += '<text class="an-lab" x="' + xm3 + '" y="' + (Ht - 7) + '" text-anchor="middle">' + MNAMES[o.m - 1] + (o.m === 1 ? " '" + String(o.y).slice(2) : '') + '</text>';
+      });
+    } else if (cal) {
       var months = W < 520 ? 'JFMAMJJASOND' : null;
       for (var mo = 0; mo < 12; mo++) {
         var tm = Date.UTC(year, mo, 1, 8), xm = x(tm).toFixed(1);
@@ -397,8 +426,15 @@
     if (ry && ry.t.length) s += '<path class="an-rule" d="' + path(ry.t.map(function (t, i) { return [t, ry.v[i]]; })) + '"/>';
     if (tSer.length) s += '<path class="an-target" d="' + path(tSer) + '"/>';
     if (pool) s += '<path class="an-pool" d="' + path(pool.t.map(function (t, i) { return [t, pool.v[i]]; })) + '"/>';
+    if (pool && spanDays <= 60) {
+      // Zoomed in: mark each reading so individual values are visible.
+      var dots = '';
+      pool.t.forEach(function (t, i) { if (inV(t)) dots += '<circle cx="' + x(t).toFixed(1) + '" cy="' + y(pool.v[i]).toFixed(1) + '" r="2.5"/>'; });
+      s += '<g class="an-dots">' + dots + '</g>';
+    }
     s += '</g>';
-    if (cal) {
+    s += '<line class="an-cross" y1="' + mt + '" y2="' + (mt + ph) + '" style="display:none"/>';
+    if (cal && inV(now)) {
       var xn = x(now).toFixed(1);
       s += '<line class="an-today" x1="' + xn + '" x2="' + xn + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
       s += '<text class="an-todaylab" x="' + (+xn + (x(now) > W - 70 ? -4 : 4)) + '" y="' + (mt + 10) + '" text-anchor="' + (x(now) > W - 70 ? 'end' : 'start') + '">TODAY</text>';
@@ -416,7 +452,62 @@
       ? 'Pick 30 D, 6 MO or 1 YR for pool history against the rule curve. The calendar-year view shows the last 7 days of live pool data.'
       : 'Pool: ' + esc(hist && hist.src ? hist.src + (hist.pool && hist.pool.liveFrom ? stamp(hist.pool.liveFrom) + ' (hourly)' : '') : '…') + '. ' +
         'Rule curve: CWMS ' + esc(m.p.series.rule.name) + '. ' + (hist && hist.note ? esc(hist.note) + ' ' : '') + 'Provisional data.';
-    box.innerHTML = head + s + '<div class="an-legend">' + leg.join('') + '</div><p class="hint">' + foot + '</p>';
+    box.innerHTML = head + '<div class="yr-wrap">' + s + '<div class="tooltip mono yr-tip" hidden></div></div><div class="an-legend">' + leg.join('') + '</div><p class="hint">' + foot + ' Hover or tap the chart for values.</p>';
+    bindAnnualChart(box, { ml: ml, mt: mt, pw: pw, ph: ph, W: W, v0: v0, v1: v1 }, { pool: pool, ry: ry, tSer: tSer, ser: ser, hasStats: hasStats, tgt: tgt });
+  }
+
+  // Smallest zoom window: 3 days on YEAR / 6 MO / 1 YR, 1 day on 30 D.
+  function annualMinZoom() { return st.range === '30d' ? 1 / 30 : st.range === 'year' ? 3 / 365 : 3 / RANGE_DAYS[st.range]; }
+  function setAnnualZoom(z) { st.azoom = H.zoom.clamp(z, annualMinZoom()); renderAnnual(); }
+  function dayLabel(t) { return fShort.format(new Date(t + H.history.pacificOffset(t))); }
+
+  // Nearest value of a [[t, v], ...] or {t, v} series to time t, within maxMs.
+  function nearest(ser, t, maxMs) {
+    var ts = ser.t || ser.map(function (p) { return p[0]; }), vs = ser.v || ser.map(function (p) { return p[1]; });
+    if (!ts.length) return null;
+    var lo = 0, hi = ts.length - 1;
+    while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (ts[mid] <= t) lo = mid; else hi = mid; }
+    var k = Math.abs(ts[lo] - t) <= Math.abs(ts[hi] - t) ? lo : hi;
+    return Math.abs(ts[k] - t) <= maxMs ? vs[k] : null;
+  }
+
+  // Hover/tap readout + drag-to-zoom for the YEAR / 30 D / 6 MO / 1 YR chart.
+  function bindAnnualChart(box, g, d) {
+    var svg = box.querySelector('svg.annual'), tip = box.querySelector('.yr-tip'), cross = box.querySelector('.an-cross');
+    if (!svg) return;
+    var px = function (ev) { var r = svg.getBoundingClientRect(); return (ev.clientX - r.left) * (g.W / r.width); };
+    var hide = function () { cross.style.display = 'none'; tip.hidden = true; };
+    var show = function (ev) {
+      var p = px(ev);
+      if (p < g.ml || p > g.ml + g.pw) { hide(); return; }
+      var t = g.v0 + ((p - g.ml) / g.pw) * (g.v1 - g.v0), DAYMS = 86400000, rows = [];
+      cross.setAttribute('x1', p.toFixed(1)); cross.setAttribute('x2', p.toFixed(1)); cross.style.display = '';
+      var pv = d.pool ? nearest(d.pool, t, DAYMS) : null;
+      if (d.pool) rows.push('Pool: <b>' + (pv == null ? '—' : fmt(pv, 2) + ' ft') + '</b>');
+      var rv = d.ry && d.ry.t.length ? H.interpolate(d.ry, t) : null;
+      if (rv != null) rows.push('Rule curve: ' + fmt(rv, 2) + ' ft' + (pv != null ? ' (' + signed(pv - rv, 2) + ')' : ''));
+      var tv = d.tSer.length ? nearest(d.tSer, t, DAYMS) : null;
+      if (tv != null) rows.push(esc(d.tgt.label) + ': ' + fmt(tv, 1) + ' ft');
+      if (d.hasStats) {
+        var mv = nearest(d.ser.statsAve, t, DAYMS), a5 = nearest(d.ser.statsP05, t, DAYMS), a95 = nearest(d.ser.statsP95, t, DAYMS);
+        if (mv != null) rows.push('30-yr mean ' + fmt(mv, 1) + ' · p05–p95 ' + fmt(a5, 1) + '–' + fmt(a95, 1));
+      }
+      tip.innerHTML = '<b>' + esc(fStamp.format(new Date(t))) + '</b><br>' + rows.join('<br>');
+      tip.hidden = false;
+      var bx = box.querySelector('.yr-wrap').getBoundingClientRect(), left = ev.clientX - bx.left + 12;
+      if (left + tip.offsetWidth > bx.width) left = ev.clientX - bx.left - tip.offsetWidth - 12;
+      tip.style.left = Math.max(0, left) + 'px'; tip.style.top = '8px';
+    };
+    svg.addEventListener('pointermove', show);
+    svg.addEventListener('pointerdown', show);
+    svg.addEventListener('pointerleave', hide);
+    if (H.zoom) H.zoom.attach(svg, function () { return g; }, function (fa, fb) {
+      var z = st.azoom, w = z[1] - z[0];
+      setAnnualZoom([z[0] + fa * w, z[0] + fb * w]);
+    }, function (fc) {
+      var z = st.azoom;
+      setAnnualZoom(H.zoom.apply(z, 'out', annualMinZoom(), z[0] + fc * (z[1] - z[0])));
+    });
   }
 
   // ---- Past years overlaid on one Jan–Dec axis -------------------------------------
@@ -805,7 +896,9 @@
         var chip = ev.target.closest('.chip[data-code]');
         if (chip) { select(chip.getAttribute('data-code'), false); return; }
         var rb = ev.target.closest('[data-tcrange]');
-        if (rb) { st.range = rb.getAttribute('data-tcrange'); renderAnnual(); return; }
+        if (rb) { st.range = rb.getAttribute('data-tcrange'); st.azoom = [0, 1]; renderAnnual(); return; }
+        var ab = ev.target.closest('[data-tcazoom]');
+        if (ab && !ab.disabled) { setAnnualZoom(H.zoom.apply(st.azoom, ab.getAttribute('data-tcazoom'), annualMinZoom())); return; }
         var zb = ev.target.closest('[data-tczoom]');
         if (zb && !zb.disabled) { zoomAction(zb.getAttribute('data-tczoom')); return; }
         var mb = ev.target.closest('[data-tcmonth]');

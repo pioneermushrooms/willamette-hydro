@@ -27,6 +27,7 @@
     selectedId: 'lookout-point',
     chartId: 'lookout-point',
     range: '7d',          // '24h' | '7d' live series; '30d' | '6m' | '1y' long history (js/history.js)
+    tzoom: [0, 1],        // Trend Recorder zoom window as fractions of the selected range (js/zoom.js)
     hist: {},             // '<id>:<range>' -> history result (or { loading: true })
     riverParam: 'flow',   // trend chart for river gauges: 'flow' | 'stage' (flood bands + NWS stage forecast)
     nwps: null,           // { <stationId>: { lid, gauge, error } } from js/nwps.js
@@ -892,6 +893,17 @@
     } else if (!long && !res && param !== 'temp' && N && N.LIDS[e.id] && state.nwps && !g) {
       fcNote = 'NWS data unavailable.';
     }
+    // Zoom: narrow [start, end] to the visible window; everything below samples only inside it.
+    var fullStart = start, fullEnd = end, zoomed = state.tzoom[0] > 0 || state.tzoom[1] < 1;
+    if (zoomed) {
+      start = fullStart + state.tzoom[0] * (fullEnd - fullStart);
+      end = fullStart + state.tzoom[1] * (fullEnd - fullStart);
+      if (fc.t.length) {
+        var keep = { t: [], v: [] };
+        fc.t.forEach(function (ft, k) { if (ft >= start && ft <= end || (fc.t[k + 1] >= start && ft < start) || (fc.t[k - 1] <= end && ft > end)) { keep.t.push(ft); keep.v.push(fc.v[k]); } });
+        fc = keep.t.length > 1 ? keep : { t: [], v: [] };
+      }
+    }
     if (param === 'stage' && gBands && gBands.thresholds) {
       var defined = N.CATS.filter(function (c) { return gBands.thresholds[c].stage != null; });
       defined.forEach(function (c, i) {
@@ -901,10 +913,13 @@
     }
     var t = [], v = [], q = [];
     if (s && s.t.length) {
-      var i0 = lastIndexBefore(start, s.t) + 1;
-      var n = s.t.length - i0, step = Math.max(1, Math.ceil(n / 900));
-      for (var i = i0; i < s.t.length; i += step) { t.push(s.t[i]); v.push(s.v[i]); q.push(s.q ? s.q[i] : null); }
-      if (t[t.length - 1] !== s.t[s.t.length - 1] && s.t.length > i0) { t.push(s.t[s.t.length - 1]); v.push(s.v[s.v.length - 1]); q.push(s.q ? s.q[s.q.length - 1] : null); }
+      // Points inside [start, end] (plus one either side when zoomed, so lines reach the edges), thinned to ~900.
+      var i0 = lastIndexBefore(start, s.t) + (zoomed ? 0 : 1), i1 = s.t.length - 1;
+      if (i0 < 0) i0 = 0;
+      if (zoomed) { var ie = lastIndexBefore(end, s.t); i1 = Math.min(s.t.length - 1, ie + 1); }
+      var n = i1 - i0 + 1, step = Math.max(1, Math.ceil(n / 900));
+      for (var i = i0; i <= i1; i += step) { t.push(s.t[i]); v.push(s.v[i]); q.push(s.q ? s.q[i] : null); }
+      if (n > 0 && t[t.length - 1] !== s.t[i1]) { t.push(s.t[i1]); v.push(s.v[i1]); q.push(s.q ? s.q[i1] : null); }
     }
     var rt = [], rv = [];
     if (ref && ref.t.length) {
@@ -928,6 +943,7 @@
     return { e: e, res: res, start: start, end: end, now: now, t: t, v: v, q: q, rt: rt, rv: rv, unit: unit, dec: dec, title: title, src: src,
       tt: tt, tv: tv, tLabel: tLabel, tNote: tNote,
       param: param, fc: fc, issued: issued, bands: bands, fcNote: fcNote, peak: g && g.peak, long: long,
+      fullStart: fullStart, fullEnd: fullEnd, zoomed: zoomed,
       loading: long ? hLoading : !state.snap, histError: long && hist && !hist.loading ? hist.error : null };
   }
 
@@ -962,7 +978,9 @@
     }
     msg.hidden = true;
 
-    var vals = M.v.concat(M.rv, M.fc.v, M.tv.filter(function (v) { return v != null; }));
+    var inView = function (arr, ts) { return M.zoomed ? arr.filter(function (v, k) { return ts[k] >= M.start && ts[k] <= M.end; }) : arr; };
+    var vals = inView(M.v, M.t).concat(M.rv, M.fc.v, M.tv.filter(function (v) { return v != null; }));
+    if (!vals.length) vals = M.v.slice();
     if (M.bands.length) vals.push(M.bands[0].lo); // always show at least the first flood band
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     var pad = (hi - lo || Math.abs(hi) * 0.01 || 1) * 0.08;
@@ -987,17 +1005,19 @@
       s += '<text x="' + (ml - 8) + '" y="' + (+yy + 3.5) + '" text-anchor="end">' + labels[k] + '</text>';
     });
     // x ticks on Pacific-time boundaries (Pacific offsets are whole hours, so UTC hour starts align)
-    if (M.long && H.history) {
-      // 30 D: faint daily lines, Mondays labelled. 6 MO / 1 YR: month starts labelled (year on January).
+    // Tick style follows the visible span, so zooming in switches months -> days -> hours.
+    var spanH = (M.end - M.start) / HOUR, tickMode = spanH <= 48 ? 'hours' : spanH <= 240 ? 'days' : spanH <= 75 * 24 ? 'weeks' : 'months';
+    if (tickMode === 'weeks' || tickMode === 'months') {
+      // Weeks: faint daily lines, Mondays labelled. Months: month starts labelled (year on January).
       var MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      if (state.range === '30d') {
+      if (tickMode === 'weeks') {
         H.history.dayTicks(M.start, M.end, false).forEach(function (o) {
           var xx = x(o.t).toFixed(1), p2 = parts(o.t + HOUR);
           s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:' + (o.dow === 1 ? '.6' : '.18') + '"/>';
           if (o.dow === 1) s += '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + (pw < 420 ? p2.month + '/' + p2.day : 'Mon ' + p2.month + '/' + p2.day) + '</text>';
         });
       } else {
-        var mt2 = H.history.monthTicks(M.start, M.end), skip = state.range === '1y' && pw < 420 ? 2 : 1;
+        var mt2 = H.history.monthTicks(M.start, M.end), skip = spanH > 200 * 24 && pw < 420 ? 2 : 1;
         mt2.forEach(function (o, i) {
           var xx = x(o.t).toFixed(1);
           s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:.55"/>';
@@ -1005,17 +1025,17 @@
         });
       }
     } else {
-      var xt = [];
+      var xt = [], hstep = spanH <= 8 ? 1 : spanH <= 16 ? 2 : spanH <= 30 ? 3 : 6;
       for (var tt = Math.ceil(M.start / HOUR) * HOUR; tt <= M.end; tt += HOUR) {
         var p = parts(tt);
-        if (state.range === '24h' ? p.h % 6 === 0 : p.h === 0) xt.push({ t: tt, p: p });
+        if (tickMode === 'hours' ? p.h % hstep === 0 : p.h === 0) xt.push({ t: tt, p: p });
       }
       var narrow = pw / Math.max(1, xt.length) < 52;
       var every = Math.max(1, Math.ceil(30 / (pw / Math.max(1, xt.length))));
       xt = xt.filter(function (o, i) { return i % every === 0; });
       xt.forEach(function (o) {
         var xx = x(o.t).toFixed(1), lab;
-        if (state.range === '24h') lab = o.p.h === 0 ? o.p.weekday + ' ' + o.p.day : String(o.p.h).padStart(2, '0') + ':00';
+        if (tickMode === 'hours') lab = o.p.h === 0 ? o.p.weekday + ' ' + o.p.day : String(o.p.h).padStart(2, '0') + ':00';
         else lab = narrow ? o.p.day : o.p.weekday + ' ' + o.p.day;
         s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:.55"/>';
         s += '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + lab + '</text>';
@@ -1080,7 +1100,8 @@
       var line = $('#chart-line');
       line.style.setProperty('--len', Math.ceil(line.getTotalLength()));
     }
-    state.geom = { M: M, x: x, y: y, ml: ml, pw: pw, W: W };
+    state.geom = { M: M, x: x, y: y, ml: ml, pw: pw, W: W, mt: mt, ph: ph };
+    renderTrendZoom(M);
 
     $('#chart-legend').innerHTML = '<span><i></i>' + (M.res ? (M.long && /^USGS/.test(M.src) ? 'Pool elevation (USGS daily + USACE live)' : 'Pool elevation (USACE)') : M.param === 'flow' ? 'Discharge (USGS)' : M.param === 'temp' ? 'Water temperature (USGS)' : 'Gage height (USGS)') + '</span>' +
       (M.tt.length ? '<span><i class="tgt"></i>' + esc(M.tLabel) + '</span>' : '') + (M.tNote ? '<span class="na">' + esc(M.tNote) + '</span>' : '') +
@@ -1186,9 +1207,19 @@
   }
 
   function setChart(id) {
+    if (state.chartId !== id) state.tzoom = [0, 1];
     state.chartId = id;
     $('#trend-select').value = id;
     renderChart(true);
+  }
+
+  // Smallest zoom window: 2 h on 24 H, 6 h on 7 D, 1 day on 30 D, 7 days on 6 MO / 1 YR.
+  function trendMinZoom() { return ({ '24h': 2, '7d': 6, '30d': 24, '6m': 168, '1y': 168 })[state.range] / RANGE_H[state.range]; }
+  function setTrendZoom(z) { state.tzoom = H.zoom.clamp(z, trendMinZoom()); hideCross(); renderChart(false); }
+  function renderTrendZoom(M) {
+    var el = $('#trend-zoom');
+    if (!el || !H.zoom) return;
+    el.innerHTML = H.zoom.bar(state.tzoom, 'tzoom', state.tzoom[0] > 0 || state.tzoom[1] < 1 ? esc(stamp(M.start) + ' – ' + stamp(M.end)) : '');
   }
 
   function initTrends() {
@@ -1202,6 +1233,7 @@
     document.querySelectorAll('[data-range]').forEach(function (b) {
       b.addEventListener('click', function () {
         state.range = b.getAttribute('data-range');
+        state.tzoom = [0, 1];
         document.querySelectorAll('[data-range]').forEach(function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
         renderChart(true);
       });
@@ -1210,11 +1242,26 @@
       b.addEventListener('click', function () {
         if (b.disabled) return;
         state.riverParam = b.getAttribute('data-param');
+        state.tzoom = [0, 1];
         renderChart(true);
       });
     });
 
     var svg = $('#chart');
+    if (H.zoom) {
+      // Drag across the chart to zoom into that span; double-click to zoom out; toolbar above the chart.
+      H.zoom.attach(svg, function () { return state.geom; }, function (fa, fb) {
+        var z = state.tzoom, w = z[1] - z[0];
+        setTrendZoom([z[0] + fa * w, z[0] + fb * w]);
+      }, function (fc) {
+        var z = state.tzoom;
+        setTrendZoom(H.zoom.apply(z, 'out', trendMinZoom(), z[0] + fc * (z[1] - z[0])));
+      });
+      $('#trend-zoom').addEventListener('click', function (ev) {
+        var b = ev.target.closest('[data-tzoom]');
+        if (b && !b.disabled) setTrendZoom(H.zoom.apply(state.tzoom, b.getAttribute('data-tzoom'), trendMinZoom()));
+      });
+    }
     svg.addEventListener('pointermove', onPointer);
     svg.addEventListener('pointerdown', onPointer);
     svg.addEventListener('pointerleave', hideCross);

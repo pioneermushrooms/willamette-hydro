@@ -499,6 +499,14 @@ console.log('past years');
   check(Math.abs(tiny[1] - tiny[0] - TCZ.MIN_SPAN) < 1e-9 && eq(TCZ.clampZoom(0.9, 0.2), 0.2, 0.9), 'zoom: minimum ~3-day window; reversed drags are ordered');
   check(TCZ.dayTickStep(30, 800) <= 2 && TCZ.dayTickStep(90, 300) >= 14 && TCZ.niceStep(3) === 0.5 && TCZ.niceStep(0.3) === 0.05 && TCZ.niceStep(180) === 50, 'zoom: day-tick and elevation-grid steps adapt to the window');
   check(/data-tczoom/.test(tc) && /data-tcmonth/.test(tc) && /setPointerCapture/.test(tc), 'zoom: buttons, month labels and drag-to-zoom wired');
+  const ZM = require('./js/zoom.js');
+  check(eq(ZM.apply([0, 1], 'in', 0.01), 0.25, 0.75) && eq(ZM.apply([0.25, 0.75], 'out', 0.01), 0, 1) && eq(ZM.apply([0.2, 0.4], 'reset'), 0, 1), 'shared zoom: in / out / reset');
+  check(eq(ZM.apply([0, 0.5], 'left', 0.01), 0, 0.5) && eq(ZM.apply([0.25, 0.5], 'right', 0.01), 0.375, 0.625) && eq(ZM.apply([0, 1], 'in', 0.01, 0.9), 0.5, 1), 'shared zoom: pan stops at the ends; zoom about a point');
+  const zmin = ZM.clamp([0.5, 0.5], 2 / 24);
+  check(Math.abs(zmin[1] - zmin[0] - 2 / 24) < 1e-9 && eq(ZM.clamp([0.7, 0.3], 0.01), 0.3, 0.7), 'shared zoom: per-chart minimum window (2 h of 24 H); reversed drag ordered');
+  check(/ZM|bar\(/.test(fs.readFileSync(path.join(__dirname, 'js', 'zoom.js'), 'utf8')) && /data-tcazoom/.test(tc) && /H\.zoom\.attach/.test(tc), 'teacup chart: YEAR / 30 D / 6 MO / 1 YR zoom wired');
+  const appSrc = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8'), idx = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  check(/H\.zoom\.attach\(svg/.test(appSrc) && /state\.tzoom = \[0, 1\]/.test(appSrc) && idx.includes('id="trend-zoom"') && idx.indexOf('js/zoom.js') < idx.indexOf('js/app.js'), 'trend recorder: zoom wired, reset on range/point change');
 }
 
 // ---- 3. Page wiring ---------------------------------------------------------
