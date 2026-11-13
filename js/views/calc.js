@@ -120,8 +120,10 @@
       '<label class="field dd-f"><span class="field-label">Inflow</span><select id="c2-im"><option value="const">Constant</option><option value="series">Hourly series (paste)</option></select></label>' +
       field('c2-ic', 'Inflow (cfs, constant)', 'inputmode="decimal" value="' + (lv.inflow ? Math.max(0, Math.round(lv.inflow.v)) : '') + '"', lv.inflow ? 'default: latest USACE computed inflow' : '') +
       '<label class="field dd-f dd-wide" id="c2-is-wrap" hidden><span class="field-label">Hourly inflow (cfs), one value per line from the start time</span><textarea id="c2-is" rows="4" placeholder="900&#10;920&#10;950"></textarea></label>' +
-      field('c2-ru', 'Max ramp-up (cfs/hr)', 'inputmode="decimal" value="100"') +
-      field('c2-rd', 'Max ramp-down (cfs/hr)', 'inputmode="decimal" value="100"') +
+      '<label class="field dd-f"><span class="field-label">Ramp limits in</span><select id="c2-rmode"><option value="cfs">Flow (cfs per hour)</option><option value="stage">Gage height (ft per hour)</option></select></label>' +
+      field('c2-ru', '<span class="dd-ru-l">Max ramp-up (cfs/hr)</span>', 'inputmode="decimal" value="100"') +
+      field('c2-rd', '<span class="dd-rd-l">Max ramp-down (cfs/hr)</span>', 'inputmode="decimal" value="100"') +
+      stageFields() +
       field('c2-qmin', 'Min outflow (cfs)', 'inputmode="decimal"', 'minimum flow requirement') +
       field('c2-qmax', 'Max outflow (cfs)', 'inputmode="decimal"', 'powerhouse + allowed spill') +
       field('c2-qe', 'Ending outflow Q_end (cfs)', 'inputmode="decimal" placeholder="= inflow at target time"', 'blank: inflow at the target time, so the pool holds') +
@@ -131,6 +133,36 @@
       '<div class="dd-actions"><button type="button" class="btn" id="c2-go">Plan drawdown</button></div>' +
       '<div class="dd-out" id="c2-out-box" aria-live="polite"></div></section>';
     renderRating();
+  }
+
+  // ---- Ramp limits in gage height (USGS stage–discharge ratings, js/ratings.js) ----------
+
+  // Gage used by default for each project's release (the gage below the dam, else the nearest river gauge).
+  var RAMP_GAGE = { HCR: '14145500', DEX: '14150000', LOP: '14150000', CGR: '14159500', FAL: '14152000', BLU: '14162500', COT: '14157500', DOR: '14157500', FRN: '14166000' };
+  function gageList() {
+    var out = [], seen = {}, BD = (H.layers && H.layers.BELOW_DAM) || {};
+    Object.keys(BD).forEach(function (c) { if (!seen[BD[c].site]) { seen[BD[c].site] = 1; out.push({ site: BD[c].site, name: BD[c].name }); } });
+    H.stations.forEach(function (s2) { if (!seen[s2.site] && s2.params.indexOf('flow') >= 0) { seen[s2.site] = 1; out.push({ site: s2.site, name: s2.name }); } });
+    return out;
+  }
+  function stageFields() {
+    var def = RAMP_GAGE[st.code];
+    return '<label class="field dd-f dd-stage" hidden><span class="field-label">Gage for the ramp limit</span><select id="c2-rg">' +
+      gageList().map(function (g) { return '<option value="' + g.site + '"' + (g.site === def ? ' selected' : '') + '>' + esc(g.site + ' · ' + g.name) + '</option>'; }).join('') +
+      '</select><span class="dd-hint">its USGS stage–discharge rating converts gage height ↔ flow</span></label>' +
+      '<label class="field dd-f dd-stage" hidden><span class="field-label">Other flow at the gage (cfs)</span><input id="c2-ro" inputmode="decimal" value="0">' +
+      '<span class="dd-hint">tributaries between the dam and the gage; gage flow = release + this</span></label>';
+  }
+  // Resolves null (cfs ramps) or a js/drawdown.js stage model from the chosen gage's rating.
+  function stageRating() {
+    if (val('c2-rmode') !== 'stage') return Promise.resolve(null);
+    var site = val('c2-rg'), g = gageList().filter(function (x) { return x.site === site; })[0] || { site: site, name: '' };
+    return R.load(R.usgsDef(site)).then(function (e) {
+      var d = e.data;
+      if (!d.xs || d.xs.length < 2) throw new Error('no rating points for USGS ' + site);
+      var src = 'USGS ' + site + ' stage–discharge rating' + (d.ratingId ? ' ' + d.ratingId : '') + (d.shifted ? ', shifts ' + d.shifted : '');
+      return D.stageFromRating(d.xs, d.ys, numv('c2-ro'), 'USGS ' + site + (g.name ? ' (' + g.name + ')' : ''), src);
+    });
   }
 
   // ---- Gate settings (2-D outlet ratings, js/ratings.js) -----------------------------
@@ -240,8 +272,18 @@
         dtHr: +val('c2-dt'), roundTo: numv('c2-rt')
       };
       if (opts.Qmin == null) throw new Error('Enter the minimum outflow.');
-      st.plan = D.plan(opts);
     } catch (err) { return fail(err.message); }
+    box.innerHTML = '<p class="na loading">' + (val('c2-rmode') === 'stage' ? 'Loading the stage–discharge rating…' : 'Planning…') + '</p>';
+    var token = st.runToken = (st.runToken || 0) + 1;
+    stageRating().then(function (sg) {
+      if (token !== st.runToken) return;
+      try { opts.stage = sg; st.plan = D.plan(opts); } catch (err) { return fail(err.message); }
+      finishC2(t0, t1);
+    }, function (err) { if (token === st.runToken) fail('Stage–discharge rating unavailable: ' + (err.message || 'failed')); });
+  }
+
+  function finishC2(t0, t1) {
+    var box = st.el.querySelector('#c2-out-box');
     box.innerHTML = '<p class="na loading">Loading rule curve…</p>';
     var r = st.plan, gdef = gateDef(), gopts = { powerhouse: numv('c2-ph'), gates: numv('c2-gn'), step: +val('c2-gs') };
     var gateP = !gdef ? Promise.resolve(null) : R.load(gdef).then(function (e) {
@@ -269,12 +311,14 @@
     var kv = function (k, v) { return '<div><dt>' + k + '</dt><dd>' + v + '</dd></div>'; };
     var h = '<p class="dd-status"><span class="badge ' + s[0] + '">' + s[1] + '</span>' + (r.belowMin.length ? ' <span class="badge warn">BELOW MIN OUTFLOW</span>' : '') + '</p>';
     h += '<p class="dd-plain">' + esc(r.plain) + '</p>';
+    if (r.stage) h += '<p class="hint">Ramp limits apply to gage height at ' + esc(r.stage.label) + ', converted to flow with the ' + esc(r.stage.src) + ' (gage flow = release + other flow; travel time not modelled). Rating: <a href="https://waterdata.usgs.gov/monitoring-location/' + esc(r.stage.label.replace(/^USGS (\d+).*$/, '$1')) + '/" target="_blank" rel="noopener">USGS gage page ↗</a>.</p>';
     if (r.messages.length) h += '<ul class="dd-msgs">' + r.messages.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>';
     h += '<dl class="dd-sum mono">' +
       kv('Plateau flow', r.Qp == null ? '—' : fmt(r.Qp, r.Qp % 1 ? 1 : 0) + ' cfs') +
       kv('Plateau reached', stamp(r.tPlateau)) +
       kv('Begin ramp-down', stamp(r.tRampDown)) +
       kv('Ending outflow', fmt(r.Qend) + ' cfs' + (r.QendDefault ? ' (inflow at target)' : '')) +
+      kv('Ramp limits', r.stage ? fmt(r.ru, 2) + ' ft/hr up · ' + fmt(r.rd, 2) + ' ft/hr down at ' + esc(r.stage.label) : fmt(r.ru) + ' cfs/hr up · ' + fmt(r.rd) + ' cfs/hr down') +
       kv('Final elevation', fmt(r.Efinal, 2) + ' ft') +
       kv('Final storage', fmt(r.Sfinal) + ' ac-ft (target ' + fmt(r.St) + ')') +
       kv('Total released', fmt(r.released) + ' ac-ft') +
@@ -293,12 +337,12 @@
         '<td>' + (gr.change == null || !gr.change ? '' : (gr.change > 0 ? '+' : '−') + fmt(Math.abs(gr.change), gdec)) + '</td>';
     };
     var rows = r.schedule.map(function (x, i) {
-      return '<tr' + (below[i] ? ' class="dd-below"' : '') + '><td>' + stamp(x.t) + '</td><td>' + fmt(x.O) + '</td><td>' + fmt(x.I) + '</td><td>' + fmt(x.net) + '</td><td>' + fmt(x.S) + '</td><td>' + fmt(x.E, 2) + '</td>' +
+      return '<tr' + (below[i] ? ' class="dd-below"' : '') + '><td>' + stamp(x.t) + '</td><td>' + fmt(x.O) + '</td><td>' + fmt(x.I) + '</td><td>' + fmt(x.net) + '</td><td>' + fmt(x.S) + '</td><td>' + fmt(x.E, 2) + '</td>' + (r.stage ? '<td>' + fmt(x.h, 2) + '</td>' : '') +
         (hasRule ? '<td>' + fmt(x.rule, 2) + '</td>' : '') + (gs ? gcell(gs.rows[i]) : '') + '</tr>';
     }).join('');
     h += gateSection(r, gs, gdec);
     h += '<div class="rt-table-head"><h3 class="dd-ch">Schedule (' + (r.dtHr === 1 ? 'hourly' : r.dtHr * 60 + '-min') + ')</h3><button type="button" class="btn" id="c2-csv">Download CSV</button></div>' +
-      '<div class="table-scroll dd-table"><table><thead><tr><th>Time (PT)</th><th>Outflow cfs</th><th>Inflow cfs</th><th>Net cfs</th><th>Storage ac-ft</th><th>Elev ft</th>' + (hasRule ? '<th>Rule curve ft</th>' : '') + (gs ? '<th>Gate opening ' + esc(r.gate.def.ou || 'ft') + '</th><th>Change</th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+      '<div class="table-scroll dd-table"><table><thead><tr><th>Time (PT)</th><th>Outflow cfs</th><th>Inflow cfs</th><th>Net cfs</th><th>Storage ac-ft</th><th>Elev ft</th>' + (r.stage ? '<th>Gage ht ft</th>' : '') + (hasRule ? '<th>Rule curve ft</th>' : '') + (gs ? '<th>Gate opening ' + esc(r.gate.def.ou || 'ft') + '</th><th>Change</th>' : '') + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     h += '<p class="hint">Outflow is held for each step from its start time; storage S[i+1] = S[i] + (I − O) × 0.082645 × Δt hr. Elevations from the CWMS elevation–storage table.' + (hasRule ? ' Rule curve: ' + esc(byCode[st.code].series.rule.name) + ', daily, linearly joined.' : ' Rule curve not available for this window.') + '</p>' + labelLine();
     box.innerHTML = h;
   }
@@ -308,12 +352,12 @@
     if (!r) return;
     var gs = r.gate && r.gate.g;
     var rows = r.schedule.map(function (x, i) {
-      var row = [wall(x.t).replace('T', ' '), Math.round(x.O), Math.round(x.I), Math.round(x.net), Math.round(x.S), x.E == null ? '' : x.E.toFixed(2), x.rule == null ? '' : x.rule.toFixed(2)];
+      var row = [wall(x.t).replace('T', ' '), Math.round(x.O), Math.round(x.I), Math.round(x.net), Math.round(x.S), x.E == null ? '' : x.E.toFixed(2), x.rule == null ? '' : x.rule.toFixed(2), x.h == null ? '' : x.h.toFixed(2)];
       if (gs) { var g = gs.rows[i]; row.push(g.opening == null ? '' : g.opening, g.change == null ? '' : +g.change.toFixed(4), g.status); }
       return row;
     });
     rows.push([D.LABEL]);
-    var text = R.toCSV(['time_pt', 'outflow_cfs', 'inflow_cfs', 'net_cfs', 'storage_acft', 'elev_ft', 'rule_curve_ft'].concat(gs ? ['gate_opening_' + (r.gate.def.ou || 'ft'), 'gate_change', 'gate_status'] : []), rows);
+    var text = R.toCSV(['time_pt', 'outflow_cfs', 'inflow_cfs', 'net_cfs', 'storage_acft', 'elev_ft', 'rule_curve_ft', 'gage_height_ft'].concat(gs ? ['gate_opening_' + (r.gate.def.ou || 'ft'), 'gate_change', 'gate_status'] : []), rows);
     var a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
     a.download = st.code + '-drawdown-plan.csv';
@@ -371,6 +415,14 @@
       else if (e.target.id === 'c2-csv') csv();
     });
     st.el.addEventListener('change', function (e) {
+      if (e.target.id === 'c2-rmode') {
+        var stg = e.target.value === 'stage';
+        st.el.querySelectorAll('.dd-stage').forEach(function (el) { el.hidden = !stg; });
+        st.el.querySelector('.dd-ru-l').textContent = 'Max ramp-up (' + (stg ? 'ft' : 'cfs') + '/hr)';
+        st.el.querySelector('.dd-rd-l').textContent = 'Max ramp-down (' + (stg ? 'ft' : 'cfs') + '/hr)';
+        st.el.querySelector('#c2-ru').value = stg ? '0.2' : '100';
+        st.el.querySelector('#c2-rd').value = stg ? '0.2' : '100';
+      }
       if (e.target.id === 'c2-im') {
         var series = e.target.value === 'series';
         st.el.querySelector('#c2-is-wrap').hidden = !series;

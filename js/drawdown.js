@@ -102,28 +102,63 @@
   // ---- Calculator 2: ramp-limited drawdown planner ------------------------------
 
   /*
-   * Trapezoid release over H hours: Q0 -> Qp (ru up / rd down), hold, Qp -> Qend arriving at H.
+   * Ramp model: how fast the release may change. Linear in flow (ru / rd in cfs/hr), or, with
+   * `stage` = { stage(q) -> ft, flow(h) -> cfs, qMin, qMax } from a downstream gage's
+   * stage–discharge rating, linear in gage height (ru / rd in ft/hr).
+   *   time(from, to)        hours to ramp between two flows
+   *   along(from, to, tau)  flow tau hours into that ramp (holds at `to` once reached)
+   */
+  function rampModel(ru, rd, stage) {
+    if (!stage) return {
+      linear: true, ru: ru, rd: rd,
+      time: function (f, t) { return t >= f ? (t - f) / ru : (f - t) / rd; },
+      along: function (f, t, tau) { return t >= f ? Math.min(t, f + ru * tau) : Math.max(t, f - rd * tau); }
+    };
+    return {
+      linear: false, ru: ru, rd: rd, stage: stage,
+      time: function (f, t) { var hf = stage.stage(f), ht = stage.stage(t); return ht >= hf ? (ht - hf) / ru : (hf - ht) / rd; },
+      along: function (f, t, tau) {
+        var hf = stage.stage(f), ht = stage.stage(t), h = ht >= hf ? Math.min(ht, hf + ru * tau) : Math.max(ht, hf - rd * tau);
+        return h === ht ? t : stage.flow(h);
+      }
+    };
+  }
+
+  /*
+   * Trapezoid release over H hours: Q0 -> Qp, hold, Qp -> Qend arriving at H, ramping as rm allows.
    * Returns { a, c, b (segment hours), ok (hold >= 0), at(tau) }.
    */
-  function profile(Q0, Qp, Qend, ru, rd, H) {
-    var a = Qp >= Q0 ? (Qp - Q0) / ru : (Q0 - Qp) / rd;
-    var b = Qp >= Qend ? (Qp - Qend) / rd : (Qend - Qp) / ru;
-    var c = H - a - b;
+  function profile(Q0, Qp, Qend, rm, H) {
+    var a = rm.time(Q0, Qp), b = rm.time(Qp, Qend), c = H - a - b;
     return {
       a: a, b: b, c: c, ok: c >= -1e-9,
       at: function (tau) {
-        if (tau <= a) return a ? Q0 + (Qp - Q0) * (tau / a) : Qp;
+        if (tau <= a) return a ? rm.along(Q0, Qp, tau) : Qp;
         if (tau <= a + c) return Qp;
-        var k = (tau - a - c) / (b || 1);
-        return Qp + (Qend - Qp) * Math.min(1, k);
+        return rm.along(Qp, Qend, tau - a - c);
       }
     };
   }
 
   // Ramp from Q0 toward Qend for the whole window at the allowed rate (used when ramps alone exceed it).
-  function bestRampProfile(Q0, Qend, ru, rd) {
-    var up = Qend >= Q0, r = up ? ru : rd;
-    return { a: null, b: null, c: null, ok: false, at: function (tau) { return up ? Math.min(Qend, Q0 + r * tau) : Math.max(Qend, Q0 - r * tau); } };
+  function bestRampProfile(Q0, Qend, rm) {
+    return { a: null, b: null, c: null, ok: false, at: function (tau) { return rm.along(Q0, Qend, tau); } };
+  }
+
+  /*
+   * Release <-> gage height through a stage–discharge rating { xs: gage height ft, ys: flow cfs }
+   * (USGS exsa, js/ratings.js). other = flow at the gage that is not the release (tributaries
+   * between dam and gage), so gage flow = release + other. Travel time is not modelled.
+   */
+  function stageFromRating(xs, ys, other, label, src) {
+    var o = num(other) || 0, qs = ys.filter(function (v) { return isFinite(v); });
+    if (!R.isMonotonic(ys)) throw new RangeError('The stage–discharge rating at ' + label + ' is not monotonic.');
+    return {
+      label: label, src: src, other: o,
+      qMin: Math.max(0, Math.min.apply(null, qs) - o), qMax: Math.max.apply(null, qs) - o,
+      stage: function (q) { return R.inverse(xs, ys, q + o).x; },
+      flow: function (h) { var r = R.interp(xs, ys, h); return r.y == null ? null : r.y - o; }
+    };
   }
 
   // Inflow at hour offset tau: constant, or hourly series (last value held).
@@ -147,13 +182,20 @@
   }
 
   // Feasible plateau range where the hold segment is >= 0 (null if the ramps alone exceed H).
-  function plateauRange(Q0, Qend, ru, rd, H) {
-    var m = Q0 <= Qend ? (Qend - Q0) / ru : (Q0 - Qend) / rd;
-    if (m > H + 1e-9) return null;
-    return {
-      lo: (Q0 / rd + Qend / ru - H) / (1 / rd + 1 / ru),
-      hi: (H + Q0 / ru + Qend / rd) / (1 / ru + 1 / rd)
+  // Gage-height ramps: found by bisection inside the rating's flow range.
+  function plateauRange(Q0, Qend, rm, H) {
+    if (rm.time(Q0, Qend) > H + 1e-9) return null;
+    if (rm.linear) {
+      var ru = rm.ru, rd = rm.rd;
+      return { lo: (Q0 / rd + Qend / ru - H) / (1 / rd + 1 / ru), hi: (H + Q0 / ru + Qend / rd) / (1 / ru + 1 / rd) };
+    }
+    var span = function (q) { return rm.time(Q0, q) + rm.time(q, Qend); };
+    var solve = function (a, b, up) {   // span(a) <= H; find the limit toward b
+      if (span(b) <= H) return b;
+      for (var i = 0; i < 60; i++) { var m = (a + b) / 2; if (span(m) <= H) a = m; else b = m; }
+      return a;
     };
+    return { lo: solve(Math.min(Q0, Qend), rm.stage.qMin), hi: solve(Math.max(Q0, Qend), rm.stage.qMax) };
   }
 
   function parseSeries(text) {
@@ -170,7 +212,9 @@
 
   /*
    * opts = { rating, S0, St, t0 (ms), tEnd (ms), Q0, inflow (number | hourly array),
-   *          ru, rd (cfs/hr, > 0), Qmin, Qmax, Qend (optional; default inflow at tEnd),
+   *          ru, rd (cfs/hr, > 0; ft/hr with `stage`), Qmin, Qmax, Qend (optional; default inflow at tEnd),
+   *          stage (optional: { stage(q), flow(h), qMin, qMax, label, src } — ramp limits in gage
+   *          height per hour at a downstream gage, from its stage–discharge rating; see stageFromRating),
    *          dtHr (1, 0.5 or 0.25), roundTo (optional cfs), tol (ac-ft, default 1) }
    * Returns { status, messages[], Qp, ... schedule[] } — see README "Storage / Drawdown Calculator".
    */
@@ -190,25 +234,33 @@
     var Qend = num(opts.Qend);
     var QendDefault = Qend == null;
     if (Qend == null) Qend = inflowAt(Hh);
-    var rating = opts.rating, messages = [];
+    var rating = opts.rating, messages = [], sg = opts.stage || null;
+    if (sg) {
+      [['Current outflow', Q0], ['Ending outflow', Qend]].forEach(function (p) {
+        if (p[1] < sg.qMin || p[1] > sg.qMax) throw new RangeError(p[0] + ' ' + fmt(p[1]) + ' cfs is outside the stage–discharge rating at ' + sg.label + ' (' + fmt(sg.qMin) + '–' + fmt(sg.qMax) + ' cfs at the gage).');
+      });
+      if (Qmax > sg.qMax) { messages.push('Max outflow limited to ' + fmt(sg.qMax) + ' cfs, the top of the stage–discharge rating at ' + sg.label + '.'); Qmax = sg.qMax; }
+      if (Qmin < sg.qMin) Qmin = Math.max(Qmin, sg.qMin);
+    }
+    var rm = rampModel(ru, rd, sg);
 
     var endFor = function (prof) { var s = simulate(S0, prof, inflowAt, n, dt); return { sim: s, Send: s.S[n] }; };
-    var range = plateauRange(Q0, Qend, ru, rd, Hh);
+    var range = plateauRange(Q0, Qend, rm, Hh);
     var status, Qp = null, prof, earliest = null;
 
     if (!range) {
       status = 'ramp-window';
-      prof = bestRampProfile(Q0, Qend, ru, rd);
-      var need = Q0 <= Qend ? (Qend - Q0) / ru : (Q0 - Qend) / rd;
+      prof = bestRampProfile(Q0, Qend, rm);
+      var need = rm.time(Q0, Qend);
       messages.push('Ramping from ' + fmt(Q0) + ' to ' + fmt(Qend) + ' cfs alone takes ' + fmt(need, 2) + ' hr, longer than the ' + fmt(Hh, 2) + ' hr window. Showing the best achievable profile: ramp toward ' + fmt(Qend) + ' cfs for the whole window.');
     } else {
       var lo = Math.max(Qmin, range.lo), hi = Math.min(Qmax, range.hi);
       if (lo > hi) { lo = hi = Math.min(Math.max(Qmin, range.lo), Qmax); }
-      var fHi = endFor(profile(Q0, hi, Qend, ru, rd, Hh)).Send, fLo = endFor(profile(Q0, lo, Qend, ru, rd, Hh)).Send;
+      var fHi = endFor(profile(Q0, hi, Qend, rm, Hh)).Send, fLo = endFor(profile(Q0, lo, Qend, rm, Hh)).Send;
       if (fHi > St + tol) {
         status = 'infeasible-max';
         Qp = hi;
-        earliest = earliestTime(opts, St, tol, dt, n, Qend, QendDefault, inflowAt);
+        earliest = earliestTime(opts, St, tol, dt, n, Qend, QendDefault, inflowAt, rm, Qmax);
         messages.push('Target not reachable by the deadline: even a ' + fmt(hi) + ' cfs plateau' + (hi < Qmax ? ' (the most the ramp limits allow in this window)' : ' (max outflow)') + ' leaves storage ' + fmt(fHi - St) + ' ac-ft above target.');
       } else if (fLo < St - tol) {
         status = 'infeasible-min';
@@ -218,7 +270,7 @@
         status = 'ok';
         var a = lo, b = hi;
         for (var k = 0; k < 100; k++) {
-          var mid = (a + b) / 2, f = endFor(profile(Q0, mid, Qend, ru, rd, Hh)).Send;
+          var mid = (a + b) / 2, f = endFor(profile(Q0, mid, Qend, rm, Hh)).Send;
           if (Math.abs(f - St) <= tol / 4 || b - a < 1e-6) { a = b = mid; break; }
           if (f > St) a = mid; else b = mid;
         }
@@ -231,7 +283,7 @@
         if (Qr < lo) Qr += rTo;
         if (Qr >= lo && Qr <= hi) { messages.push('Plateau rounded from ' + fmt(Qp, 1) + ' to ' + fmt(Qr) + ' cfs (' + fmt(rTo) + ' cfs steps).'); Qp = Qr; }
       }
-      prof = profile(Q0, Qp, Qend, ru, rd, Hh);
+      prof = profile(Q0, Qp, Qend, rm, Hh);
     }
 
     var run = endFor(prof), sim = run.sim;
@@ -245,6 +297,7 @@
         if (row.O > Qmax + 1e-6) aboveMax.push(i);
       } else { row.O = prof.at(Hh); row.I = inflowAt(Hh); row.net = row.O - row.I; }
       if (rating) { try { row.E = rating.elev(row.S); } catch (e) { outOfTable = true; } }
+      if (sg) row.h = sg.stage(row.O);
       schedule.push(row);
     }
     if (belowMin.length) messages.push(belowMin.length + ' step' + (belowMin.length > 1 ? 's' : '') + ' below the ' + fmt(Qmin) + ' cfs minimum outflow (first at ' + fmtClock(t0 + belowMin[0] * dt * HOUR, t0) + ').');
@@ -255,6 +308,7 @@
     var res = {
       status: status, ok: status === 'ok', messages: messages, label: LABEL,
       Qp: Qp, Q0: Q0, Qend: Qend, QendDefault: QendDefault, ru: ru, rd: rd, dtHr: dt, steps: n, hours: Hh,
+      rampUnit: sg ? 'ft/hr at ' + sg.label : 'cfs/hr', stage: sg ? { label: sg.label, src: sg.src } : null,
       tStart: t0, tEnd: t0 + Hh * HOUR,
       tPlateau: prof.a != null ? t0 + prof.a * HOUR : null,
       tRampDown: prof.a != null ? t0 + (prof.a + prof.c) * HOUR : null,
@@ -268,15 +322,16 @@
   }
 
   // Earliest deadline (ms) at which the max ramp-limited plateau reaches the target; null within 90 days.
-  function earliestTime(opts, St, tol, dt, n0, QendUser, QendDefault, inflowAt) {
-    var Q0 = +opts.Q0, ru = +opts.ru, rd = +opts.rd, Qmax = +opts.Qmax, Qmin = num(opts.Qmin) || 0, S0 = +opts.S0;
+  function earliestTime(opts, St, tol, dt, n0, QendUser, QendDefault, inflowAt, rm, Qmax) {
+    var Q0 = +opts.Q0, Qmin = num(opts.Qmin) || 0, S0 = +opts.S0, sg = rm.stage;
     var reaches = function (n) {
       var Hh = n * dt, Qend = QendDefault ? inflowAt(Hh) : QendUser;
-      var r = plateauRange(Q0, Qend, ru, rd, Hh);
+      if (sg && (Qend < sg.qMin || Qend > sg.qMax)) return false;
+      var r = plateauRange(Q0, Qend, rm, Hh);
       if (!r) return false;
       var hi = Math.min(Qmax, r.hi);
       if (hi < Qmin) return false;
-      return simulate(S0, profile(Q0, hi, Qend, ru, rd, Hh), inflowAt, n, dt).S[n] <= St + tol;
+      return simulate(S0, profile(Q0, hi, Qend, rm, Hh), inflowAt, n, dt).S[n] <= St + tol;
     };
     var maxN = Math.round(90 * 24 / dt), lo = n0, hi = n0 + 1;
     while (hi <= maxN && !reaches(hi)) { lo = hi; hi = Math.min(maxN + 1, n0 + (hi - n0) * 2); }
@@ -298,13 +353,16 @@
     return a.year + a.month + a.day === b.year + b.month + b.day ? hm : hm + ' ' + a.weekday;
   }
 
+  // "100 cfs/hr" or "0.20 ft/hr at <gage>".
+  function rateTxt(r, up) { var v = up ? r.ru : r.rd; return r.stage ? fmt(v, 2) + ' ft/hr at ' + r.stage.label : fmt(v) + ' cfs/hr'; }
+
   function plainLine(r) {
     var s = [], t0 = r.tStart, end = fmtClock(r.tEnd, t0);
     if (r.status === 'ramp-window') {
-      return 'Ramp from ' + fmt(r.Q0) + ' toward ' + fmt(r.Qend) + ' cfs at ' + fmt(r.Q0 <= r.Qend ? r.ru : r.rd) + ' cfs/hr for the whole window; reaches ' + fmt(r.schedule[r.steps].O) + ' cfs by ' + end + '.';
+      return 'Ramp from ' + fmt(r.Q0) + ' toward ' + fmt(r.Qend) + ' cfs at ' + rateTxt(r, r.Q0 <= r.Qend) + ' for the whole window; reaches ' + fmt(r.schedule[r.steps].O) + ' cfs by ' + end + '.';
     }
     var Qp = Math.round(r.Qp), up = Qp >= r.Q0;
-    if (Math.abs(Qp - r.Q0) >= 0.5) s.push('Ramp ' + (up ? 'up' : 'down') + ' from ' + fmt(r.Q0) + ' to ' + fmt(Qp) + ' cfs at ' + fmt(up ? r.ru : r.rd) + ' cfs/hr by ' + fmtClock(r.tPlateau, t0));
+    if (Math.abs(Qp - r.Q0) >= 0.5) s.push('Ramp ' + (up ? 'up' : 'down') + ' from ' + fmt(r.Q0) + ' to ' + fmt(Qp) + ' cfs at ' + rateTxt(r, up) + ' by ' + fmtClock(r.tPlateau, t0));
     else s.push('Start at ' + fmt(Qp) + ' cfs');
     var hasEnd = Math.abs(Qp - r.Qend) >= 0.5;
     if (r.tRampDown > r.tPlateau + 1000) s.push('hold until ' + (hasEnd ? fmtClock(r.tRampDown, t0) : end));
@@ -370,7 +428,7 @@
   return {
     FT3_PER_AF: FT3_PER_AF, AF_PER_CFS_HR: AF_PER_CFS_HR, LABEL: LABEL,
     makeRating: makeRating, convert: convert, profile: profile, plateauRange: plateauRange,
-    parseSeries: parseSeries, plan: plan, fmtClock: fmtClock,
+    parseSeries: parseSeries, plan: plan, fmtClock: fmtClock, rampModel: rampModel, stageFromRating: stageFromRating,
     gateOpening: gateOpening, gateSchedule: gateSchedule
   };
 });

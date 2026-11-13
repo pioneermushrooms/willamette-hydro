@@ -473,6 +473,21 @@ console.log('drawdown calculator');
   check(D.parseSeries('900\n920, \n2026-11-10 03:00, 1,050\n\n') .join() === '900,920,1050', 'calc2: pasted hourly inflow series');
   const p7 = D.plan(Object.assign({}, base, { inflow: [500, 500, 600] }));
   check(p7.schedule[2].I === 600 && p7.schedule[10].I === 600 && p7.Qend === 600, 'calc2: hourly inflow series, last value held; Q_end defaults to inflow at target');
+  // Ramp limits in gage height: rating q = 100·h² (h 0–10 ft), 0.2 ft/hr from 400 cfs (h = 2 ft).
+  const rxs = [], rys = [];
+  for (let h = 0; h <= 10.001; h += 0.1) { rxs.push(+h.toFixed(1)); rys.push(Math.round(100 * h * h)); }
+  const sgm = D.stageFromRating(rxs, rys, 0, 'Test gage', 'test rating');
+  check(Math.abs(sgm.stage(400) - 2) < 1e-9 && Math.abs(sgm.flow(3) - 900) < 1e-9 && sgm.qMax === 10000, 'stage ramp: rating converts flow <-> gage height');
+  const rmS = D.rampModel(0.2, 0.2, sgm);
+  check(Math.abs(rmS.time(400, 900) - 5) < 1e-9 && Math.abs(rmS.along(400, 900, 1) - 484) < 1e-6 && rmS.along(400, 900, 9) === 900, 'stage ramp: 2 -> 3 ft at 0.2 ft/hr takes 5 h; flow follows the rating (484 cfs after 1 h)');
+  const ps = D.plan(Object.assign({}, base, { Q0: 400, inflow: 400, ru: 0.2, rd: 0.2, Qmin: 100, Qmax: 9000, St: 49500, stage: sgm }));
+  const hs = ps.schedule.slice(0, 4).map((r) => r.h);
+  check(ps.status === 'ok' && Math.abs(ps.Sfinal - 49500) <= 1 && hs.every((h, i) => !i || Math.abs(h - hs[i - 1] - 0.2) < 1e-6) && /at 0\.20 ft\/hr at Test gage/.test(ps.plain), 'stage ramp: plan meets target with gage height rising 0.2 ft per step — ' + ps.plain);
+  const sgo = D.stageFromRating(rxs, rys, 300, 'Test gage', 'test rating');
+  check(Math.abs(sgo.stage(100) - 2) < 1e-9 && sgo.qMax === 9700, 'stage ramp: other flow at the gage is added before reading the rating');
+  let outErr = '';
+  try { D.plan(Object.assign({}, base, { Q0: 20000, ru: 0.2, rd: 0.2, stage: sgm })); } catch (e) { outErr = e.message; }
+  check(/outside the stage–discharge rating/.test(outErr), 'stage ramp: flows outside the rating are reported');
   // Gate openings from a 2-D rating: flow per ft of opening = 10 × (elev − 800) cfs, openings 0–4 ft.
   const g2 = { kind: '2d', others: [0, 1, 2, 4], curves: [0, 1, 2, 4].map((o) => ({ xs: [800, 900], ys: [0, o * 1000] })) };
   check(Math.abs(D.gateOpening(g2, 850, 750).opening - 1.5) < 1e-3 && D.gateOpening(g2, 850, 750).status === 'ok', 'gates: 750 cfs at 850 ft -> 1.5 ft opening');
