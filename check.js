@@ -473,6 +473,10 @@ console.log('drawdown calculator');
   check(D.parseSeries('900\n920, \n2026-11-10 03:00, 1,050\n\n') .join() === '900,920,1050', 'calc2: pasted hourly inflow series');
   const p7 = D.plan(Object.assign({}, base, { inflow: [500, 500, 600] }));
   check(p7.schedule[2].I === 600 && p7.schedule[10].I === 600 && p7.Qend === 600, 'calc2: hourly inflow series, last value held; Q_end defaults to inflow at target');
+  // Min / max outflow optional: drawdown and fill both plan without them.
+  const pNo = D.plan(Object.assign({}, base, { Qmin: undefined, Qmax: undefined }));
+  const pFill = D.plan(Object.assign({}, base, { Qmin: undefined, Qmax: undefined, Q0: 1500, inflow: 900, St: 50300 }));
+  check(pNo.status === 'ok' && Math.abs(pNo.Qp - 1000) < 1 && pFill.status === 'ok' && pFill.Qp < 900 && /^Ramp down from 1,500/.test(pFill.plain), 'calc2: min/max outflow optional (drawdown and fill)');
   // Ramp limits in gage height: rating q = 100·h² (h 0–10 ft), 0.2 ft/hr from 400 cfs (h = 2 ft).
   const rxs = [], rys = [];
   for (let h = 0; h <= 10.001; h += 0.1) { rxs.push(+h.toFixed(1)); rys.push(Math.round(100 * h * h)); }
@@ -566,6 +570,14 @@ console.log('layers');
     { 'location-level-id': 'CGR.Elev.Inst.0.Bottom of Conservation', 'level-units-id': 'ft', 'level-date': '2020-01-01T08:00:00Z', 'constant-value': 1532 }] }, 'CGR', Date.now());
   const lvv = LY.levelValues(lvFix, Date.now());
   check(lvv.map((l) => l.key + '=' + Math.round(l.v)).join() === 'topCons=1690,spillwayCrest=1656,bottomCons=1532', 'layers: level values only for published levels, top to bottom — got ' + lvv.map((l) => l.key + '=' + l.v).join());
+  const falLv = H0.levels.compact({ levels: [
+    { 'location-level-id': 'FAL.Elev.Inst.0.Top of Conservation', 'level-units-id': 'ft', 'level-date': '2020-01-01T08:00:00Z', 'constant-value': 830 },
+    { 'location-level-id': 'FAL.Temp-Water.Inst.0.ODEQ-2006TMDL-Target', 'level-units-id': 'C', 'level-date': '2012-01-01T08:00:00Z', 'constant-value': 13 },
+    { 'location-level-id': 'FAL.Elev-Forebay.Inst.0.Injunction-Target', 'level-units-id': 'ft', 'level-date': '2023-01-01T08:00:00Z', 'interval-origin': '2023-01-01T08:00:00Z', 'interval-months': 12,
+      'seasonal-values': [{ 'offset-months': 0, 'offset-minutes': 0, value: 728 }, { 'offset-months': 6, 'offset-minutes': 0, value: 820 }] }] }, 'FAL', Date.now());
+  const ft = LY.targetFor('FAL', falLv);
+  check(ft && ft.id === 'Elev-Forebay.Inst.0.Injunction-Target' && ft.discovered && /Injunction Target/i.test(ft.label) && H0.levels.pick(falLv, ft.id, Date.now()), 'layers: Fall Creek target found in its CWMS levels (not the ODEQ temperature target) — ' + (ft && ft.label));
+  check(LY.targetFor('CGR', null).id === H0.levels.IDS.injunctionTarget && LY.targetFor('DEX', { levels: {} }) === null, 'layers: known targets still used; none -> null');
   check(LY.TARGETS.CGR.idKey === 'injunctionTarget' && LY.TARGETS.HCR.idKey === 'interimRisk' && !LY.TARGETS.DEX, 'layers: published targets for LOP/GPR/CGR (injunction) and HCR (IRRM)');
   const res = H0.projects.find((p) => p.code === 'CGR'), riv = H0.stations.find((s) => s.id === 'middle-fork-jasper'), eug = H0.stations.find((s) => s.id === 'willamette-eugene');
   check(LY.stripsFor(res).map((x) => x.key).join() === 'flows,temp,turb,tdg', 'layers: reservoir strips = inflow/outflow, temp, turbidity, TDG');

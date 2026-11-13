@@ -44,7 +44,7 @@
     { key: 'bottomCons', label: 'Bottom of conservation' }
   ];
 
-  // Published elevation targets per project (also used by the Teacup page).
+  // Known published elevation targets per project; others are found in their CWMS levels (targetFor).
   var TARGETS = {
     LOP: { idKey: 'injunctionTarget', label: 'Injunction target' },
     GPR: { idKey: 'injunctionTarget', label: 'Injunction target' },
@@ -94,6 +94,25 @@
     if (!lv || !LV) return [];
     return LEVELS.map(function (l) { return { key: l.key, label: l.label, v: LV.constantAt(lv, LV.IDS[l.key], now || Date.now()) }; })
       .filter(function (l) { return l.v != null; });
+  }
+
+  /*
+   * Published elevation target (injunction / interim operations) for a project: the level named in
+   * TARGETS, otherwise one found in its CWMS location levels (lv, from js/cwms-levels.js) whose id is
+   * an elevation level mentioning Injunction, Interim or Target (Injunction preferred). Returns
+   * { id: level id suffix, label, discovered } or null. Storage-only targets are not elevation curves.
+   */
+  function targetFor(code, lv) {
+    var t = TARGETS[code], LV = H.levels;
+    if (t && LV) return { id: LV.IDS[t.idKey], label: t.label };
+    if (!lv || !lv.levels) return null;
+    var keys = Object.keys(lv.levels).filter(function (k) {
+      return /^Elev[^.;]*\.Inst\.0\./.test(k) && /injunction|interim|target/i.test(k) && !/temp|odeq/i.test(k);
+    });
+    if (!keys.length) return null;
+    keys.sort(function (a, b) { return (/injunction/i.test(b) ? 1 : 0) - (/injunction/i.test(a) ? 1 : 0) || a.localeCompare(b); });
+    var name = keys[0].split('.Inst.0.')[1].replace(/[-_]+/g, ' ');
+    return { id: keys[0], label: name.charAt(0).toUpperCase() + name.slice(1), discovered: true };
   }
 
   // ---- Strip data ---------------------------------------------------------------
@@ -154,6 +173,15 @@
     return p;
   }
 
+  // Why a strip cannot have data for this entity (known without fetching), or null.
+  function unavailable(e, key) {
+    if (e.kind === 'reservoir') {
+      if ((key === 'temp' || key === 'turb') && !BELOW_DAM[e.code]) return 'No USGS gage below ' + e.name + ' is configured for water temperature or turbidity.';
+      if (key === 'tdg' && !TDG[e.code]) return 'No public TDG series below ' + e.name + ' (published for Dexter and Cougar only).';
+    }
+    return null;
+  }
+
   // Strips offered for an entity (rivers: not the parameter already on the main chart).
   function stripsFor(e, mainParam) {
     if (e.kind === 'reservoir') return STRIPS.reservoir;
@@ -163,6 +191,6 @@
   return {
     LEVELS: LEVELS, TARGETS: TARGETS, BELOW_DAM: BELOW_DAM, TDG: TDG, PCODE: PCODE,
     CHART_TOGGLES: CHART_TOGGLES, STRIPS: STRIPS,
-    isOn: isOn, setOn: setOn, levelValues: levelValues, stripsFor: stripsFor, load: load, _cache: cache
+    isOn: isOn, setOn: setOn, levelValues: levelValues, targetFor: targetFor, unavailable: unavailable, stripsFor: stripsFor, load: load, _cache: cache
   };
 });

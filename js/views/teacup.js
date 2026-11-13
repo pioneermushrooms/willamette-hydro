@@ -24,12 +24,9 @@
   // Elevation targets drawn on the ruler/chart, per project. HCR publishes its seasonal
   // elevation measure as "Interim Risk Reduction Measure"; its interim-operations and
   // injunction targets are storage-only (listed as storage, not converted).
-  var ELEV_TARGET = {
-    LOP: { id: LV.IDS.injunctionTarget, label: 'Injunction target' },
-    GPR: { id: LV.IDS.injunctionTarget, label: 'Injunction target' },
-    CGR: { id: LV.IDS.injunctionTarget, label: 'Injunction target' },
-    HCR: { id: LV.IDS.interimRisk, label: 'Interim Risk Reduction Measure' }
-  };
+  // Published elevation target: known ids in js/layers.js (TARGETS), others found in each project's
+  // CWMS levels (Fall Creek, ...) by H.layers.targetFor.
+  function elevTarget(code, lv) { return H.layers ? H.layers.targetFor(code, lv) : null; }
   var STOR_TARGETS = {
     HCR: [{ id: 'Stor.Inst.0.Interim_Operations', label: 'Interim operations (storage)' },
       { id: 'Stor.Inst.0.Injunction-Target', label: 'Injunction target (storage)' }]
@@ -192,7 +189,7 @@
     var stats = {};
     STATS.forEach(function (k) { stats[k] = LV.valueAt(lv, LV.IDS[k], now); });
     var hasStats = STATS.every(function (k) { return stats[k] != null; });
-    var tgt = ELEV_TARGET[m.code], tEntry = tgt ? LV.pick(lv, tgt.id, now) : null, tVal = tEntry ? LV.evalSeasonal(tEntry, now) : null;
+    var tgt = elevTarget(m.code, lv), tEntry = tgt ? LV.pick(lv, tgt.id, now) : null, tVal = tEntry ? LV.evalSeasonal(tEntry, now) : null;
 
     var all = marks.map(function (x) { return x.v; });
     var floorMark = marks.filter(function (x) { return x.key === 'streambed'; })[0];
@@ -258,7 +255,7 @@
   // ---- Detail ---------------------------------------------------------------------
 
   function targetBlock(m, R) {
-    var tgt = ELEV_TARGET[m.code], storT = STOR_TARGETS[m.code], h = '';
+    var tgt = elevTarget(m.code, m.lv), storT = STOR_TARGETS[m.code], h = '';
     if (!tgt && !storT) {
       return '<div class="tc-target"><h4 class="tc-h4">Interim operations / injunction target</h4>' +
         '<p class="na">No injunction or interim-operations elevation target is published in CWMS for this project.</p></div>';

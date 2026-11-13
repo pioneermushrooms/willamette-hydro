@@ -212,7 +212,8 @@
 
   /*
    * opts = { rating, S0, St, t0 (ms), tEnd (ms), Q0, inflow (number | hourly array),
-   *          ru, rd (cfs/hr, > 0; ft/hr with `stage`), Qmin, Qmax, Qend (optional; default inflow at tEnd),
+   *          ru, rd (cfs/hr, > 0; ft/hr with `stage`), Qmin (optional, default 0), Qmax (optional, default
+   *          no limit), Qend (optional; default inflow at tEnd),
    *          stage (optional: { stage(q), flow(h), qMin, qMax, label, src } — ramp limits in gage
    *          height per hour at a downstream gage, from its stage–discharge rating; see stageFromRating),
    *          dtHr (1, 0.5 or 0.25), roundTo (optional cfs), tol (ac-ft, default 1) }
@@ -222,9 +223,10 @@
     var dt = num(opts.dtHr) || 1, tol = num(opts.tol) || 1;
     var Q0 = num(opts.Q0), ru = num(opts.ru), rd = num(opts.rd), Qmin = num(opts.Qmin), Qmax = num(opts.Qmax);
     var S0 = num(opts.S0), St = num(opts.St), t0 = num(opts.t0), tEnd = num(opts.tEnd);
-    [['current outflow', Q0], ['ramp-up rate', ru], ['ramp-down rate', rd], ['max outflow', Qmax], ['start storage', S0], ['target storage', St], ['start time', t0], ['target time', tEnd]]
+    [['current outflow', Q0], ['ramp-up rate', ru], ['ramp-down rate', rd], ['start storage', S0], ['target storage', St], ['start time', t0], ['target time', tEnd]]
       .forEach(function (p) { if (p[1] == null) throw new Error('Missing ' + p[0] + '.'); });
-    if (Qmin == null) Qmin = 0;
+    if (Qmin == null) Qmin = 0;          // optional: no minimum-flow requirement
+    if (Qmax == null) Qmax = Infinity;   // optional: no maximum (the ramp limits and window still bound the plateau)
     if (ru <= 0 || rd <= 0) throw new Error('Ramp rates must be greater than zero.');
     if (Qmax <= Qmin) throw new Error('Max outflow must be greater than min outflow.');
     if ([1, 0.5, 0.25].indexOf(dt) < 0) throw new Error('Time step must be 1 hr, 30 min or 15 min.');
@@ -239,7 +241,7 @@
       [['Current outflow', Q0], ['Ending outflow', Qend]].forEach(function (p) {
         if (p[1] < sg.qMin || p[1] > sg.qMax) throw new RangeError(p[0] + ' ' + fmt(p[1]) + ' cfs is outside the stage–discharge rating at ' + sg.label + ' (' + fmt(sg.qMin) + '–' + fmt(sg.qMax) + ' cfs at the gage).');
       });
-      if (Qmax > sg.qMax) { messages.push('Max outflow limited to ' + fmt(sg.qMax) + ' cfs, the top of the stage–discharge rating at ' + sg.label + '.'); Qmax = sg.qMax; }
+      if (Qmax > sg.qMax) { if (isFinite(Qmax)) messages.push('Max outflow limited to ' + fmt(sg.qMax) + ' cfs, the top of the stage–discharge rating at ' + sg.label + '.'); Qmax = sg.qMax; }
       if (Qmin < sg.qMin) Qmin = Math.max(Qmin, sg.qMin);
     }
     var rm = rampModel(ru, rd, sg);

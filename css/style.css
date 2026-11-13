@@ -1054,3 +1054,6 @@ i.lg-minmax { border-top: 1px dotted #c9ced3 !important; height: 0 !important; b
 .dd-gates li { margin: 2px 0; }
 .dd-table td.dd-gmax { color: var(--warn); }
 .dd-gage { min-height: 44px; display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13.5px; overflow-wrap: anywhere; }
+.dd-actions .dd-cur { margin-left: 8px; color: var(--text); background: transparent; font-weight: 600; }
+.dd-actions .dd-hint { display: block; margin-top: 6px; }
+.tl-chip.tl-na, .tl-chip.tl-na[disabled] { opacity: 0.45; text-decoration: line-through; cursor: not-allowed; background: transparent; color: var(--muted); border-style: dashed; }

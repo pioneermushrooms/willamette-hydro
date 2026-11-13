@@ -979,9 +979,9 @@
         ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].forEach(function (k) { stats[k] = LVm.seasonalSeries(LVm.pick(lv, LVm.IDS[k], now), start - DAY, end + DAY).filter(function (p) { return p[1] != null; }); });
         if (!stats.statsAve.length) stats = null;
       }
-      var tg = L && L.TARGETS[e.code];
+      var tg = L && L.targetFor(e.code, lv);
       if (tg && layerOn('target')) {
-        var te = LVm.pick(lv, LVm.IDS[tg.idKey], now);
+        var te = LVm.pick(lv, tg.id, now);
         if (te) target = { label: tg.label, pts: LVm.seasonalSeries(te, start - DAY, end + DAY) };
       }
       levels = L.levelValues(lv, now).filter(function (l) { return layerOn('lvl:' + l.key); });
@@ -1345,47 +1345,59 @@
     var el = $('#trend-layers');
     if (!el || !L) return;
     var e = M ? M.e : byId[state.chartId], h = '';
-    var chip = function (it, label, dis) {
-      return '<button type="button" class="chip small tl-chip" data-layer="' + esc(it.key) + '" aria-pressed="' + L.isOn(it) + '"' + (dis ? ' disabled' : '') + '>' + esc(label) + '</button>';
+    // off = reason the layer has no data here: shown greyed out and struck through, not clickable.
+    var chip = function (it, label, off) {
+      return '<button type="button" class="chip small tl-chip' + (off ? ' tl-na' : '') + '" data-layer="' + esc(it.key) + '" aria-pressed="' + (!off && L.isOn(it)) + '"' +
+        (off ? ' disabled title="' + esc(off) + '" aria-label="' + esc(label + ': ' + off) + '"' : '') + '>' + esc(label) + '</button>';
     };
     if (e.kind === 'reservoir') {
       var lv = levelsFor(e), have = lv ? L.levelValues(lv).map(function (l) { return l.key; }) : null;
-      var items = L.CHART_TOGGLES.filter(function (it) {
-        if (it.key === 'target') return !!L.TARGETS[e.code] && state.range !== 'years';
-        if (it.key === 'rule') return state.range !== 'years';
-        return !it.level || (have && have.indexOf(it.level) >= 0);
-      });
+      // Every layer is listed; ones this dam does not publish are greyed out (known once its levels load).
+      var items = L.CHART_TOGGLES.filter(function (it) { return state.range !== 'years' || (it.key !== 'rule' && it.key !== 'target'); });
+      var offWhy = function (it) {
+        if (!lv) return null;
+        if (it.key === 'target') return (L.targetFor(e.code, lv) && H.levels.pick(lv, L.targetFor(e.code, lv).id, Date.now())) ? null : 'No injunction or interim-operations elevation target is published in CWMS for ' + e.name + '.';
+        if (it.key === 'stats') return H.levels.pick(lv, H.levels.IDS.statsAve, Date.now()) ? null : 'No 30-yr statistics are published in CWMS for ' + e.name + '.';
+        if (it.level) return have.indexOf(it.level) >= 0 ? null : it.label + ' is not published in CWMS for ' + e.name + '.';
+        return null;
+      };
       h += '<div class="tl-group" role="group" aria-label="Layers on the chart"><span class="tl-h">On chart</span>' +
-        items.map(function (it) { return chip(it, it.label); }).join('') + (have ? '' : '<span class="na loading tl-note">loading level lines…</span>') + '</div>';
+        items.map(function (it) { return chip(it, it.label, offWhy(it)); }).join('') + (have ? '' : '<span class="na loading tl-note">loading level lines…</span>') + '</div>';
     }
     if (state.range !== 'years') {
       var defs = L.stripsFor(e, M ? M.param : null);
       h += '<div class="tl-group" role="group" aria-label="Charts below"><span class="tl-h">Below chart</span>' +
-        defs.map(function (d) { return chip(stripItem(e, d), d.label); }).join('') + '</div>';
+        defs.map(function (d) { return chip(stripItem(e, d), d.label, M ? stripOff(stripData(e, d, M)) : L.unavailable(e, d.key)); }).join('') + '</div>';
     }
     el.innerHTML = h;
   }
 
   // Strips: each enabled quantity as its own small chart on the main chart's time axis.
+  // Strip data for the current point and range (cached; fetched once, re-rendered when it lands).
+  // Fetched for every offered strip, on or off, so unavailable ones can be greyed out before a click.
+  function stripData(e, def, M) {
+    var ck = e.id + '|' + def.key + '|' + state.range, sd = state.strips[ck];
+    if (L.unavailable(e, def.key)) return { empty: true, lines: [], static: L.unavailable(e, def.key) };
+    if (!sd || (!sd.loading && Date.now() - sd.at > 10 * 60 * 1000)) {
+      state.strips[ck] = sd = { loading: true };
+      L.load(e, def.key, M.fullStart, Math.min(M.fullEnd, Date.now()), e.kind === 'reservoir' ? projData(e) : null).then(function (r) {
+        r.at = Date.now(); state.strips[ck] = r;
+        if (state.geom && state.geom.M.e === e) { renderLayerBar(state.geom.M); renderStrips(); }
+      });
+    }
+    return sd;
+  }
+  // Reason a strip is unavailable now (known in advance, or fetched and empty), or null.
+  function stripOff(sd) { return sd && !sd.loading && sd.empty ? sd.static || (sd.error ? 'Unavailable: ' + sd.error : 'Not reported for this window' + (sd.src ? ' (' + sd.src + ')' : '') + '.') : null; }
+
   function renderStrips() {
     var box = $('#trend-strips'), g = state.geom;
     if (!box || !L) return;
     if (state.range === 'years' || !g) { box.innerHTML = ''; return; }
-    var M = g.M, e = M.e, defs = L.stripsFor(e, M.param).filter(function (d) { return L.isOn(stripItem(e, d)); });
+    var M = g.M, e = M.e;
+    var defs = L.stripsFor(e, M.param).filter(function (d) { return L.isOn(stripItem(e, d)) && !stripOff(stripData(e, d, M)); });
     state.stripView = [];
-    if (!defs.length) { box.innerHTML = ''; return; }
-    var live = e.kind === 'reservoir' ? projData(e) : null;
-    box.innerHTML = defs.map(function (def) {
-      var ck = e.id + '|' + def.key + '|' + state.range, sd = state.strips[ck];
-      if (!sd || (!sd.loading && Date.now() - sd.at > 10 * 60 * 1000)) {
-        state.strips[ck] = sd = { loading: true };
-        L.load(e, def.key, M.fullStart, Math.min(M.fullEnd, Date.now()), live).then(function (r) {
-          r.at = Date.now(); state.strips[ck] = r;
-          if (state.geom && state.geom.M.e === e) renderStrips();
-        });
-      }
-      return stripHTML(def, sd, g);
-    }).join('');
+    box.innerHTML = defs.map(function (def) { return stripHTML(def, stripData(e, def, M), g); }).join('');
   }
 
   function stripHTML(def, sd, g) {

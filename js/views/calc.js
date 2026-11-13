@@ -104,7 +104,7 @@
       field('c1-in', 'Inflow (cfs)', 'inputmode="decimal"') +
       field('c1-hr', 'Duration (hr)', 'inputmode="decimal"') +
       field('c1-e0', 'Starting elevation (ft, optional)', 'inputmode="decimal" value="' + (lv.elev ? lv.elev.v.toFixed(2) : '') + '"', 'gives the elevation change') +
-      '</div><div class="dd-actions"><button type="button" class="btn" id="c1-go">Calculate</button></div>' +
+      '</div><div class="dd-actions"><button type="button" class="btn" id="c1-go">Calculate</button> <button type="button" class="btn dd-cur" id="c1-cur">Use current conditions</button> <span class="dd-hint" id="c1-cur-msg"></span></div>' +
       '<div class="dd-out" id="c1-out-box" aria-live="polite"></div></section>' +
 
       // Calculator 2
@@ -124,13 +124,13 @@
       field('c2-ru', '<span class="dd-ru-l">Max ramp-up (cfs/hr)</span>', 'inputmode="decimal" value="100"') +
       field('c2-rd', '<span class="dd-rd-l">Max ramp-down (cfs/hr)</span>', 'inputmode="decimal" value="100"') +
       stageFields() +
-      field('c2-qmin', 'Min outflow (cfs)', 'inputmode="decimal"', 'minimum flow requirement') +
-      field('c2-qmax', 'Max outflow (cfs)', 'inputmode="decimal"', 'powerhouse + allowed spill') +
+      field('c2-qmin', 'Min outflow (cfs)', 'inputmode="decimal" placeholder="optional"', 'minimum flow requirement; blank = none') +
+      field('c2-qmax', 'Max outflow (cfs)', 'inputmode="decimal" placeholder="optional"', 'powerhouse + allowed spill; blank = no limit') +
       field('c2-qe', 'Ending outflow Q_end (cfs)', 'inputmode="decimal" placeholder="= inflow at target time"', 'blank: inflow at the target time, so the pool holds') +
       '<label class="field dd-f"><span class="field-label">Time step</span><select id="c2-dt"><option value="1">1 hr</option><option value="0.5">30 min</option><option value="0.25">15 min</option></select></label>' +
       '<label class="field dd-f"><span class="field-label">Round plateau to</span><select id="c2-rt"><option value="">No rounding</option><option value="25">25 cfs</option><option value="50">50 cfs</option><option value="100">100 cfs</option></select></label>' +
       '</div>' + gateFields() +
-      '<div class="dd-actions"><button type="button" class="btn" id="c2-go">Plan drawdown</button></div>' +
+      '<div class="dd-actions"><button type="button" class="btn" id="c2-go">Plan drawdown</button> <button type="button" class="btn dd-cur" id="c2-cur">Use current conditions</button> <span class="dd-hint" id="c2-cur-msg"></span></div>' +
       '<div class="dd-out" id="c2-out-box" aria-live="polite"></div></section>';
     renderRating();
   }
@@ -211,6 +211,31 @@
       '<ol class="dd-gates mono">' + items.join('') + '</ol>';
   }
 
+  // ---- "Use current conditions": latest live pool, outflow and USACE computed inflow -------
+
+  function useCurrent(which) {
+    var lv = live(st.code), msg = st.el.querySelector('#' + which + '-cur-msg');
+    var set = function (id, v) { var el = st.el.querySelector('#' + id); if (el && v != null) el.value = v; };
+    if (!lv.elev && !lv.out && !lv.inflow) { msg.textContent = H.live ? 'No live readings for ' + byCode[st.code].name + '.' : 'Live data not loaded yet; try again in a moment.'; return; }
+    var e = lv.elev && lv.elev.v.toFixed(2), o = lv.out && Math.round(lv.out.v), i = lv.inflow && Math.round(lv.inflow.v);
+    if (which === 'c1') {
+      set('c1-e0', e); set('c1-out', o); set('c1-in', i);
+      set('c1-net', '');   // net flow now comes from outflow − inflow
+    } else {
+      set('c2-e0', e); set('c2-q0', o);
+      if (i != null) {
+        st.el.querySelector('#c2-im').value = 'const';
+        st.el.querySelector('#c2-is-wrap').hidden = true;
+        st.el.querySelector('#c2-ic').closest('label').hidden = false;
+        set('c2-ic', Math.max(0, i));
+      }
+      set('c2-t0', wall(Math.floor(Date.now() / (15 * 60000)) * 15 * 60000));
+    }
+    var t = lv.elev ? lv.elev.t : (lv.out || lv.inflow).t;
+    msg.textContent = 'Filled from live readings at ' + stamp(t) + ': pool ' + (e || '—') + ' ft · outflow ' + (o == null ? '—' : fmt(o)) + ' · inflow ' + (i == null ? '—' : fmt(i)) + ' cfs' +
+      (which === 'c2' && i != null && i < 0 ? ' (computed inflow is negative; 0 used)' : '') + '.';
+  }
+
   // ---- Calculator 1 --------------------------------------------------------------
 
   function runC1() {
@@ -280,7 +305,6 @@
         ru: numv('c2-ru'), rd: numv('c2-rd'), Qmin: numv('c2-qmin'), Qmax: numv('c2-qmax'), Qend: numv('c2-qe'),
         dtHr: +val('c2-dt'), roundTo: numv('c2-rt')
       };
-      if (opts.Qmin == null) throw new Error('Enter the minimum outflow.');
     } catch (err) { return fail(err.message); }
     box.innerHTML = '<p class="na loading">' + (val('c2-rmode') === 'stage' ? 'Loading the stage–discharge rating…' : 'Planning…') + '</p>';
     var token = st.runToken = (st.runToken || 0) + 1;
@@ -421,6 +445,7 @@
       if (e.target.id === 'c1-go') runC1();
       else if (e.target.id === 'c2-go') runC2();
       else if (e.target.id === 'c2-rule') useRule();
+      else if (e.target.id === 'c1-cur' || e.target.id === 'c2-cur') useCurrent(e.target.id.slice(0, 2));
       else if (e.target.closest('[data-open-rating]') && H.tables) { e.preventDefault(); H.tables.openUsgs(e.target.closest('[data-open-rating]').getAttribute('data-open-rating')); }
       else if (e.target.id === 'c2-csv') csv();
     });
