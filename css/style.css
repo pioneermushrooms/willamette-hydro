@@ -1044,3 +1044,5 @@ i.yr-key-rule { display: inline-block; width: 18px; height: 0; border-top: 2px d
   .trend-controls .seg[aria-label="Time range"] button { flex: 1 0 22%; border-bottom: 1px solid #0a0b0c; }
 }
 #trends [hidden] { display: none !important; }
+.py-check { margin: 8px 0 4px; font-size: 13px; color: var(--text-2); }
+.py-check b { color: var(--text); }

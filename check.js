@@ -492,6 +492,12 @@ console.log('past years');
   const tc = fs.readFileSync(path.join(__dirname, 'js', 'pastyears.js'), 'utf8'), idxY = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   check(idxY.includes('data-range="years"') && idxY.includes('data-range="year"') && /MAX_YEARS = 6/.test(tc), 'years: YEAR and PAST YEARS ranges on the Trend Recorder, up to 6 years');
   const TCZ = require('./js/teacup-core.js'), eq = (z, a, b) => Math.abs(z[0] - a) < 1e-9 && Math.abs(z[1] - b) < 1e-9;
+  // Band check: 10 readings; band 100-110 every day, mean 105.
+  const band = (v) => Array.from({ length: 366 }, (_, i) => [i / 365, v]);
+  const bc = TCZ.bandCheck([[0.1, 99], [0.2, 100], [0.3, 104], [0.4, 105], [0.5, 106], [0.6, 110], [0.7, 111], [0.8, 108], [0.9, 107], [0.95, 103]], band(100), band(110), band(105));
+  check(bc.n === 10 && bc.inside === 0.8 && bc.below === 0.1 && bc.above === 0.1 && bc.medianVsMean === 1, 'band check: share inside / below / above p05–p95 and median vs mean');
+  const off = TCZ.bandCheck([[0.5, 120]], band(100), band(110), band(105));
+  check(off.above === 1 && off.medianVsMean === 15 && TCZ.bandCheck([[0.5, 1]], [], [], []).n === 0, 'band check: offset shows as a steady difference; no band -> no readings counted');
   check(eq(TCZ.zoomBy([0, 1], 0.5), 0.25, 0.75) && eq(TCZ.zoomBy([0.25, 0.75], 2), 0, 1) && eq(TCZ.zoomBy([0, 0.5], 4), 0, 1), 'zoom: in/out about the centre, clamped to the year');
   check(eq(TCZ.zoomBy([0, 1], 0.5, 0.1), 0, 0.5), 'zoom: about a point near the edge stays inside the year');
   check(eq(TCZ.panBy([0.5, 0.75], 1), 0.625, 0.875) && eq(TCZ.panBy([0.8, 1], 1), 0.8, 1) && eq(TCZ.panBy([0, 0.2], -1), 0, 0.2), 'zoom: pan by half a window, stopping at year ends');
@@ -532,6 +538,15 @@ console.log('layers');
   const appS = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8'), idxL = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   check(idxL.includes('id="trend-layers"') && idxL.includes('id="trend-strips"') && idxL.includes('id="years-box"') && /H\.trend = \{/.test(appS) && /syncStrips\(t\)/.test(appS), 'layers: toggle bar, strips with synced cursor, PAST YEARS box and open() wired');
   check(idxL.indexOf('js/layers.js') > idxL.indexOf('js/cwms-levels.js') && idxL.indexOf('js/pastyears.js') < idxL.indexOf('js/app.js'), 'script order: layers and pastyears before app');
+}
+
+// ---- 2g. Every browser script parses -----------------------------------------------
+{
+  const vm = require('vm');
+  const files = fs.readdirSync(path.join(__dirname, 'js')).filter((f) => f.endsWith('.js')).map((f) => 'js/' + f)
+    .concat(fs.readdirSync(path.join(__dirname, 'js', 'views')).filter((f) => f.endsWith('.js')).map((f) => 'js/views/' + f));
+  const bad = files.filter((f) => { try { new vm.Script(fs.readFileSync(path.join(__dirname, f), 'utf8'), { filename: f }); return false; } catch (e) { console.error('  ' + f + ': ' + e.message); return true; } });
+  check(!bad.length, 'all ' + files.length + ' browser scripts parse' + (bad.length ? ' (failed: ' + bad.join(', ') + ')' : ''));
 }
 
 // ---- 3. Page wiring ---------------------------------------------------------

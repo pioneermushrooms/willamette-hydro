@@ -175,6 +175,33 @@
     return 100;
   }
 
+  /*
+   * How a pool record sits against the 30-yr statistics: pts = [[f, elev]] (year fraction 0..1),
+   * band arrays [[f, v]] sorted by f. Returns { n, inside, below, above, medianVsMean } where
+   * inside/below/above are shares of readings (0..1) relative to p05–p95, and medianVsMean is the
+   * median of (reading − 30-yr mean) in ft. Readings without a band value that day are skipped.
+   */
+  function bandCheck(pts, p05, p95, ave) {
+    var at = function (arr, f) {
+      if (!arr.length) return null;
+      var lo = 0, hi = arr.length - 1;
+      while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (arr[mid][0] <= f) lo = mid; else hi = mid; }
+      var k = Math.abs(arr[lo][0] - f) <= Math.abs(arr[hi][0] - f) ? lo : hi;
+      return Math.abs(arr[k][0] - f) <= 1.5 / 365 ? arr[k][1] : null;
+    };
+    var n = 0, inside = 0, below = 0, above = 0, diffs = [];
+    pts.forEach(function (p) {
+      var a = at(p05, p[0]), b = at(p95, p[0]), m = at(ave, p[0]);
+      if (a == null || b == null) return;
+      n++;
+      if (p[1] < Math.min(a, b)) below++; else if (p[1] > Math.max(a, b)) above++; else inside++;
+      if (m != null) diffs.push(p[1] - m);
+    });
+    diffs.sort(function (x, y) { return x - y; });
+    return { n: n, inside: n ? inside / n : null, below: n ? below / n : null, above: n ? above / n : null,
+      medianVsMean: diffs.length ? diffs[Math.floor(diffs.length / 2)] : null };
+  }
+
   return {
     percentFull: percentFull,
     elevFraction: elevFraction,
@@ -184,6 +211,7 @@
     spreadLabels: spreadLabels,
     annualSeries: annualSeries,
     consLimits: consLimits,
+    bandCheck: bandCheck,
     MIN_SPAN: MIN_SPAN, clampZoom: clampZoom, zoomBy: zoomBy, panBy: panBy, dayTickStep: dayTickStep, niceStep: niceStep
   };
 });

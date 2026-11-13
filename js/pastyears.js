@@ -121,6 +121,15 @@
       ser[k] = (lv ? T.annualSeries(LV.pick(lv, LV.IDS[k], now), cy) : []).filter(function (p) { return p[1] != null; }).map(function (p) { return [frac(p[0], cy), p[1]]; });
     });
     var hasStats = ser.statsAve.length > 0 && m.stats !== false;
+    // Check: where the selected years' daily readings fall against the published 30-yr band.
+    var checks = {}, allPts = [];
+    if (ser.statsP05.length && ser.statsP95.length) shown.forEach(function (d) {
+      var pts = d.r.pool.t.map(function (t, i) { return [frac(t, d.y), d.r.pool.v[i]]; }).filter(function (p) { return p[0] >= 0 && p[0] <= 1; });
+      checks[d.y] = T.bandCheck(pts, ser.statsP05, ser.statsP95, ser.statsAve);
+      allPts = allPts.concat(pts);
+    });
+    var allCheck = allPts.length ? T.bandCheck(allPts, ser.statsP05, ser.statsP95, ser.statsAve) : null;
+    var pct = function (x) { return x == null ? '—' : Math.round(x * 100) + '%'; };
 
     // Elevation axis fits only what is inside the zoom window.
     var vals = [];
@@ -228,13 +237,19 @@
       if (!sm) return '<tr><td>' + d.y + '</td><td colspan="4" class="na">' + esc(d.r.error || 'no pool data') + '</td></tr>';
       var day = function (t) { return fShort.format(new Date(t - 12 * 3600 * 1000 + (H.history.pacificOffset(t)))); };
       return '<tr><td><i class="yr-key yr-c' + yearSlot(d.y) + '"></i> ' + d.y + (d.y === cy ? ' (to date)' : '') + '</td><td>' + fmt(sm.min, 2) + ' · ' + day(sm.minT) + '</td><td>' + fmt(sm.max, 2) + ' · ' + day(sm.maxT) + '</td>' +
-        '<td>' + (sm.fallMean == null ? '—' : fmt(sm.fallMean, 2)) + '</td><td class="yr-src">' + esc(d.r.src || '') + '</td></tr>';
+        '<td>' + (sm.fallMean == null ? '—' : fmt(sm.fallMean, 2)) + '</td>' +
+        '<td>' + (checks[d.y] && checks[d.y].n ? pct(checks[d.y].inside) + ' · ' + pct(checks[d.y].below) + ' · ' + pct(checks[d.y].above) + (checks[d.y].medianVsMean == null ? '' : ' · ' + (checks[d.y].medianVsMean >= 0 ? '+' : '−') + fmt(Math.abs(checks[d.y].medianVsMean), 1) + ' ft') : '—') + '</td>' +
+        '<td class="yr-src">' + esc(d.r.src || '') + '</td></tr>';
     }).join('');
-    var table = '<details class="table-view"><summary>Year summary table</summary><div class="table-scroll"><table><thead><tr><th>Year</th><th>Lowest pool (ft) · date</th><th>Highest pool (ft) · date</th><th>Mean Nov 15–Dec 15 (ft)</th><th>Source</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
+    var checkLine = allCheck && allCheck.n ? '<p class="py-check"><b>Check against the 30-yr band</b> (selected years, ' + fmt(allCheck.n) + ' daily readings): ' +
+      '<b>' + pct(allCheck.inside) + '</b> inside p05–p95 · ' + pct(allCheck.below) + ' below · ' + pct(allCheck.above) + ' above' +
+      (allCheck.medianVsMean == null ? '' : ' · median ' + (allCheck.medianVsMean >= 0 ? '+' : '−') + fmt(Math.abs(allCheck.medianVsMean), 1) + ' ft vs the 30-yr mean') +
+      '. <span class="hint">For years run like the 30 years behind the band (thru 2023), about 90% should be inside. A similar offset in every year and season would suggest the band and the lake record use different datums; misses concentrated in recent years or in Oct–Dec reflect changed operations (e.g. deep fall drawdowns since 2021). Per-year figures are in the table.</span></p>' : '';
+    var table = '<details class="table-view"><summary>Year summary table</summary><div class="table-scroll"><table><thead><tr><th>Year</th><th>Lowest pool (ft) · date</th><th>Highest pool (ft) · date</th><th>Mean Nov 15–Dec 15 (ft)</th><th title="Share of that year’s daily readings inside / below / above the USACE 30-yr p05–p95 band, and the median difference from the 30-yr mean">vs 30-yr band: inside · below · above · median vs mean</th><th>Source</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
 
     box.innerHTML = head + zoomBar + '<div class="yr-wrap">' + s + '<div class="tooltip mono yr-tip" hidden></div></div>' +
       '<p class="hint yr-howto">Drag across the chart to zoom in · tap a month name to zoom to that month · double-click to zoom out.</p>' +
-      '<div class="an-legend">' + leg.join('') + '</div>' + table +
+      '<div class="an-legend">' + leg.join('') + '</div>' + checkLine + table +
       '<p class="hint">Each year is drawn on the same calendar axis. Pool: USGS daily lake elevation (24:00) at the project’s lake gage where one exists, otherwise USACE CWMS as 6-hour means. Rule curve: CWMS ' + esc(m.p.series.rule.name) + ' for that year, where published. Bands: 30-yr statistics thru 2023 (DERIVED from published CWMS levels). Provisional data. Hover or tap the chart for values.</p>' + yearErrors(data);
     bindYearChart(box, shown, { ml: ml, pw: pw, W: W, cy: cy, z0: z0, z1: z1 });
   }
