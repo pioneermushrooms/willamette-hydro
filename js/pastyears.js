@@ -121,7 +121,7 @@
     var inWin = function (f) { return f >= z0 - margin && f <= z1 + margin; };
     // Reference context: the 30-yr statistics bands for this calendar year (DERIVED, published CWMS levels).
     var lv = m.lv, ser = {};
-    ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].forEach(function (k) {
+    ['statsMin', 'statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95', 'statsMax'].forEach(function (k) {
       ser[k] = (lv ? T.annualSeries(LV.pick(lv, LV.IDS[k], now), cy) : []).filter(function (p) { return p[1] != null; }).map(function (p) { return [frac(p[0], cy), p[1]]; });
     });
     // Band source: USACE published 30-yr statistics, or percentiles derived from this lake's own
@@ -143,7 +143,7 @@
           };
         } else recNote = 'loading lake record ' + (recTo - recFrom + 1 - pending) + '/' + (recTo - recFrom + 1) + '…';
       }
-      ser = rec ? rec.ser : { statsP05: [], statsP25: [], statsAve: [], statsP75: [], statsP95: [] };
+      ser = rec ? rec.ser : { statsMin: [], statsP05: [], statsP25: [], statsAve: [], statsP75: [], statsP95: [], statsMax: [] };
     }
     var bandName = ps.band === 'record' ? 'Lake record ' + recFrom + '–' + recTo : '30-yr';
     var hasStats = ser.statsAve.length > 0 && m.stats !== false;
@@ -219,7 +219,13 @@
       }
     }
     s += '<g clip-path="url(#yr-clip)">';
-    if (hasStats) s += '<path class="an-p95" d="' + band(ser.statsP95, ser.statsP05) + '"/><path class="an-p75" d="' + band(ser.statsP75, ser.statsP25) + '"/>';
+    if (hasStats) {
+      s += '<path class="an-p95" d="' + band(ser.statsP95, ser.statsP05) + '"/><path class="an-p75" d="' + band(ser.statsP75, ser.statsP25) + '"/>';
+      // Lowest / highest on record for each day (published with the stats): shows where p05/p95 sit relative to the extremes.
+      var line = function (arr) { var d = '', pen = false; arr.forEach(function (p) { if (!inWin(p[0])) { pen = false; return; } d += (pen ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + yv(p[1]).toFixed(1); pen = true; }); return d; };
+      if (ser.statsMin && ser.statsMin.length) s += '<path class="an-minmax" d="' + line(ser.statsMin) + '"/>';
+      if (ser.statsMax && ser.statsMax.length) s += '<path class="an-minmax" d="' + line(ser.statsMax) + '"/>';
+    }
     lvls.forEach(function (l) { s += '<line class="lvl-line lvl-' + l.key + '" x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + yv(l.v).toFixed(1) + '" y2="' + yv(l.v).toFixed(1) + '"/><text class="lvl-lab" x="' + (ml + 4) + '" y="' + (yv(l.v) - 3).toFixed(1) + '">' + esc(l.label) + ' ' + fmt(l.v, 1) + '</text>'; });
     shown.forEach(function (d) { if (d.r.rule && d.r.rule.t.length) s += '<path class="yr-rule yr-c' + yearSlot(d.y) + '" d="' + path(d.r.rule, d.y, true) + '"/>'; });
     shown.forEach(function (d) { s += '<path class="yr-pool yr-c' + yearSlot(d.y) + '" d="' + path(d.r.pool, d.y) + '"/>'; });
@@ -253,7 +259,7 @@
 
     var leg = shown.map(function (d) { return '<span><i class="yr-key yr-c' + yearSlot(d.y) + '"></i>' + d.y + '</span>'; });
     leg.push('<span><i class="yr-key-rule"></i>dashed: that year’s rule curve</span>');
-    if (hasStats) leg.push('<span><i class="lg-p95"></i>' + bandName + ' p05–p95</span><span><i class="lg-p75"></i>p25–p75</span>');
+    if (hasStats) leg.push('<span><i class="lg-p95"></i>' + bandName + ' p05–p95</span><span><i class="lg-p75"></i>p25–p75</span>' + (ser.statsMin && ser.statsMin.length ? '<span><i class="lg-minmax"></i>min / max on record</span>' : ''));
     if (recNote) leg.push('<span class="na loading">' + recNote + '</span>');
     if (lvls.length) leg.push('<span><i class="lg-lvl"></i>level lines (CWMS)</span>');
     if (loading.length) leg.push('<span class="na loading">loading ' + loading.join(', ') + '…</span>');
@@ -281,7 +287,7 @@
       '<p class="hint yr-howto">Drag across the chart to zoom in · tap a month name to zoom to that month · double-click to zoom out.</p>' +
       '<div class="an-legend">' + leg.join('') + '</div>' + checkLine + table +
       '<p class="hint">Each year is drawn on the same calendar axis. Pool: USGS daily lake elevation (24:00) at the project’s lake gage where one exists, otherwise USACE CWMS as 6-hour means. Rule curve: CWMS ' + esc(m.p.series.rule.name) + ' for that year, where published. Grey band: ' + (ps.band === 'record' ? 'percentiles DERIVED by this site from the lake record ' + (cy - YEARS_BACK + 1) + '–' + (cy - 1) + ' (each day pools ±7 days of every year, so it is smooth)' : 'USACE published 30-yr daily statistics thru 2023 (each day ranked on its own, so its edges follow the one or two most extreme years and can look jagged)') + '; bands are clipped to the chart, the axis follows the lines. ' + 'Provisional data. Hover or tap the chart for values.</p>' + yearErrors(data);
-    bindYearChart(box, shown, { ml: ml, pw: pw, W: W, cy: cy, z0: z0, z1: z1 });
+    bindYearChart(box, shown, { ml: ml, pw: pw, W: W, cy: cy, z0: z0, z1: z1, ser: hasStats ? ser : null, bandName: bandName });
   }
 
   function yearErrors(data) {
@@ -309,6 +315,12 @@
         var v = valueAtFrac(d.r.pool, d.y, f), rv = valueAtFrac(d.r.rule, d.y, f);
         return '<span><i class="yr-key yr-c' + yearSlot(d.y) + '"></i>' + d.y + ': <b>' + (v == null ? '—' : fmt(v, 2) + ' ft') + '</b>' + (rv == null ? '' : ' · rule ' + fmt(rv, 2)) + '</span>';
       });
+      var bv = function (k) { var arr = g.ser && g.ser[k]; if (!arr || !arr.length) return null; var best = arr[0]; arr.forEach(function (p) { if (Math.abs(p[0] - f) < Math.abs(best[0] - f)) best = p; }); return Math.abs(best[0] - f) <= 1.5 / 365 ? best[1] : null; };
+      if (g.ser && bv('statsP05') != null) {
+        var parts = [['min', 'statsMin'], ['p05', 'statsP05'], ['mean', 'statsAve'], ['p95', 'statsP95'], ['max', 'statsMax']].filter(function (q) { return bv(q[1]) != null; })
+          .map(function (q) { return q[0] + ' ' + fmt(bv(q[1]), 1); });
+        lines.push('<span class="yr-tip-band">' + esc(g.bandName) + ': ' + parts.join(' · ') + '</span>');
+      }
       tip.innerHTML = '<b>' + fShort.format(new Date(refT + H.history.pacificOffset(refT))) + '</b><br>' + lines.join('<br>');
       tip.hidden = false;
       var bx = box.querySelector('.yr-wrap').getBoundingClientRect(), left = ev.clientX - bx.left + 12;
