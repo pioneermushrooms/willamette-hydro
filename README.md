@@ -122,6 +122,10 @@ A planning aid — verify against the water control manual and current operating
 - **Inflow:** constant, or an hourly series pasted one value per line (last value held). No inflow forecasting, tailwater/stage ramp limits or unit dispatch (out of scope).
 - **Code / tests:** `js/drawdown.js` (pure, tested in `check.js` against 1,000 ac-ft @ 700 cfs = 17.29 hr, @ 1,200 cfs = 10.08 hr, a hand-checked constant-inflow plan, and an infeasible target), `js/views/calc.js` (page).
 
+### Picking up new deploys
+
+`js/update-check.js` fingerprints the deployed code (index.html plus every same-origin script and stylesheet, fetched uncached) when the page loads, then re-checks every 10 minutes and when the tab becomes visible. If the code changed, an open page reloads itself on the same route. On the Calculator page, or while a form field has focus, it shows a "new version available · Reload" banner instead so inputs are not lost. Data files are not part of the fingerprint, so the BPA data commits do not trigger reloads.
+
 ## Pages (hash routes)
 
 `#/overview` is the live dashboard (default). `#/teacup` is the basin teacup and lake ruler. `#/tables` has the published rating tables, `#/calc` the storage / drawdown calculator and `#/docs` the documents and data sources.

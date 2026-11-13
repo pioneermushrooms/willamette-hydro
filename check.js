@@ -474,6 +474,7 @@ console.log('drawdown calculator');
   const p7 = D.plan(Object.assign({}, base, { inflow: [500, 500, 600] }));
   check(p7.schedule[2].I === 600 && p7.schedule[10].I === 600 && p7.Qend === 600, 'calc2: hourly inflow series, last value held; Q_end defaults to inflow at target');
   const html2 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  check(html2.indexOf('js/update-check.js') > html2.indexOf('js/app.js'), 'update check loads last');
   check(html2.indexOf('js/drawdown.js') > html2.indexOf('js/ratings.js') && html2.indexOf('js/views/calc.js') < html2.indexOf('js/router.js'), 'script order: drawdown after ratings, calc view before router');
 }
 
