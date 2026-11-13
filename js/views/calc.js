@@ -120,7 +120,7 @@
       '<label class="field dd-f"><span class="field-label">Inflow</span><select id="c2-im"><option value="const">Constant</option><option value="series">Hourly series (paste)</option></select></label>' +
       field('c2-ic', 'Inflow (cfs, constant)', 'inputmode="decimal" value="' + (lv.inflow ? Math.max(0, Math.round(lv.inflow.v)) : '') + '"', lv.inflow ? 'default: latest USACE computed inflow' : '') +
       '<label class="field dd-f dd-wide" id="c2-is-wrap" hidden><span class="field-label">Hourly inflow (cfs), one value per line from the start time</span><textarea id="c2-is" rows="4" placeholder="900&#10;920&#10;950"></textarea></label>' +
-      '<label class="field dd-f"><span class="field-label">Ramp limits in</span><select id="c2-rmode"><option value="cfs">Flow (cfs per hour)</option><option value="stage">Gage height (ft per hour)</option></select></label>' +
+      '<label class="field dd-f"><span class="field-label">Ramp limits in</span><select id="c2-rmode"><option value="cfs">Flow (cfs per hour)</option><option value="stage"' + (RAMP_GAGE[st.code] ? '' : ' disabled') + '>Gage height (ft per hour)' + (RAMP_GAGE[st.code] ? ' · USGS ' + RAMP_GAGE[st.code].site : ' · no gage set') + '</option></select></label>' +
       field('c2-ru', '<span class="dd-ru-l">Max ramp-up (cfs/hr)</span>', 'inputmode="decimal" value="100"') +
       field('c2-rd', '<span class="dd-rd-l">Max ramp-down (cfs/hr)</span>', 'inputmode="decimal" value="100"') +
       stageFields() +
@@ -137,31 +137,39 @@
 
   // ---- Ramp limits in gage height (USGS stage–discharge ratings, js/ratings.js) ----------
 
-  // Gage used by default for each project's release (the gage below the dam, else the nearest river gauge).
-  var RAMP_GAGE = { HCR: '14145500', DEX: '14150000', LOP: '14150000', CGR: '14159500', FAL: '14152000', BLU: '14162500', COT: '14157500', DOR: '14157500', FRN: '14166000' };
-  function gageList() {
-    var out = [], seen = {}, BD = (H.layers && H.layers.BELOW_DAM) || {};
-    Object.keys(BD).forEach(function (c) { if (!seen[BD[c].site]) { seen[BD[c].site] = 1; out.push({ site: BD[c].site, name: BD[c].name }); } });
-    H.stations.forEach(function (s2) { if (!seen[s2.site] && s2.params.indexOf('flow') >= 0) { seen[s2.site] = 1; out.push({ site: s2.site, name: s2.name }); } });
-    return out;
-  }
+  // The USGS gage immediately downstream of each dam (where a release reaches a reservoir first, the
+  // gage below that next dam). Fern Ridge: none set, so gage-height ramping is not offered there.
+  var RAMP_GAGE = {
+    HCR: { site: '14145500', name: 'MF Willamette abv Salt Crk nr Oakridge (HCRO)', note: 'immediately below Hills Creek Dam' },
+    LOP: { site: '14150000', name: 'MF Willamette nr Dexter (DEXO)', note: 'Lookout Point releases into Dexter Reservoir; first gage is below Dexter Dam' },
+    DEX: { site: '14150000', name: 'MF Willamette nr Dexter (DEXO)', note: 'immediately below Dexter Dam' },
+    FAL: { site: '14151000', name: 'Fall Creek blw Winberry Crk nr Fall Creek (FALO)', note: 'immediately below Fall Creek Dam' },
+    CGR: { site: '14159500', name: 'SF McKenzie nr Rainbow (CGRO)', note: 'immediately below Cougar Dam' },
+    BLU: { site: '14162200', name: 'Blue River blw Blue River Dam (BLUO)', note: 'immediately below Blue River Dam' },
+    GPR: { site: '14187200', name: 'South Santiam at Foster (FOSO)', note: 'Green Peter releases into Foster Lake; first gage is below Foster Dam' },
+    COT: { site: '14153500', name: 'Coast Fork Willamette blw Cottage Grove Dam (COTO)', note: 'immediately below Cottage Grove Dam' },
+    DOR: { site: '14155500', name: 'Row River nr Cottage Grove (DORO)', note: 'immediately below Dorena Dam' }
+  };
   function stageFields() {
-    var def = RAMP_GAGE[st.code];
-    return '<label class="field dd-f dd-stage" hidden><span class="field-label">Gage for the ramp limit</span><select id="c2-rg">' +
-      gageList().map(function (g) { return '<option value="' + g.site + '"' + (g.site === def ? ' selected' : '') + '>' + esc(g.site + ' · ' + g.name) + '</option>'; }).join('') +
-      '</select><span class="dd-hint">its USGS stage–discharge rating converts gage height ↔ flow</span></label>' +
-      '<label class="field dd-f dd-stage" hidden><span class="field-label">Other flow at the gage (cfs)</span><input id="c2-ro" inputmode="decimal" value="0">' +
-      '<span class="dd-hint">tributaries between the dam and the gage; gage flow = release + this</span></label>';
+    var g = RAMP_GAGE[st.code];
+    return '<div class="field dd-f dd-stage dd-wide" hidden><span class="field-label">Gage for the ramp limit</span>' +
+      (g ? '<span class="dd-gage mono">USGS ' + g.site + ' · ' + esc(g.name) + ' <a href="https://waterdata.usgs.gov/monitoring-location/' + g.site + '/" target="_blank" rel="noopener">↗</a></span>' +
+        '<span class="dd-hint">' + esc(g.note) + '; its USGS stage–discharge rating converts gage height ↔ flow</span>'
+        : '<span class="na">No gage immediately below ' + esc(byCode[st.code].name) + ' is set, so ramp limits stay in cfs.</span>') + '</div>' +
+      (g ? '<label class="field dd-f dd-stage" hidden><span class="field-label">Other flow at the gage (cfs)</span><input id="c2-ro" inputmode="decimal" value="0">' +
+        '<span class="dd-hint">tributaries between the dam and the gage; gage flow = release + this</span></label>' : '');
   }
   // Resolves null (cfs ramps) or a js/drawdown.js stage model from the chosen gage's rating.
   function stageRating() {
     if (val('c2-rmode') !== 'stage') return Promise.resolve(null);
-    var site = val('c2-rg'), g = gageList().filter(function (x) { return x.site === site; })[0] || { site: site, name: '' };
+    var g = RAMP_GAGE[st.code];
+    if (!g) return Promise.reject(new Error('no gage immediately below ' + byCode[st.code].name + ' is set'));
+    var site = g.site;
     return R.load(R.usgsDef(site)).then(function (e) {
       var d = e.data;
       if (!d.xs || d.xs.length < 2) throw new Error('no rating points for USGS ' + site);
       var src = 'USGS ' + site + ' stage–discharge rating' + (d.ratingId ? ' ' + d.ratingId : '') + (d.shifted ? ', shifts ' + d.shifted : '');
-      return D.stageFromRating(d.xs, d.ys, numv('c2-ro'), 'USGS ' + site + (g.name ? ' (' + g.name + ')' : ''), src);
+      return D.stageFromRating(d.xs, d.ys, numv('c2-ro'), 'USGS ' + site + ' (' + g.name + ')', src);
     });
   }
 

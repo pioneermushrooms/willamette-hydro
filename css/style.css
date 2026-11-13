@@ -1053,3 +1053,4 @@ i.lg-minmax { border-top: 1px dotted #c9ced3 !important; height: 0 !important; b
 .dd-gates { margin: 4px 0 10px; padding-left: 22px; font-size: 12.5px; color: var(--text-2); max-height: 260px; overflow: auto; }
 .dd-gates li { margin: 2px 0; }
 .dd-table td.dd-gmax { color: var(--warn); }
+.dd-gage { min-height: 44px; display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13.5px; overflow-wrap: anywhere; }
