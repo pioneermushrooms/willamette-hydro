@@ -1049,3 +1049,7 @@ i.yr-key-rule { display: inline-block; width: 18px; height: 0; border-top: 2px d
 .an-minmax { fill: none; stroke: #c9ced3; stroke-width: 1; stroke-dasharray: 1 3; opacity: 0.9; }
 i.lg-minmax { border-top: 1px dotted #c9ced3 !important; height: 0 !important; background: none !important; }
 .yr-tip-band { color: var(--text-2); }
+.dd-gatebox { margin-top: 12px; padding-top: 4px; border-top: 1px solid var(--line); }
+.dd-gates { margin: 4px 0 10px; padding-left: 22px; font-size: 12.5px; color: var(--text-2); max-height: 260px; overflow: auto; }
+.dd-gates li { margin: 2px 0; }
+.dd-table td.dd-gmax { color: var(--warn); }

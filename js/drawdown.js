@@ -312,9 +312,65 @@
     return s.join(', ') + '.';
   }
 
+  // ---- Gate openings (2-D outlet ratings: opening × elevation -> flow) -----------------
+
+  /*
+   * Opening needed for flow q (cfs) at pool elevation elev, from a published 2-D rating
+   * { others: openings ascending, curves: [{ xs: elevations, ys: flows }] } (js/ratings.js).
+   * Flow is assumed to increase with opening at a fixed elevation; solved by bisection.
+   * Returns { opening, status, qMax } with status:
+   *   'ok' | 'closed' (q <= 0) | 'max' (q above the rating at full opening; opening = max) |
+   *   'low' (q below the smallest tabulated opening's flow; opening scaled linearly from 0) |
+   *   'elev' (elevation outside the rating).
+   */
+  function gateOpening(rt, elev, q) {
+    if (elev == null || !rt || !rt.others || !rt.others.length) return { opening: null, status: 'elev' };
+    if (q <= 0) return { opening: 0, status: 'closed' };
+    var o = rt.others, f = function (op) { return R.interp2d(rt, op, elev).y; };
+    var lo = o[0], hi = o[o.length - 1], fLo = f(lo), fHi = f(hi);
+    if (fHi == null) return { opening: null, status: 'elev' };
+    if (q > fHi + 1e-6) return { opening: hi, status: 'max', qMax: fHi };
+    if (fLo != null && q < fLo) {
+      return lo > 0 && fLo > 0 ? { opening: lo * q / fLo, status: 'low' } : { opening: lo, status: 'ok' };
+    }
+    if (fLo == null) {
+      // Smallest openings not rated at this elevation: start from the first one that is.
+      var k = 0;
+      while (k < o.length && f(o[k]) == null) k++;
+      lo = o[k]; fLo = f(lo);
+      if (q < fLo) return { opening: lo, status: 'low' };
+    }
+    for (var i = 0; i < 60 && hi - lo > 1e-4; i++) {
+      var mid = (lo + hi) / 2, fm = f(mid);
+      if (fm == null || fm < q) lo = mid; else hi = mid;
+    }
+    return { opening: (lo + hi) / 2, status: 'ok' };
+  }
+
+  /*
+   * Gate setting for every schedule row. opts = { powerhouse: cfs not through these gates,
+   * gates: number of gates opened equally (the rating's flow is per gate), step: opening
+   * increment to round to (ft) }. Returns rows [{ q, opening, change, status }] and the list of
+   * changes [{ i, opening, change }] (rows where the rounded opening differs from the previous).
+   */
+  function gateSchedule(schedule, rt, opts) {
+    var ph = num(opts && opts.powerhouse) || 0, n = Math.max(1, Math.round(num(opts && opts.gates) || 1)), st = num(opts && opts.step) || 0;
+    var round = function (v) { return v == null || !st ? v : +(Math.round(v / st) * st).toFixed(4); };
+    var prev = null, changes = [];
+    var rows = schedule.map(function (row, i) {
+      var q = (row.O - ph) / n, g = gateOpening(rt, row.E, q), op = round(g.opening);
+      var change = op != null && prev != null ? op - prev : null;
+      if (op != null && (prev == null || Math.abs(op - prev) > 1e-9)) changes.push({ i: i, opening: op, change: change });
+      if (op != null) prev = op;
+      return { q: q, opening: op, change: change, status: g.status, qMax: g.qMax };
+    });
+    return { rows: rows, changes: changes, gates: n, powerhouse: ph, step: st };
+  }
+
   return {
     FT3_PER_AF: FT3_PER_AF, AF_PER_CFS_HR: AF_PER_CFS_HR, LABEL: LABEL,
     makeRating: makeRating, convert: convert, profile: profile, plateauRange: plateauRange,
-    parseSeries: parseSeries, plan: plan, fmtClock: fmtClock
+    parseSeries: parseSeries, plan: plan, fmtClock: fmtClock,
+    gateOpening: gateOpening, gateSchedule: gateSchedule
   };
 });

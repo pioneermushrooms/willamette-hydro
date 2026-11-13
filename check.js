@@ -473,6 +473,16 @@ console.log('drawdown calculator');
   check(D.parseSeries('900\n920, \n2026-11-10 03:00, 1,050\n\n') .join() === '900,920,1050', 'calc2: pasted hourly inflow series');
   const p7 = D.plan(Object.assign({}, base, { inflow: [500, 500, 600] }));
   check(p7.schedule[2].I === 600 && p7.schedule[10].I === 600 && p7.Qend === 600, 'calc2: hourly inflow series, last value held; Q_end defaults to inflow at target');
+  // Gate openings from a 2-D rating: flow per ft of opening = 10 × (elev − 800) cfs, openings 0–4 ft.
+  const g2 = { kind: '2d', others: [0, 1, 2, 4], curves: [0, 1, 2, 4].map((o) => ({ xs: [800, 900], ys: [0, o * 1000] })) };
+  check(Math.abs(D.gateOpening(g2, 850, 750).opening - 1.5) < 1e-3 && D.gateOpening(g2, 850, 750).status === 'ok', 'gates: 750 cfs at 850 ft -> 1.5 ft opening');
+  const gmax = D.gateOpening(g2, 850, 2500);
+  check(gmax.status === 'max' && gmax.opening === 4 && gmax.qMax === 2000, 'gates: flow above full opening flagged (2,000 cfs max at 850 ft)');
+  check(D.gateOpening(g2, 950, 100).status === 'elev' && D.gateOpening(g2, 850, 0).status === 'closed' && D.gateOpening(g2, null, 100).status === 'elev', 'gates: elevation outside rating / zero flow / no elevation');
+  const gsch = D.gateSchedule([{ O: 700, E: 850 }, { O: 700, E: 850 }, { O: 900, E: 850 }, { O: 900, E: 830 }], g2, { powerhouse: 200, gates: 1, step: 0.1 });
+  check(gsch.rows.map((g) => g.opening).join() === '1,1,1.4,2.3' && gsch.changes.map((c) => c.i).join() === '0,2,3' && Math.abs(gsch.rows[2].change - 0.4) < 1e-9, 'gates: per-step openings net of other release, rounded to 0.1 ft, with changes listed');
+  const gsch2 = D.gateSchedule([{ O: 1000, E: 850 }], g2, { gates: 2, step: 0.5 });
+  check(gsch2.rows[0].q === 500 && gsch2.rows[0].opening === 1, 'gates: flow split across gates opened equally; 0.5 ft steps');
   const html2 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   check(html2.indexOf('js/update-check.js') > html2.indexOf('js/app.js'), 'update check loads last');
   check(html2.indexOf('js/drawdown.js') > html2.indexOf('js/ratings.js') && html2.indexOf('js/views/calc.js') < html2.indexOf('js/router.js'), 'script order: drawdown after ratings, calc view before router');
