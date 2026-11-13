@@ -274,13 +274,10 @@
         '<td>' + (checks[d.y] && checks[d.y].n ? pct(checks[d.y].inside) + ' · ' + pct(checks[d.y].below) + ' · ' + pct(checks[d.y].above) + (checks[d.y].medianVsMean == null ? '' : ' · ' + (checks[d.y].medianVsMean >= 0 ? '+' : '−') + fmt(Math.abs(checks[d.y].medianVsMean), 1) + ' ft') : '—') + '</td>' +
         '<td class="yr-src">' + esc(d.r.src || '') + '</td></tr>';
     }).join('');
-    var checkLine = allCheck && allCheck.n ? '<p class="py-check"><b>Check against the ' + (ps.band === 'record' ? 'lake-record' : '30-yr') + ' band</b> (selected years, ' + fmt(allCheck.n) + ' daily readings): ' +
+    var checkLine = allCheck && allCheck.n ? '<p class="py-check">Selected years vs the ' + (ps.band === 'record' ? 'lake-record' : '30-yr') + ' band (' + fmt(allCheck.n) + ' daily readings): ' +
       '<b>' + pct(allCheck.inside) + '</b> inside p05–p95 · ' + pct(allCheck.below) + ' below · ' + pct(allCheck.above) + ' above' +
       (allCheck.medianVsMean == null ? '' : ' · median ' + (allCheck.medianVsMean >= 0 ? '+' : '−') + fmt(Math.abs(allCheck.medianVsMean), 1) + ' ft vs the ' + (ps.band === 'record' ? 'band' : '30-yr') + ' mean') +
-      '. <span class="hint">' + (ps.band === 'record'
-        ? 'The lake-record band is built from the ' + (cy - YEARS_BACK + 1) + '–' + (cy - 1) + ' readings themselves, so about 90% of those years’ readings fall inside it.'
-        : 'For years run like the 30 years behind the band (thru 2023), about 90% should be inside; misses concentrated in recent years or in Oct–Dec reflect changed operations (e.g. deep fall drawdowns since 2021).') +
-      ' Per-year figures are in the table.</span></p>' : '';
+      '.</p>' : '';
     var table = '<details class="table-view"><summary>Year summary table</summary><div class="table-scroll"><table><thead><tr><th>Year</th><th>Lowest pool (ft) · date</th><th>Highest pool (ft) · date</th><th>Mean Nov 15–Dec 15 (ft)</th><th title="Share of that year’s daily readings inside / below / above the USACE 30-yr p05–p95 band, and the median difference from the 30-yr mean">vs 30-yr band: inside · below · above · median vs mean</th><th>Source</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
 
     box.innerHTML = head + zoomBar + '<div class="yr-wrap">' + s + '<div class="tooltip mono yr-tip" hidden></div></div>' +
