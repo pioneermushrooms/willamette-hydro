@@ -490,8 +490,8 @@ console.log('drawdown calculator');
   check(/outside the stage–discharge rating/.test(outErr), 'stage ramp: flows outside the rating are reported');
   const calcSrc = fs.readFileSync(path.join(__dirname, 'js', 'views', 'calc.js'), 'utf8');
   const rg = {}; (calcSrc.match(/^\s{4}([A-Z]{3}): \{ site: '(\d{8})'/gm) || []).forEach((l) => { const m = /([A-Z]{3}): \{ site: '(\d{8})'/.exec(l); rg[m[1]] = m[2]; });
-  check(['HCR', 'LOP', 'DEX', 'FAL', 'CGR', 'BLU', 'GPR', 'COT', 'DOR', 'FRN'].every((c) => rg[c]) && rg.FRN === '14168000' && rg.HCR === '14145500' && rg.DEX === '14150000' && rg.CGR === '14159500' && !/c2-rg|gageList/.test(calcSrc),
-    'stage ramp: one fixed downstream gage per dam, all ten (no gage list)');
+  check(['HCR', 'LOP', 'DEX', 'FAL', 'CGR', 'BLU', 'GPR', 'COT', 'DOR'].every((c) => rg[c]) && !rg.FRN && rg.HCR === '14145500' && rg.DEX === '14150000' && rg.CGR === '14159500' && !/c2-rg|gageList/.test(calcSrc),
+    'stage ramp: one fixed downstream gage per dam (no gage list); none for Fern Ridge (FRNO not published)');
   // Gate openings from a 2-D rating: flow per ft of opening = 10 × (elev − 800) cfs, openings 0–4 ft.
   const g2 = { kind: '2d', others: [0, 1, 2, 4], curves: [0, 1, 2, 4].map((o) => ({ xs: [800, 900], ys: [0, o * 1000] })) };
   check(Math.abs(D.gateOpening(g2, 850, 750).opening - 1.5) < 1e-3 && D.gateOpening(g2, 850, 750).status === 'ok', 'gates: 750 cfs at 850 ft -> 1.5 ft opening');
