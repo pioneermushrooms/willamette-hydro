@@ -201,10 +201,66 @@
     return p;
   }
 
+  // ---- Historical calendar years (Teacup "YEARS" overlay) ---------------------
+
+  var yearCache = {};
+
+  /*
+   * One calendar year (Pacific) of pool elevation + that year's rule curve for a reservoir.
+   * Pool: USGS daily lake elevation (62614, 24:00 observation) at the project's lake gage;
+   * otherwise (no gage, or USGS fails) CWMS 15-min data as 6-hour means. Past years are cached
+   * for the page's lifetime, the current year for 30 minutes. Never rejects.
+   * Resolves { year, start, end, pool, rule, src, note, error }.
+   */
+  function loadYear(e, year, now) {
+    now = now || Date.now();
+    var key = e.id + ':' + year, c = yearCache[key];
+    var start = pacificMidnight(year, 1, 1), yEnd = pacificMidnight(year + 1, 1, 1), current = now < yEnd;
+    if (c && (!current || now - c.at < TTL)) return c.p;
+    if (start > now) return Promise.resolve({ year: year, start: start, end: yEnd, error: 'future year' });
+    var end = Math.min(now, yEnd), out = { year: year, start: start, end: yEnd, error: null };
+    var site = LAKE_SITE[e.code];
+    var cwms = function () {
+      return cwmsChunks(e.series.elev, start, end).then(function (s) { out.pool = s; out.src = 'USACE CWMS ' + e.series.elev.name + ' (6-hour means)'; });
+    };
+    var poolP = !site ? cwms() : H.http.fetchJson(USGS_DV + '?format=json&sites=' + site + '&parameterCd=62614&startDT=' + year + '-01-01&endDT=' + year + '-12-31&siteStatus=all', {}, 30000, 2)
+      .then(function (j) {
+        var s = parseUsgs(j, true)['62614'];
+        if (!s || s.t.length < 10) throw new Error('USGS daily values empty');
+        out.pool = s;
+        out.src = 'USGS ' + site + ' daily lake elevation (62614, 24:00 observation)';
+      })
+      .catch(function (err) { out.note = 'USGS daily values unavailable (' + err.message + '); CWMS 6-hour means used.'; return cwms(); });
+    var ruleP = H.fetchCwms(e.series.rule, start - DAY, yEnd + DAY).then(function (s) { out.rule = s; }, function (err) { out.ruleError = err.message; });
+    var p = Promise.all([poolP, ruleP]).catch(function (err) { out.error = err.message || 'failed'; })
+      .then(function () { if (out.error) delete yearCache[key]; return out; });
+    yearCache[key] = { at: now, p: p };
+    return p;
+  }
+
+  // Position of t within its calendar year y (Pacific): 0 at Jan 1 00:00, 1 at the next Jan 1.
+  function yearFrac(t, y) {
+    var a = pacificMidnight(y, 1, 1), b = pacificMidnight(y + 1, 1, 1);
+    return (t - a) / (b - a);
+  }
+
+  /*
+   * Summary of one year's pool series: lowest and highest reading with dates, and the mean of
+   * the readings in Nov 15 – Dec 15 (the fall deep-drawdown window). Pure; for tables and tests.
+   */
+  function yearSummary(pool, year) {
+    if (!pool || !pool.t || !pool.t.length) return null;
+    var lo = 0, hi = 0;
+    for (var i = 1; i < pool.v.length; i++) { if (pool.v[i] < pool.v[lo]) lo = i; if (pool.v[i] > pool.v[hi]) hi = i; }
+    var w0 = pacificMidnight(year, 11, 15), w1 = pacificMidnight(year, 12, 16), sum = 0, n = 0;
+    pool.t.forEach(function (t, k) { if (t >= w0 && t < w1) { sum += pool.v[k]; n++; } });
+    return { min: pool.v[lo], minT: pool.t[lo], max: pool.v[hi], maxT: pool.t[hi], fallMean: n ? sum / n : null, fallN: n, n: pool.t.length };
+  }
+
   return {
     RANGES: RANGES, LAKE_SITE: LAKE_SITE,
     pacificOffset: pacificOffset, pacificMidnight: pacificMidnight, dvTime: dvTime,
     bucketMean: bucketMean, parseUsgs: parseUsgs, monthTicks: monthTicks, dayTicks: dayTicks, appendLive: appendLive,
-    load: load, _cache: cache
+    load: load, loadYear: loadYear, yearFrac: yearFrac, yearSummary: yearSummary, _cache: cache
   };
 });

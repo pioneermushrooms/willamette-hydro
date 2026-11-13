@@ -46,7 +46,9 @@
     el: null, sel: 'LOP',
     levels: {}, levelErr: {}, loading: {},
     ruleYear: {}, ruleYearErr: {},
-    range: 'year',        // 'year' (calendar year) | '30d' | '6m' | '1y' (window ending now)
+    range: 'year',        // 'year' (calendar year) | '30d' | '6m' | '1y' (window ending now) | 'years' (past years overlaid)
+    years: null,          // selected calendar years for 'years' (default: this year and the two before)
+    yearData: {},         // '<code>:<year>' -> js/history.js loadYear result, or { loading: true }
     hist: {},             // '<code>:<range>' -> js/history.js result, or { loading: true }
     ro: null
   };
@@ -274,7 +276,7 @@
 
   // ---- Annual chart --------------------------------------------------------------
 
-  var RANGE_BTNS = [['year', 'YEAR'], ['30d', '30 D'], ['6m', '6 MO'], ['1y', '1 YR']];
+  var RANGE_BTNS = [['year', 'YEAR'], ['30d', '30 D'], ['6m', '6 MO'], ['1y', '1 YR'], ['years', 'PAST YEARS']];
   var RANGE_DAYS = { '30d': 30, '6m': 182, '1y': 365 };
   var MNAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -304,6 +306,7 @@
     if (!box) return;
     var m = model(st.sel), lv = m.lv;
     if (!lv) { box.innerHTML = ''; return; }
+    if (st.range === 'years') { renderYears(box, m); return; }
     var W = Math.max(280, Math.floor(box.clientWidth || 600)), Ht = W < 520 ? 220 : 260;
     var year = +fYear.format(new Date()), now = Date.now(), cal = st.range === 'year';
     var t0 = cal ? Date.UTC(year, 0, 1, 8) : now - RANGE_DAYS[st.range] * 24 * 3600 * 1000;
@@ -413,6 +416,185 @@
       : 'Pool: ' + esc(hist && hist.src ? hist.src + (hist.pool && hist.pool.liveFrom ? stamp(hist.pool.liveFrom) + ' (hourly)' : '') : '…') + '. ' +
         'Rule curve: CWMS ' + esc(m.p.series.rule.name) + '. ' + (hist && hist.note ? esc(hist.note) + ' ' : '') + 'Provisional data.';
     box.innerHTML = head + s + '<div class="an-legend">' + leg.join('') + '</div><p class="hint">' + foot + '</p>';
+  }
+
+  // ---- Past years overlaid on one Jan–Dec axis -------------------------------------
+
+  var MAX_YEARS = 6;          // six validated colours; each year keeps the colour (year mod 6)
+  var YEARS_BACK = 20;        // year chips offered: this year and the 19 before
+  var fShort = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+
+  function thisYear() { return +fYear.format(new Date()); }
+  function selectedYears() {
+    if (!st.years) { var y = thisYear(); st.years = [y, y - 1, y - 2]; }
+    return st.years.slice().sort(function (a, b) { return b - a; });
+  }
+  function toggleYear(y) {
+    var cur = selectedYears(), i = cur.indexOf(y);
+    if (i >= 0) { if (cur.length > 1) cur.splice(i, 1); }
+    else if (cur.length < MAX_YEARS) cur.push(y);
+    st.years = cur;
+    renderAnnual();
+  }
+  function yearSlot(y) { return ((y % MAX_YEARS) + MAX_YEARS) % MAX_YEARS; }
+
+  function yearFor(code, y) {
+    var key = code + ':' + y, v = st.yearData[key];
+    if (v) return v;
+    st.yearData[key] = { loading: true };
+    H.history.loadYear(byCode[code], y).then(function (r) {
+      st.yearData[key] = r;
+      if (code === st.sel && st.range === 'years') renderAnnual();
+    });
+    return st.yearData[key];
+  }
+
+  // Value of series s at year-fraction f of year y (nearest reading within 2 days), or null.
+  function valueAtFrac(s, y, f) {
+    if (!s || !s.t || !s.t.length) return null;
+    var a = H.history.pacificMidnight(y, 1, 1), b = H.history.pacificMidnight(y + 1, 1, 1), t = a + f * (b - a);
+    var lo = 0, hi = s.t.length - 1;
+    while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (s.t[mid] <= t) lo = mid; else hi = mid; }
+    var k = Math.abs(s.t[lo] - t) <= Math.abs(s.t[hi] - t) ? lo : hi;
+    return Math.abs(s.t[k] - t) <= 2 * 24 * 3600 * 1000 ? s.v[k] : null;
+  }
+
+  function renderYears(box, m) {
+    var years = selectedYears(), cy = thisYear(), now = Date.now();
+    var W = Math.max(280, Math.floor(box.clientWidth || 600)), Ht = W < 520 ? 240 : 300;
+    var seg = '<div class="seg tc-range" role="group" aria-label="Chart range">' + RANGE_BTNS.map(function (b) {
+      return '<button type="button" data-tcrange="' + b[0] + '" aria-pressed="' + (st.range === b[0]) + '">' + b[1] + '</button>';
+    }).join('') + '</div>';
+    var chips = '';
+    for (var y = cy; y > cy - YEARS_BACK; y--) {
+      var on = years.indexOf(y) >= 0, full = !on && years.length >= MAX_YEARS;
+      chips += '<button type="button" class="chip small yr-chip" data-tcyear="' + y + '" aria-pressed="' + on + '"' +
+        (full ? ' disabled title="Up to ' + MAX_YEARS + ' years at once; deselect one first"' : '') + '>' +
+        (on ? '<i class="yr-sw yr-c' + yearSlot(y) + '" aria-hidden="true"></i>' : '') + y + '</button>';
+    }
+    var head = '<div class="tc-an-head"><h4 class="tc-h4">Past years, ' + esc(m.p.name) + ' <span class="hint">pool elevation by calendar year, Jan–Dec</span></h4>' + seg + '</div>' +
+      '<div class="tc-chips yr-chips" role="group" aria-label="Years to compare (up to ' + MAX_YEARS + ')">' + chips + '</div>';
+
+    var data = years.map(function (y) { return { y: y, r: yearFor(m.code, y) }; });
+    var loading = data.filter(function (d) { return d.r.loading; }).map(function (d) { return d.y; });
+    var shown = data.filter(function (d) { return !d.r.loading && d.r.pool && d.r.pool.t.length; });
+
+    // Reference context: the 30-yr statistics bands for this calendar year (DERIVED, published CWMS levels).
+    var lv = m.lv, ser = {};
+    ['statsP05', 'statsP25', 'statsAve', 'statsP75', 'statsP95'].forEach(function (k) { ser[k] = T.annualSeries(LV.pick(lv, LV.IDS[k], now), cy); });
+    var hasStats = ser.statsAve.some(function (p) { return p[1] != null; });
+
+    var vals = [];
+    shown.forEach(function (d) { vals.push(Math.min.apply(null, d.r.pool.v), Math.max.apply(null, d.r.pool.v)); if (d.r.rule) d.r.rule.v.forEach(function (v) { vals.push(v); }); });
+    if (hasStats) ['statsP05', 'statsP95'].forEach(function (k) { ser[k].forEach(function (p) { if (p[1] != null) vals.push(p[1]); }); });
+    if (!shown.length) {
+      box.innerHTML = head + '<p class="na' + (loading.length ? ' loading' : '') + '">' + (loading.length ? 'Loading ' + loading.join(', ') + '…' : 'No pool history returned for the selected years.') + '</p>' + yearErrors(data);
+      return;
+    }
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo) * 0.06 || 1;
+    lo -= pad; hi += pad;
+    var ml = 46, mr = W < 520 ? 40 : 52, mt = 10, mb = 24, pw = W - ml - mr, ph = Ht - mt - mb;
+    var x = function (f) { return ml + f * pw; }, yv = function (v) { return mt + (1 - (v - lo) / (hi - lo)) * ph; };
+    var frac = H.history.yearFrac;
+    // Pool readings at 24:00 Dec 31 sit at f = 1 and belong to that year; a rule-curve value stamped
+    // at the next Jan 1 midnight does not, so rule curves stop before f = 1.
+    var path = function (s, yr, isRule) {
+      var d = '', pen = false, prev = null;
+      s.t.forEach(function (t, i) {
+        var f = frac(t, yr);
+        if (f < 0 || f > 1 || (isRule && f >= 1)) return;
+        if (prev != null && t - prev > 3 * 24 * 3600 * 1000) pen = false;   // gap in record
+        d += (pen ? 'L' : 'M') + x(f).toFixed(1) + ' ' + yv(s.v[i]).toFixed(1); pen = true; prev = t;
+      });
+      return d;
+    };
+    var pts = function (arr) { return arr.filter(function (p) { return p[1] != null; }).map(function (p) { return [frac(p[0], cy), p[1]]; }); };
+    var band = function (a, b) {
+      var top = pts(a), bot = pts(b).reverse();
+      if (!top.length || !bot.length) return '';
+      return 'M' + top.map(function (p) { return x(p[0]).toFixed(1) + ' ' + yv(p[1]).toFixed(1); }).join('L') + 'L' + bot.map(function (p) { return x(p[0]).toFixed(1) + ' ' + yv(p[1]).toFixed(1); }).join('L') + 'Z';
+    };
+
+    var s = '<svg class="annual yr-svg" viewBox="0 0 ' + W + ' ' + Ht + '" width="100%" height="' + Ht + '" role="img" aria-label="' + esc(m.p.name + ' pool elevation for ' + years.join(', ')) + '">';
+    s += '<defs><clipPath id="yr-clip"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath></defs>';
+    var span = hi - lo, step = span > 120 ? 50 : span > 60 ? 20 : span > 25 ? 10 : span > 10 ? 5 : span > 4 ? 2 : span > 2 ? 1 : 0.5;
+    for (var v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+      s += '<line class="an-grid" x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + yv(v).toFixed(1) + '" y2="' + yv(v).toFixed(1) + '"/>' +
+        '<text class="an-lab" x="' + (ml - 6) + '" y="' + (yv(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, step < 1 ? 1 : 0) + '</text>';
+    }
+    for (var mo = 0; mo < 12; mo++) {
+      var f0 = frac(H.history.pacificMidnight(cy, mo + 1, 1), cy), f1 = mo === 11 ? 1 : frac(H.history.pacificMidnight(cy, mo + 2, 1), cy);
+      s += '<line class="an-grid" x1="' + x(f0).toFixed(1) + '" x2="' + x(f0).toFixed(1) + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>' +
+        '<text class="an-lab" x="' + x((f0 + f1) / 2).toFixed(1) + '" y="' + (Ht - 7) + '" text-anchor="middle">' + (W < 520 ? 'JFMAMJJASOND'[mo] : MNAMES[mo]) + '</text>';
+    }
+    s += '<g clip-path="url(#yr-clip)">';
+    if (hasStats) s += '<path class="an-p95" d="' + band(ser.statsP95, ser.statsP05) + '"/><path class="an-p75" d="' + band(ser.statsP75, ser.statsP25) + '"/>';
+    shown.forEach(function (d) { if (d.r.rule && d.r.rule.t.length) s += '<path class="yr-rule yr-c' + yearSlot(d.y) + '" d="' + path(d.r.rule, d.y, true) + '"/>'; });
+    shown.forEach(function (d) { s += '<path class="yr-pool yr-c' + yearSlot(d.y) + '" d="' + path(d.r.pool, d.y) + '"/>'; });
+    s += '</g>';
+    // Direct labels at each line's last reading, spread so they never overlap.
+    var items = shown.map(function (d) {
+      var n = d.r.pool.t.length - 1;
+      return { y: yv(d.r.pool.v[n]), xe: x(Math.min(1, frac(d.r.pool.t[n], d.y))), yr: d.y };
+    });
+    T.spreadLabels(items, 12, mt + 6, mt + ph - 2).forEach(function (it) {
+      var lx = Math.min(it.xe + 4, ml + pw + 4);
+      s += '<line class="yr-lead yr-c' + yearSlot(it.yr) + '" x1="' + it.xe.toFixed(1) + '" x2="' + (lx + 2).toFixed(1) + '" y1="' + it.y.toFixed(1) + '" y2="' + it.ly.toFixed(1) + '"/>' +
+        '<text class="yr-lab" x="' + (lx + 4).toFixed(1) + '" y="' + (it.ly + 3.5).toFixed(1) + '">' + it.yr + '</text>';
+    });
+    s += '<g class="yr-cross" style="display:none"><line class="yr-cross-line" y1="' + mt + '" y2="' + (mt + ph) + '"/></g>';
+    s += '<rect class="yr-hit" x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '" fill="transparent"/>';
+    s += '</svg>';
+
+    var leg = shown.map(function (d) { return '<span><i class="yr-key yr-c' + yearSlot(d.y) + '"></i>' + d.y + '</span>'; });
+    leg.push('<span><i class="yr-key-rule"></i>dashed: that year’s rule curve</span>');
+    if (hasStats) leg.push('<span><i class="lg-p95"></i>30-yr p05–p95</span><span><i class="lg-p75"></i>p25–p75</span>');
+    if (loading.length) leg.push('<span class="na loading">loading ' + loading.join(', ') + '…</span>');
+
+    var rows = data.map(function (d) {
+      if (d.r.loading) return '<tr><td>' + d.y + '</td><td colspan="4" class="na">loading…</td></tr>';
+      var sm = H.history.yearSummary(d.r.pool, d.y);
+      if (!sm) return '<tr><td>' + d.y + '</td><td colspan="4" class="na">' + esc(d.r.error || 'no pool data') + '</td></tr>';
+      var day = function (t) { return fShort.format(new Date(t - 12 * 3600 * 1000 + (H.history.pacificOffset(t)))); };
+      return '<tr><td><i class="yr-key yr-c' + yearSlot(d.y) + '"></i> ' + d.y + (d.y === cy ? ' (to date)' : '') + '</td><td>' + fmt(sm.min, 2) + ' · ' + day(sm.minT) + '</td><td>' + fmt(sm.max, 2) + ' · ' + day(sm.maxT) + '</td>' +
+        '<td>' + (sm.fallMean == null ? '—' : fmt(sm.fallMean, 2)) + '</td><td class="yr-src">' + esc(d.r.src || '') + '</td></tr>';
+    }).join('');
+    var table = '<details class="table-view"><summary>Year summary table</summary><div class="table-scroll"><table><thead><tr><th>Year</th><th>Lowest pool (ft) · date</th><th>Highest pool (ft) · date</th><th>Mean Nov 15–Dec 15 (ft)</th><th>Source</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
+
+    box.innerHTML = head + '<div class="yr-wrap">' + s + '<div class="tooltip mono yr-tip" hidden></div></div><div class="an-legend">' + leg.join('') + '</div>' + table +
+      '<p class="hint">Each year is drawn on the same Jan–Dec axis. Pool: USGS daily lake elevation (24:00) at the project’s lake gage where one exists, otherwise USACE CWMS as 6-hour means. Rule curve: CWMS ' + esc(m.p.series.rule.name) + ' for that year, where published. Bands: 30-yr statistics thru 2023 (DERIVED from published CWMS levels). Provisional data. Hover or tap the chart for values.</p>' + yearErrors(data);
+    bindYearHover(box, shown, { ml: ml, pw: pw, W: W, cy: cy });
+  }
+
+  function yearErrors(data) {
+    var notes = data.filter(function (d) { return !d.r.loading && (d.r.note || d.r.ruleError || d.r.error); }).map(function (d) {
+      return d.y + ': ' + [d.r.error, d.r.note, d.r.ruleError ? 'rule curve unavailable (' + d.r.ruleError + ')' : null].filter(Boolean).join(' ');
+    });
+    return notes.length ? '<p class="hint yr-notes">' + esc(notes.join(' · ')) + '</p>' : '';
+  }
+
+  function bindYearHover(box, shown, g) {
+    var svg = box.querySelector('.yr-svg'), tip = box.querySelector('.yr-tip'), cross = box.querySelector('.yr-cross'), line = box.querySelector('.yr-cross-line');
+    if (!svg) return;
+    var move = function (ev) {
+      var r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (g.W / r.width), f = (px - g.ml) / g.pw;
+      if (f < 0 || f > 1) { hide(); return; }
+      line.setAttribute('x1', px.toFixed(1)); line.setAttribute('x2', px.toFixed(1)); cross.style.display = '';
+      var refT = H.history.pacificMidnight(g.cy, 1, 1) + f * (H.history.pacificMidnight(g.cy + 1, 1, 1) - H.history.pacificMidnight(g.cy, 1, 1));
+      var lines = shown.map(function (d) {
+        var v = valueAtFrac(d.r.pool, d.y, f), rv = valueAtFrac(d.r.rule, d.y, f);
+        return '<span><i class="yr-key yr-c' + yearSlot(d.y) + '"></i>' + d.y + ': <b>' + (v == null ? '—' : fmt(v, 2) + ' ft') + '</b>' + (rv == null ? '' : ' · rule ' + fmt(rv, 1)) + '</span>';
+      });
+      tip.innerHTML = '<b>' + fShort.format(new Date(refT + H.history.pacificOffset(refT))) + '</b><br>' + lines.join('<br>');
+      tip.hidden = false;
+      var bx = box.querySelector('.yr-wrap').getBoundingClientRect(), left = ev.clientX - bx.left + 12;
+      if (left + tip.offsetWidth > bx.width) left = ev.clientX - bx.left - tip.offsetWidth - 12;
+      tip.style.left = Math.max(0, left) + 'px'; tip.style.top = '8px';
+    };
+    var hide = function () { cross.style.display = 'none'; tip.hidden = true; };
+    svg.addEventListener('pointermove', move);
+    svg.addEventListener('pointerdown', move);
+    svg.addEventListener('pointerleave', hide);
   }
 
   // ---- Detail ---------------------------------------------------------------------
@@ -528,6 +710,8 @@
         if (chip) { select(chip.getAttribute('data-code'), false); return; }
         var rb = ev.target.closest('[data-tcrange]');
         if (rb) { st.range = rb.getAttribute('data-tcrange'); renderAnnual(); return; }
+        var yb = ev.target.closest('[data-tcyear]');
+        if (yb && !yb.disabled) { toggleYear(+yb.getAttribute('data-tcyear')); return; }
         var rt = ev.target.closest('[data-retry]');
         if (rt) loadLevels(rt.getAttribute('data-retry'), true);
       });

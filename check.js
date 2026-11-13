@@ -478,6 +478,21 @@ console.log('drawdown calculator');
   check(html2.indexOf('js/drawdown.js') > html2.indexOf('js/ratings.js') && html2.indexOf('js/views/calc.js') < html2.indexOf('js/router.js'), 'script order: drawdown after ratings, calc view before router');
 }
 
+// ---- 2e. Past-years overlay (js/history.js) -------------------------------------
+console.log('past years');
+{
+  const HS = require('./js/history.js');
+  const y = 2025, jan1 = HS.pacificMidnight(y, 1, 1);
+  check(jan1 === Date.UTC(2025, 0, 1, 8) && HS.yearFrac(jan1, y) === 0 && HS.yearFrac(HS.pacificMidnight(y + 1, 1, 1), y) === 1, 'years: year fraction 0 at Jan 1, 1 at next Jan 1 (Pacific)');
+  check(Math.abs(HS.yearFrac(HS.pacificMidnight(y, 7, 2), y) - 0.4986) < 0.001, 'years: Jul 2 is mid-year');
+  const pool = { t: [HS.pacificMidnight(y, 5, 1), HS.pacificMidnight(y, 11, 20), HS.pacificMidnight(y, 12, 1), HS.pacificMidnight(y, 12, 20)], v: [1690, 1505, 1502.07, 1520] };
+  const sm = HS.yearSummary(pool, y);
+  check(sm.min === 1502.07 && sm.minT === pool.t[2] && sm.max === 1690 && sm.fallMean === (1505 + 1502.07) / 2 && sm.fallN === 2, 'years: summary low/high with dates, Nov 15–Dec 15 mean');
+  check(HS.yearSummary(null, y) === null && typeof HS.loadYear === 'function', 'years: empty summary; loader exported');
+  const tc = fs.readFileSync(path.join(__dirname, 'js', 'views', 'teacup.js'), 'utf8');
+  check(/\['years', 'PAST YEARS'\]/.test(tc) && /MAX_YEARS = 6/.test(tc), 'years: PAST YEARS range on the Teacup chart, up to 6 years');
+}
+
 // ---- 3. Page wiring ---------------------------------------------------------
 console.log('page');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
