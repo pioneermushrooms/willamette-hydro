@@ -154,7 +154,7 @@
   function stageFields() {
     var g = RAMP_GAGE[st.code];
     return '<div class="field dd-f dd-stage dd-wide" hidden><span class="field-label">Gage for the ramp limit</span>' +
-      (g ? '<span class="dd-gage mono">' + esc(g.name) + ' · USGS ' + g.site + ' <a href="https://waterdata.usgs.gov/monitoring-location/' + g.site + '/" target="_blank" rel="noopener">↗</a></span>' +
+      (g ? '<span class="dd-gage mono">' + esc(g.name) + ' · USGS ' + g.site + ' <a href="https://waterdata.usgs.gov/monitoring-location/' + g.site + '/" target="_blank" rel="noopener">↗</a> · <a href="#/tables" data-open-rating="' + g.site + '">table ▸</a></span>' +
         '<span class="dd-hint">' + esc(g.note) + '; its USGS stage–discharge rating converts gage height ↔ flow</span>'
         : '<span class="na">' + (st.code === 'FRN' ? 'FRNO (Long Tom below Fern Ridge Dam): no public USGS gage height or rating is set for it, so ramp limits stay in cfs.' : 'No gage immediately below ' + esc(byCode[st.code].name) + ' is set, so ramp limits stay in cfs.') + '</span>') + '</div>' +
       (g ? '<label class="field dd-f dd-stage" hidden><span class="field-label">Other flow at the gage (cfs)</span><input id="c2-ro" inputmode="decimal" value="0">' +
@@ -320,7 +320,7 @@
     var kv = function (k, v) { return '<div><dt>' + k + '</dt><dd>' + v + '</dd></div>'; };
     var h = '<p class="dd-status"><span class="badge ' + s[0] + '">' + s[1] + '</span>' + (r.belowMin.length ? ' <span class="badge warn">BELOW MIN OUTFLOW</span>' : '') + '</p>';
     h += '<p class="dd-plain">' + esc(r.plain) + '</p>';
-    if (r.stage) h += '<p class="hint">Ramp limits apply to gage height at ' + esc(r.stage.label) + ', converted to flow with the ' + esc(r.stage.src) + ' (gage flow = release + other flow; travel time not modelled). Rating: <a href="https://waterdata.usgs.gov/monitoring-location/' + esc((r.stage.label.match(/USGS (\d{8})/) || [])[1] || '') + '/" target="_blank" rel="noopener">USGS gage page ↗</a>.</p>';
+    if (r.stage) h += '<p class="hint">Ramp limits apply to gage height at ' + esc(r.stage.label) + ', converted to flow with the ' + esc(r.stage.src) + ' (gage flow = release + other flow; travel time not modelled). Rating: <a href="#/tables" data-open-rating="' + esc((r.stage.label.match(/USGS (\d{8})/) || [])[1] || '') + '">' + esc(r.stage.label.split(' · ')[0]) + ' stage–discharge table ▸ Tables</a> · <a href="https://waterdata.usgs.gov/monitoring-location/' + esc((r.stage.label.match(/USGS (\d{8})/) || [])[1] || '') + '/" target="_blank" rel="noopener">USGS gage page ↗</a>.</p>';
     if (r.messages.length) h += '<ul class="dd-msgs">' + r.messages.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>';
     h += '<dl class="dd-sum mono">' +
       kv('Plateau flow', r.Qp == null ? '—' : fmt(r.Qp, r.Qp % 1 ? 1 : 0) + ' cfs') +
@@ -421,6 +421,7 @@
       if (e.target.id === 'c1-go') runC1();
       else if (e.target.id === 'c2-go') runC2();
       else if (e.target.id === 'c2-rule') useRule();
+      else if (e.target.closest('[data-open-rating]') && H.tables) { e.preventDefault(); H.tables.openUsgs(e.target.closest('[data-open-rating]').getAttribute('data-open-rating')); }
       else if (e.target.id === 'c2-csv') csv();
     });
     st.el.addEventListener('change', function (e) {

@@ -404,6 +404,15 @@
     if (box && st.entry) box.innerHTML = tableHTML(def, st.entry.data);
   }
 
+  // Opens the USGS stage–discharge table for a gage (used by the drawdown planner's rating link).
+  H.tables = {
+    openUsgs: function (site) {
+      st.group = 'usgs'; st.site = site; st.page = 0; st.x = null; st.yIn = null;
+      if (st.el) { renderControls(); load(); }
+      location.hash = '#/tables';
+    }
+  };
+
   H.views.tables = {
     title: 'Reports & Tables',
     render: function (el) {

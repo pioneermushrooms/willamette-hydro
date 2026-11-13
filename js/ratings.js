@@ -74,7 +74,16 @@
     { site: '14162500', name: 'McKenzie near Vida' },
     { site: '14165500', name: 'McKenzie near Coburg' },
     { site: '14152000', name: 'Middle Fork Willamette at Jasper' },
-    { site: '14157500', name: 'Coast Fork Willamette near Goshen' }
+    { site: '14157500', name: 'Coast Fork Willamette near Goshen' },
+    // Gages immediately below the dams (also used for gage-height ramp limits in the drawdown planner).
+    { site: '14145500', name: 'HCRO · below Hills Creek', below: 'HCR' },
+    { site: '14150000', name: 'DEXO · below Dexter', below: 'DEX' },
+    { site: '14151000', name: 'FALO · below Fall Creek', below: 'FAL' },
+    { site: '14159500', name: 'CGRO · below Cougar', below: 'CGR' },
+    { site: '14162200', name: 'BLUO · below Blue River', below: 'BLU' },
+    { site: '14187200', name: 'FOSO · below Foster (Green Peter)', below: 'GPR' },
+    { site: '14153500', name: 'COTO · below Cottage Grove', below: 'COT' },
+    { site: '14155500', name: 'DORO · below Dorena', below: 'DOR' }
   ];
 
   function cwmsDefs(group, code) {

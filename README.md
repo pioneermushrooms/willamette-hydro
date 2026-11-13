@@ -225,6 +225,7 @@ These are **published** rating tables, not live data.
 
 Notes:
 - **2-D gate ratings** parse cleanly as opening × elevation grids, so they are implemented. You choose a gate opening and an elevation; openings between published curves are interpolated. CGR's gated-spillway rating publishes its axes swapped (elevations in the opening slot). It is detected, transposed, and flagged on the page.
+- **USGS stage–flow gauges (14):** the six river gauges (Eugene, Harrisburg, Vida, Coburg, Jasper, Goshen) plus the gages immediately below the dams: HCRO 14145500, DEXO 14150000, FALO 14151000, CGRO 14159500, BLUO 14162200, FOSO 14187200 (below Foster, for Green Peter), COTO 14153500, DORO 14155500. The drawdown planner's gage-height ramp limits use these same tables and link to them ("table ▸"). Fern Ridge's FRNO has no public USGS table here.
 - **USGS exsa:** look-ups use the gage height (INDEP) directly. DEP is the discharge USGS computes for that gage height with the shift already applied. This was verified against live NWIS discharge at five gauges: at Harrisburg, 1.86 ft gives 4,194 cfs from the table versus 4,190 cfs live. Adding SHIFT to INDEP would be wrong (3,673 cfs). SHIFT is shown for information only.
 - **Jasper's file** is a base rating without shifts, as USGS states in the file.
 - **Eugene** has a rating file (rating 3.0, shifts 2023) even though no live discharge is published there. It is shown with that caveat.

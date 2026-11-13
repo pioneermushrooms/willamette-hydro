@@ -313,7 +313,7 @@ console.log('ratings');
   check(RT.cwmsDefs('area', 'DEX').length === 0 && RT.cwmsDefs('area', 'LOP').length === 1 && RT.cwmsDefs('storage', 'DEX').length === 1, 'ratings: catalog (no DEX area)');
   const allR = RT.allDefs();
   check(allR.filter((d) => d.group === 'storage').length === 10 && allR.filter((d) => d.group === 'area').length === 9 &&
-    allR.filter((d) => d.key === 'spillway').length === 8 && allR.filter((d) => d.group === 'usgs').length === 6, 'ratings: catalog counts storage 10 / area 9 / spillway 8 / USGS 6 (FAL, BLU: storage + area)');
+    allR.filter((d) => d.key === 'spillway').length === 8 && allR.filter((d) => d.group === 'usgs').length === 14, 'ratings: catalog counts storage 10 / area 9 / spillway 8 / USGS 14 (6 river gauges + 8 below-dam gages)');
 }
 
 // ---- 2f. TDG, SNOTEL, ODEQ (fixtures) -----------------------------------------------------
@@ -489,9 +489,11 @@ console.log('drawdown calculator');
   try { D.plan(Object.assign({}, base, { Q0: 20000, ru: 0.2, rd: 0.2, stage: sgm })); } catch (e) { outErr = e.message; }
   check(/outside the stage–discharge rating/.test(outErr), 'stage ramp: flows outside the rating are reported');
   const calcSrc = fs.readFileSync(path.join(__dirname, 'js', 'views', 'calc.js'), 'utf8');
+  const RTs = require('./js/ratings.js'), belowSites = RTs.SITES.filter((x) => x.below);
   const rg = {}; (calcSrc.match(/^\s{4}([A-Z]{3}): \{ site: '(\d{8})'/gm) || []).forEach((l) => { const m = /([A-Z]{3}): \{ site: '(\d{8})'/.exec(l); rg[m[1]] = m[2]; });
   check(['HCR', 'LOP', 'DEX', 'FAL', 'CGR', 'BLU', 'GPR', 'COT', 'DOR'].every((c) => rg[c]) && !rg.FRN && rg.HCR === '14145500' && rg.DEX === '14150000' && rg.CGR === '14159500' && !/c2-rg|gageList/.test(calcSrc),
     'stage ramp: one fixed downstream gage per dam (no gage list); none for Fern Ridge (FRNO not published)');
+  check(Object.keys(rg).every((c) => RTs.SITES.some((x) => x.site === rg[c])) && belowSites.every((x) => /^[A-Z]{4} · below /.test(x.name)), 'stage ramp: every planner gage has its stage–discharge table on the Tables page (names lead with the 4-letter code)');
   // Gate openings from a 2-D rating: flow per ft of opening = 10 × (elev − 800) cfs, openings 0–4 ft.
   const g2 = { kind: '2d', others: [0, 1, 2, 4], curves: [0, 1, 2, 4].map((o) => ({ xs: [800, 900], ys: [0, o * 1000] })) };
   check(Math.abs(D.gateOpening(g2, 850, 750).opening - 1.5) < 1e-3 && D.gateOpening(g2, 850, 750).status === 'ok', 'gates: 750 cfs at 850 ft -> 1.5 ft opening');
