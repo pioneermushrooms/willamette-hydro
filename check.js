@@ -34,9 +34,9 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 console.log('config');
 const expectStations = {
   'willamette-eugene': '14158050', 'willamette-harrisburg': '14166000', 'mckenzie-vida': '14162500',
-  'mckenzie-coburg': '14165500', 'middle-fork-jasper': '14152000', 'coast-fork-goshen': '14157500'
+  'mckenzie-coburg': '14165500', 'middle-fork-jasper': '14152000', 'coast-fork-goshen': '14157500', 'mckenzie-leaburg': '14163150'
 };
-check(H.stations.length === 6, '6 USGS stations');
+check(H.stations.length === 7, '7 USGS stations (incl. McKenzie below Leaburg Dam)');
 H.stations.forEach((s) => {
   const p = 'station ' + s.id + ': ';
   check(expectStations[s.id] === s.site, p + 'USGS site id ' + s.site);
@@ -313,7 +313,7 @@ console.log('ratings');
   check(RT.cwmsDefs('area', 'DEX').length === 0 && RT.cwmsDefs('area', 'LOP').length === 1 && RT.cwmsDefs('storage', 'DEX').length === 1, 'ratings: catalog (no DEX area)');
   const allR = RT.allDefs();
   check(allR.filter((d) => d.group === 'storage').length === 10 && allR.filter((d) => d.group === 'area').length === 9 &&
-    allR.filter((d) => d.key === 'spillway').length === 8 && allR.filter((d) => d.group === 'usgs').length === 14, 'ratings: catalog counts storage 10 / area 9 / spillway 8 / USGS 14 (6 river gauges + 8 below-dam gages)');
+    allR.filter((d) => d.key === 'spillway').length === 8 && allR.filter((d) => d.group === 'usgs').length === 15, 'ratings: catalog counts storage 10 / area 9 / spillway 8 / USGS 15 (7 river gauges + 8 below-dam gages)');
 }
 
 // ---- 2f. TDG, SNOTEL, ODEQ (fixtures) -----------------------------------------------------

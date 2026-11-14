@@ -72,6 +72,7 @@
     { site: '14158050', name: 'Willamette at Eugene', note: 'USGS publishes no live discharge series for this gauge; this rating file (last shifted 2023) may not be in active use.' },
     { site: '14166000', name: 'Willamette at Harrisburg' },
     { site: '14162500', name: 'McKenzie near Vida' },
+    { site: '14163150', name: 'McKenzie below Leaburg Dam' },
     { site: '14165500', name: 'McKenzie near Coburg' },
     { site: '14152000', name: 'Middle Fork Willamette at Jasper' },
     { site: '14157500', name: 'Coast Fork Willamette near Goshen' },
