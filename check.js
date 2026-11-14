@@ -505,6 +505,7 @@ console.log('drawdown calculator');
   check(/outside the stage–discharge rating/.test(outErr), 'stage ramp: flows outside the rating are reported');
   const calcSrc = fs.readFileSync(path.join(__dirname, 'js', 'views', 'calc.js'), 'utf8');
   const RTs = require('./js/ratings.js'), belowSites = RTs.SITES.filter((x) => x.below);
+  check(/function inflowEstimate/.test(calcSrc) && /Math\.max\(0, Math\.round\(sum \/ n\)\)/.test(calcSrc) && !/set\('c1-in', lv\.inflow/.test(calcSrc), 'calc: current inflow = 24-h mean of computed inflow, never below 0 (no raw negative values)');
   check(/d\.o && \/Opening\/\.test\(d\.id\)/.test(calcSrc), 'gates: only gated structures (2-D opening ratings) offered; free-flow spillway excluded');
   check(/id="c2-tsrc"/.test(calcSrc) && /value="limit"/.test(calcSrc) && /Math\.min\(rv, tv\)/.test(calcSrc) && /dd-l-pubtgt/.test(calcSrc), 'calc2: target from rule curve, published interim/injunction target, or the lower (more limiting) of the two; target curve on the chart');
   const rg = {}; (calcSrc.match(/^\s{4}([A-Z]{3}): \{ site: '(\d{8})'/gm) || []).forEach((l) => { const m = /([A-Z]{3}): \{ site: '(\d{8})'/.exec(l); rg[m[1]] = m[2]; });

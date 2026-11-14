@@ -42,7 +42,19 @@
   function live(code) {
     var p = byCode[code], snap = H.live && H.live.snap, d = snap && snap.projects[p.id];
     var L = function (k) { return d && H.latest(d[k]); };
-    return { elev: L('elev'), out: L('out'), inflow: L('inflow'), rule: d && d.rule };
+    return { elev: L('elev'), out: L('out'), inflow: L('inflow'), inflowEst: inflowEstimate(d && d.inflow), rule: d && d.rule };
+  }
+
+  /*
+   * Inflow to plan with. USACE "computed inflow" is outflow + storage change, so pool-reading noise
+   * swings single values by hundreds of cfs (even below zero on small reservoirs such as Blue River).
+   * Use the mean of the last 24 h of it, never below 0. Returns { v, n, latest, t } or null.
+   */
+  function inflowEstimate(s) {
+    if (!s || !s.t || !s.t.length) return null;
+    var tEnd = s.t[s.t.length - 1], sum = 0, n = 0;
+    for (var i = s.t.length - 1; i >= 0 && s.t[i] > tEnd - 24 * HOUR; i--) { sum += s.v[i]; n++; }
+    return { v: Math.max(0, Math.round(sum / n)), n: n, latest: s.v[s.v.length - 1], t: tEnd };
   }
 
   // ---- Rating ------------------------------------------------------------------
@@ -120,7 +132,7 @@
       '<div class="field dd-f"><span class="field-label">&nbsp;</span><button type="button" class="btn" id="c2-rule">Set target at target time</button><span class="dd-hint" id="c2-rule-msg"></span></div>' +
       field('c2-q0', 'Current outflow Q0 (cfs)', 'inputmode="decimal" value="' + (lv.out ? Math.round(lv.out.v) : '') + '"') +
       '<label class="field dd-f"><span class="field-label">Inflow</span><select id="c2-im"><option value="const">Constant</option><option value="series">Hourly series (paste)</option></select></label>' +
-      field('c2-ic', 'Inflow (cfs, constant)', 'inputmode="decimal" value="' + (lv.inflow ? Math.max(0, Math.round(lv.inflow.v)) : '') + '"', lv.inflow ? 'default: latest USACE computed inflow' : '') +
+      field('c2-ic', 'Inflow (cfs, constant)', 'inputmode="decimal" value="' + (lv.inflowEst ? lv.inflowEst.v : '') + '"', lv.inflowEst ? 'default: 24-h mean of USACE computed inflow (never below 0)' : '') +
       '<label class="field dd-f dd-wide" id="c2-is-wrap" hidden><span class="field-label">Hourly inflow (cfs), one value per line from the start time</span><textarea id="c2-is" rows="4" placeholder="900&#10;920&#10;950"></textarea></label>' +
       '<label class="field dd-f"><span class="field-label">Ramp limits in</span><select id="c2-rmode"><option value="cfs">Flow (cfs per hour)</option><option value="stage"' + (RAMP_GAGE[st.code] ? '' : ' disabled') + '>Gage height (ft per hour)' + (RAMP_GAGE[st.code] ? ' · ' + RAMP_GAGE[st.code].name.split(' · ')[0] : st.code === 'FRN' ? ' · FRNO not published' : ' · no gage set') + '</option></select></label>' +
       field('c2-ru', '<span class="dd-ru-l">Max ramp-up (cfs/hr)</span>', 'inputmode="decimal" value="100"') +
@@ -236,7 +248,7 @@
     var lv = live(st.code), msg = st.el.querySelector('#' + which + '-cur-msg');
     var set = function (id, v) { var el = st.el.querySelector('#' + id); if (el && v != null) el.value = v; };
     if (!lv.elev && !lv.out && !lv.inflow) { msg.textContent = H.live ? 'No live readings for ' + byCode[st.code].name + '.' : 'Live data not loaded yet; try again in a moment.'; return; }
-    var e = lv.elev && lv.elev.v.toFixed(2), o = lv.out && Math.round(lv.out.v), i = lv.inflow && Math.round(lv.inflow.v);
+    var e = lv.elev && lv.elev.v.toFixed(2), o = lv.out && Math.round(lv.out.v), ie = lv.inflowEst, i = ie ? ie.v : null;
     if (which === 'c1') {
       set('c1-e0', e); set('c1-out', o); set('c1-in', i);
       set('c1-net', '');   // net flow now comes from outflow − inflow
@@ -246,13 +258,13 @@
         st.el.querySelector('#c2-im').value = 'const';
         st.el.querySelector('#c2-is-wrap').hidden = true;
         st.el.querySelector('#c2-ic').closest('label').hidden = false;
-        set('c2-ic', Math.max(0, i));
+        set('c2-ic', i);
       }
       set('c2-t0', wall(Math.floor(Date.now() / (15 * 60000)) * 15 * 60000));
     }
     var t = lv.elev ? lv.elev.t : (lv.out || lv.inflow).t;
-    msg.textContent = 'Filled from live readings at ' + stamp(t) + ': pool ' + (e || '—') + ' ft · outflow ' + (o == null ? '—' : fmt(o)) + ' · inflow ' + (i == null ? '—' : fmt(i)) + ' cfs' +
-      (which === 'c2' && i != null && i < 0 ? ' (computed inflow is negative; 0 used)' : '') + '.';
+    msg.textContent = 'Filled from live readings at ' + stamp(t) + ': pool ' + (e || '—') + ' ft · outflow ' + (o == null ? '—' : fmt(o)) + ' cfs · inflow ' + (i == null ? '—' : fmt(i)) + ' cfs' +
+      (ie ? ' (24-h mean of USACE computed inflow' + (ie.latest < 0 ? '; the latest value, ' + fmt(ie.latest) + ' cfs, is storage-change noise' : '') + (ie.v === 0 && ie.latest !== 0 ? '; mean below 0, so 0 used' : '') + ')' : '') + '.';
   }
 
   // ---- Calculator 1 --------------------------------------------------------------
@@ -524,7 +536,7 @@
       if (!st.el) return;
       var lv = live(st.code);
       [['c1-e0', lv.elev && lv.elev.v.toFixed(2)], ['c2-e0', lv.elev && lv.elev.v.toFixed(2)], ['c2-q0', lv.out && Math.round(lv.out.v)],
-        ['c2-ic', lv.inflow && Math.max(0, Math.round(lv.inflow.v))]].forEach(function (f) {
+        ['c2-ic', lv.inflowEst && lv.inflowEst.v]].forEach(function (f) {
         var el = st.el.querySelector('#' + f[0]);
         if (el && el.value === '' && f[1] != null) el.value = f[1];
       });
