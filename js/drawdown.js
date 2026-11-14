@@ -237,9 +237,12 @@
     var QendDefault = Qend == null;
     if (Qend == null) Qend = inflowAt(Hh);
     // The ending outflow never goes below the minimum outflow (default or typed in).
-    var QendRaised = null;
+    var QendRaised = null, QendCapped = null;
     if (num(opts.Qmin) != null && Qend < num(opts.Qmin)) { QendRaised = Qend; Qend = num(opts.Qmin); }
+    // ...and never above the maximum outflow.
+    if (num(opts.Qmax) != null && Qend > num(opts.Qmax)) { QendCapped = Qend; Qend = num(opts.Qmax); }
     var rating = opts.rating, messages = [], sg = opts.stage || null;
+    if (QendCapped != null) messages.push('Ending outflow capped at the ' + fmt(Qend) + ' cfs maximum outflow (' + (QendDefault ? 'inflow at the target time is ' : 'entered ') + fmt(QendCapped) + ' cfs), so the pool keeps rising slightly after the target time.');
     if (QendRaised != null) messages.push('Ending outflow raised to the ' + fmt(Qend) + ' cfs minimum outflow (' + (QendDefault ? 'inflow at the target time is ' : 'entered ') + fmt(QendRaised) + ' cfs), so the pool keeps falling slightly after the target time.');
     if (sg) {
       [['Current outflow', Q0], ['Ending outflow', Qend]].forEach(function (p) {
@@ -308,12 +311,20 @@
     }
     if (belowMin.length) messages.push(belowMin.length + ' step' + (belowMin.length > 1 ? 's' : '') + ' below the ' + fmt(Qmin) + ' cfs minimum outflow (first at ' + fmtClock(t0 + belowMin[0] * dt * HOUR, t0) + ').');
     if (aboveMax.length) messages.push(aboveMax.length + ' step' + (aboveMax.length > 1 ? 's' : '') + ' above the ' + fmt(Qmax) + ' cfs maximum outflow.');
+    // Overshoot: say when the pool passes the target and how far it goes by the deadline.
+    var tPass = null;
+    if (sim.S[n] < St - tol) {
+      for (var k2 = 1; k2 <= n; k2++) if (sim.S[k2] <= St) { tPass = t0 + k2 * dt * HOUR; break; }
+      if (tPass != null) messages.push('The pool passes the target at ' + fmtClock(tPass, t0) + ' and is ' + fmt(St - sim.S[n]) + ' ac-ft' +
+        (rating && schedule[n].E != null ? ' (' + fmt(rating.elev(St) - schedule[n].E, 2) + ' ft)' : '') + ' below it by the deadline' +
+        (QendRaised != null || Qmin > 0 ? ': the minimum outflow (' + fmt(Qmin) + ' cfs) is above inflow, so the pool cannot be held at the target.' : '.'));
+    }
     if (outOfTable) messages.push('Some storages fall outside the elevation–storage table; their elevations are not shown.');
 
     var Sfinal = sim.S[n];
     var res = {
       status: status, ok: status === 'ok', messages: messages, label: LABEL,
-      Qp: Qp, Q0: Q0, Qend: Qend, QendDefault: QendDefault, QendRaised: QendRaised, ru: ru, rd: rd, dtHr: dt, steps: n, hours: Hh,
+      Qp: Qp, Q0: Q0, Qend: Qend, QendDefault: QendDefault, QendRaised: QendRaised, QendCapped: QendCapped, tPass: tPass, ru: ru, rd: rd, dtHr: dt, steps: n, hours: Hh,
       rampUnit: sg ? 'ft/hr at ' + sg.label : 'cfs/hr', stage: sg ? { label: sg.label, src: sg.src } : null,
       tStart: t0, tEnd: t0 + Hh * HOUR,
       tPlateau: prof.a != null ? t0 + prof.a * HOUR : null,
@@ -331,7 +342,7 @@
   function earliestTime(opts, St, tol, dt, n0, QendUser, QendDefault, inflowAt, rm, Qmax) {
     var Q0 = +opts.Q0, Qmin = num(opts.Qmin) || 0, S0 = +opts.S0, sg = rm.stage;
     var reaches = function (n) {
-      var Hh = n * dt, Qend = Math.max(QendDefault ? inflowAt(Hh) : QendUser, num(opts.Qmin) || 0);
+      var Hh = n * dt, Qend = Math.min(Math.max(QendDefault ? inflowAt(Hh) : QendUser, num(opts.Qmin) || 0), Qmax);
       if (sg && (Qend < sg.qMin || Qend > sg.qMax)) return false;
       var r = plateauRange(Q0, Qend, rm, Hh);
       if (!r) return false;

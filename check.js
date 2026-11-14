@@ -478,6 +478,12 @@ console.log('drawdown calculator');
   check(pMinEnd.Qend === 600 && pMinEnd.belowMin.length === 0 && Math.round(pMinEnd.schedule[pMinEnd.steps].O) === 600 && pMinEnd.messages.some((m) => /raised to the 600 cfs minimum/.test(m)), 'calc2: ending outflow raised to the minimum outflow (no steps below min) — ' + pMinEnd.plain);
   const pMinEnd2 = D.plan(Object.assign({}, base, { inflow: 259, Q0: 900, Qmin: 600, Qmax: 3000, St: 49500, Qend: 400 }));
   check(pMinEnd2.Qend === 600 && pMinEnd2.messages.some((m) => /entered 400 cfs/.test(m)), 'calc2: a typed ending outflow below the minimum is raised too');
+  // Ending outflow never above the maximum (inflow at target 1,500 > max 1,200).
+  const pCap = D.plan(Object.assign({}, base, { inflow: [500].concat(Array(30).fill(1500)), Qmax: 1200, Qmin: 300 }));
+  check(pCap.Qend === 1200 && pCap.aboveMax.length === 0 && Math.max(...pCap.schedule.map((x) => x.O)) <= 1200 + 1e-6 && pCap.messages.some((m) => /capped at the 1,200 cfs maximum/.test(m)), 'calc2: ending outflow capped at the max outflow (never above max)');
+  // Min outflow above inflow forces the pool past the target: say when.
+  const pOver = D.plan(Object.assign({}, base, { Q0: 700, inflow: 300, Qmin: 600, Qmax: 3000, St: 49900 }));
+  check(pOver.status === 'infeasible-min' && pOver.tPass > t0 && pOver.tPass < t0 + 24 * HR && pOver.messages.some((m) => /passes the target at/.test(m)), 'calc2: overshoot reports when the target is passed');
   // Min / max outflow optional: drawdown and fill both plan without them.
   const pNo = D.plan(Object.assign({}, base, { Qmin: undefined, Qmax: undefined }));
   const pFill = D.plan(Object.assign({}, base, { Qmin: undefined, Qmax: undefined, Q0: 1500, inflow: 900, St: 50300 }));
@@ -499,6 +505,7 @@ console.log('drawdown calculator');
   check(/outside the stage–discharge rating/.test(outErr), 'stage ramp: flows outside the rating are reported');
   const calcSrc = fs.readFileSync(path.join(__dirname, 'js', 'views', 'calc.js'), 'utf8');
   const RTs = require('./js/ratings.js'), belowSites = RTs.SITES.filter((x) => x.below);
+  check(/d\.o && \/Opening\/\.test\(d\.id\)/.test(calcSrc), 'gates: only gated structures (2-D opening ratings) offered; free-flow spillway excluded');
   check(/id="c2-tsrc"/.test(calcSrc) && /value="limit"/.test(calcSrc) && /Math\.min\(rv, tv\)/.test(calcSrc) && /dd-l-pubtgt/.test(calcSrc), 'calc2: target from rule curve, published interim/injunction target, or the lower (more limiting) of the two; target curve on the chart');
   const rg = {}; (calcSrc.match(/^\s{4}([A-Z]{3}): \{ site: '(\d{8})'/gm) || []).forEach((l) => { const m = /([A-Z]{3}): \{ site: '(\d{8})'/.exec(l); rg[m[1]] = m[2]; });
   check(['HCR', 'LOP', 'DEX', 'FAL', 'CGR', 'BLU', 'GPR', 'COT', 'DOR'].every((c) => rg[c]) && !rg.FRN && rg.HCR === '14145500' && rg.DEX === '14150000' && rg.CGR === '14159500' && !/c2-rg|gageList/.test(calcSrc),

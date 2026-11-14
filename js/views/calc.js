@@ -178,7 +178,8 @@
 
   // ---- Gate settings (2-D outlet ratings, js/ratings.js) -----------------------------
 
-  function gateDefs() { return R.cwmsDefs('outlet', st.code).filter(function (d) { return d.o; }); }
+  // Gated structures only: 2-D ratings with an opening (the free-flow spillway has no gate to set).
+  function gateDefs() { return R.cwmsDefs('outlet', st.code).filter(function (d) { return d.o && /Opening/.test(d.id); }); }
   function gateDef() { var k = val('c2-gk'); return gateDefs().filter(function (d) { return d.key === k; })[0] || null; }
 
   function gateFields() {
@@ -402,7 +403,8 @@
       kv('Plateau flow', r.Qp == null ? '—' : fmt(r.Qp, r.Qp % 1 ? 1 : 0) + ' cfs') +
       kv('Plateau reached', stamp(r.tPlateau)) +
       kv('Begin ramp-down', stamp(r.tRampDown)) +
-      kv('Ending outflow', fmt(r.Qend) + ' cfs' + (r.QendRaised != null ? ' (min outflow)' : r.QendDefault ? ' (inflow at target)' : '')) +
+      kv('Ending outflow', fmt(r.Qend) + ' cfs' + (r.QendRaised != null ? ' (min outflow)' : r.QendCapped != null ? ' (max outflow)' : r.QendDefault ? ' (inflow at target)' : '')) +
+      (r.tPass != null ? kv('Target passed', stamp(r.tPass)) : '') +
       kv('Ramp limits', r.stage ? fmt(r.ru, 2) + ' ft/hr up · ' + fmt(r.rd, 2) + ' ft/hr down at ' + esc(r.stage.label) : fmt(r.ru) + ' cfs/hr up · ' + fmt(r.rd) + ' cfs/hr down') +
       kv('Final elevation', fmt(r.Efinal, 2) + ' ft') +
       kv('Final storage', fmt(r.Sfinal) + ' ac-ft (target ' + fmt(r.St) + ')') +
