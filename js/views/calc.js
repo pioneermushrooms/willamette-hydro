@@ -114,7 +114,9 @@
       field('c1-net', 'Net flow (cfs)', 'inputmode="decimal" placeholder="outflow − inflow"', 'or enter outflow and inflow') +
       field('c1-out', 'Outflow (cfs)', 'inputmode="decimal"') +
       field('c1-in', 'Inflow (cfs)', 'inputmode="decimal"') +
-      field('c1-hr', 'Duration (hr)', 'inputmode="decimal"') +
+      field('c1-hr', 'Duration (hr)', 'inputmode="decimal"', 'or set a target date') +
+      field('c1-t0', 'Start (Pacific)', 'type="datetime-local" step="900" value="' + wall(Math.floor(Date.now() / (15 * 60000)) * 15 * 60000) + '"', 'default: now') +
+      field('c1-t1', 'Target date (Pacific, optional)', 'type="datetime-local" step="900"', 'instead of a duration: hours from start to target') +
       field('c1-e0', 'Starting elevation (ft, optional)', 'inputmode="decimal" value="' + (lv.elev ? lv.elev.v.toFixed(2) : '') + '"', 'gives the elevation change') +
       '</div><div class="dd-actions"><button type="button" class="btn" id="c1-go">Calculate</button> <button type="button" class="btn dd-cur" id="c1-cur">Use current conditions</button> <span class="dd-hint" id="c1-cur-msg"></span></div>' +
       '<div class="dd-out" id="c1-out-box" aria-live="polite"></div></section>' +
@@ -251,6 +253,7 @@
     var e = lv.elev && lv.elev.v.toFixed(2), o = lv.out && Math.round(lv.out.v), ie = lv.inflowEst, i = ie ? ie.v : null;
     if (which === 'c1') {
       set('c1-e0', e); set('c1-out', o); set('c1-in', i);
+      set('c1-t0', wall(Math.floor(Date.now() / (15 * 60000)) * 15 * 60000));
       set('c1-net', '');   // net flow now comes from outflow − inflow
     } else {
       set('c2-e0', e); set('c2-q0', o);
@@ -274,11 +277,22 @@
     try {
       var e0 = numv('c1-e0');
       if (e0 != null && !st.rating) throw new Error(st.ratingErr ? 'Elevation–storage table unavailable: ' + st.ratingErr : 'Elevation–storage table still loading.');
-      var r = D.convert({ volume: numv('c1-vol'), netFlow: numv('c1-net'), outflow: numv('c1-out'), inflow: numv('c1-in'), hours: numv('c1-hr'), startElev: e0, rating: st.rating });
+      // Duration from a target date: hours from the start to the target.
+      var hrs = numv('c1-hr'), t0 = pacific(val('c1-t0')), t1 = pacific(val('c1-t1')), fromDate = false;
+      if (t1 != null) {
+        if (hrs != null) throw new Error('Enter a duration or a target date, not both.');
+        if (t0 == null) throw new Error('Enter the start time.');
+        if (t1 <= t0) throw new Error('The target date must be after the start.');
+        hrs = (t1 - t0) / HOUR; fromDate = true;
+      }
+      var r = D.convert({ volume: numv('c1-vol'), netFlow: numv('c1-net'), outflow: numv('c1-out'), inflow: numv('c1-in'), hours: hrs, startElev: e0, rating: st.rating });
+      if (fromDate) r.steps.unshift('Duration = ' + stamp(t0) + ' → ' + stamp(t1) + ' = ' + fmt(hrs, 2) + ' hr');
+      var tEnd = t0 != null ? t0 + r.hours * HOUR : null;
       box.innerHTML = '<dl class="dd-sum mono">' +
         '<div><dt>Volume</dt><dd>' + fmt(r.volume, 1) + ' ac-ft</dd></div>' +
         '<div><dt>Net flow</dt><dd>' + fmt(r.netFlow, 1) + ' cfs</dd></div>' +
-        '<div><dt>Duration</dt><dd>' + fmt(r.hours, 2) + ' hr</dd></div>' +
+        '<div><dt>Duration</dt><dd>' + fmt(r.hours, 2) + ' hr' + (r.hours >= 48 ? ' (' + fmt(r.hours / 24, 2) + ' days)' : '') + '</dd></div>' +
+        (tEnd != null ? '<div><dt>' + (fromDate ? 'Target date' : 'Ends') + '</dt><dd>' + esc(stamp(tEnd)) + '</dd></div>' : '') +
         (r.elev ? '<div><dt>Elevation</dt><dd>' + fmt(r.elev.start, 2) + ' → ' + fmt(r.elev.end, 2) + ' ft (' + (r.elev.change >= 0 ? '+' : '−') + fmt(Math.abs(r.elev.change), 2) + ')</dd></div>' : '') +
         '</dl><ol class="dd-steps mono">' + r.steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' + labelLine();
     } catch (err) {
