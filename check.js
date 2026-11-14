@@ -473,6 +473,11 @@ console.log('drawdown calculator');
   check(D.parseSeries('900\n920, \n2026-11-10 03:00, 1,050\n\n') .join() === '900,920,1050', 'calc2: pasted hourly inflow series');
   const p7 = D.plan(Object.assign({}, base, { inflow: [500, 500, 600] }));
   check(p7.schedule[2].I === 600 && p7.schedule[10].I === 600 && p7.Qend === 600, 'calc2: hourly inflow series, last value held; Q_end defaults to inflow at target');
+  // Ending outflow never below the minimum: inflow 259 at the target, min 600 -> ramp down to 600, not 259.
+  const pMinEnd = D.plan(Object.assign({}, base, { inflow: 259, Q0: 900, Qmin: 600, Qmax: 3000, St: 49500 }));
+  check(pMinEnd.Qend === 600 && pMinEnd.belowMin.length === 0 && Math.round(pMinEnd.schedule[pMinEnd.steps].O) === 600 && pMinEnd.messages.some((m) => /raised to the 600 cfs minimum/.test(m)), 'calc2: ending outflow raised to the minimum outflow (no steps below min) — ' + pMinEnd.plain);
+  const pMinEnd2 = D.plan(Object.assign({}, base, { inflow: 259, Q0: 900, Qmin: 600, Qmax: 3000, St: 49500, Qend: 400 }));
+  check(pMinEnd2.Qend === 600 && pMinEnd2.messages.some((m) => /entered 400 cfs/.test(m)), 'calc2: a typed ending outflow below the minimum is raised too');
   // Min / max outflow optional: drawdown and fill both plan without them.
   const pNo = D.plan(Object.assign({}, base, { Qmin: undefined, Qmax: undefined }));
   const pFill = D.plan(Object.assign({}, base, { Qmin: undefined, Qmax: undefined, Q0: 1500, inflow: 900, St: 50300 }));

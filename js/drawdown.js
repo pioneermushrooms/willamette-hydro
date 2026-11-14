@@ -236,7 +236,11 @@
     var Qend = num(opts.Qend);
     var QendDefault = Qend == null;
     if (Qend == null) Qend = inflowAt(Hh);
+    // The ending outflow never goes below the minimum outflow (default or typed in).
+    var QendRaised = null;
+    if (num(opts.Qmin) != null && Qend < num(opts.Qmin)) { QendRaised = Qend; Qend = num(opts.Qmin); }
     var rating = opts.rating, messages = [], sg = opts.stage || null;
+    if (QendRaised != null) messages.push('Ending outflow raised to the ' + fmt(Qend) + ' cfs minimum outflow (' + (QendDefault ? 'inflow at the target time is ' : 'entered ') + fmt(QendRaised) + ' cfs), so the pool keeps falling slightly after the target time.');
     if (sg) {
       [['Current outflow', Q0], ['Ending outflow', Qend]].forEach(function (p) {
         if (p[1] < sg.qMin || p[1] > sg.qMax) throw new RangeError(p[0] + ' ' + fmt(p[1]) + ' cfs is outside the stage–discharge rating at ' + sg.label + ' (' + fmt(sg.qMin) + '–' + fmt(sg.qMax) + ' cfs at the gage).');
@@ -309,7 +313,7 @@
     var Sfinal = sim.S[n];
     var res = {
       status: status, ok: status === 'ok', messages: messages, label: LABEL,
-      Qp: Qp, Q0: Q0, Qend: Qend, QendDefault: QendDefault, ru: ru, rd: rd, dtHr: dt, steps: n, hours: Hh,
+      Qp: Qp, Q0: Q0, Qend: Qend, QendDefault: QendDefault, QendRaised: QendRaised, ru: ru, rd: rd, dtHr: dt, steps: n, hours: Hh,
       rampUnit: sg ? 'ft/hr at ' + sg.label : 'cfs/hr', stage: sg ? { label: sg.label, src: sg.src } : null,
       tStart: t0, tEnd: t0 + Hh * HOUR,
       tPlateau: prof.a != null ? t0 + prof.a * HOUR : null,
@@ -327,7 +331,7 @@
   function earliestTime(opts, St, tol, dt, n0, QendUser, QendDefault, inflowAt, rm, Qmax) {
     var Q0 = +opts.Q0, Qmin = num(opts.Qmin) || 0, S0 = +opts.S0, sg = rm.stage;
     var reaches = function (n) {
-      var Hh = n * dt, Qend = QendDefault ? inflowAt(Hh) : QendUser;
+      var Hh = n * dt, Qend = Math.max(QendDefault ? inflowAt(Hh) : QendUser, num(opts.Qmin) || 0);
       if (sg && (Qend < sg.qMin || Qend > sg.qMax)) return false;
       var r = plateauRange(Q0, Qend, rm, Hh);
       if (!r) return false;

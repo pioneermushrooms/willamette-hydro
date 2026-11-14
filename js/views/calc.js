@@ -128,7 +128,7 @@
       stageFields() +
       field('c2-qmin', 'Min outflow (cfs)', 'inputmode="decimal" placeholder="optional"', 'minimum flow requirement; blank = none') +
       field('c2-qmax', 'Max outflow (cfs)', 'inputmode="decimal" placeholder="optional"', 'powerhouse + allowed spill; blank = no limit') +
-      field('c2-qe', 'Ending outflow Q_end (cfs)', 'inputmode="decimal" placeholder="= inflow at target time"', 'blank: inflow at the target time, so the pool holds') +
+      field('c2-qe', 'Ending outflow Q_end (cfs)', 'inputmode="decimal" placeholder="= inflow at target time"', 'blank: inflow at the target time, so the pool holds (never below the min outflow)') +
       '<label class="field dd-f"><span class="field-label">Time step</span><select id="c2-dt"><option value="1">1 hr</option><option value="0.5">30 min</option><option value="0.25">15 min</option></select></label>' +
       '<label class="field dd-f"><span class="field-label">Round plateau to</span><select id="c2-rt"><option value="">No rounding</option><option value="25">25 cfs</option><option value="50">50 cfs</option><option value="100">100 cfs</option></select></label>' +
       '</div>' + gateFields() +
@@ -402,7 +402,7 @@
       kv('Plateau flow', r.Qp == null ? '—' : fmt(r.Qp, r.Qp % 1 ? 1 : 0) + ' cfs') +
       kv('Plateau reached', stamp(r.tPlateau)) +
       kv('Begin ramp-down', stamp(r.tRampDown)) +
-      kv('Ending outflow', fmt(r.Qend) + ' cfs' + (r.QendDefault ? ' (inflow at target)' : '')) +
+      kv('Ending outflow', fmt(r.Qend) + ' cfs' + (r.QendRaised != null ? ' (min outflow)' : r.QendDefault ? ' (inflow at target)' : '')) +
       kv('Ramp limits', r.stage ? fmt(r.ru, 2) + ' ft/hr up · ' + fmt(r.rd, 2) + ' ft/hr down at ' + esc(r.stage.label) : fmt(r.ru) + ' cfs/hr up · ' + fmt(r.rd) + ' cfs/hr down') +
       kv('Final elevation', fmt(r.Efinal, 2) + ' ft') +
       kv('Final storage', fmt(r.Sfinal) + ' ac-ft (target ' + fmt(r.St) + ')') +
