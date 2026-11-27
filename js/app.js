@@ -24,7 +24,8 @@
   var state = {
     snap: null,
     wx: null,             // { fetchedAt, basins, error } from js/weather.js (model rain, past + forecast)
-    wxSno: null,          // { fetchedAt, stations, error } SNOTEL hourly accumulated precipitation
+    wxSno: null,
+    hz: null,             // { fetchedAt, fires, alerts, … } from js/hazards.js          // { fetchedAt, stations, error } SNOTEL hourly accumulated precipitation
     fetching: false,
     nextPollAt: null,
     pollTimer: 0,
@@ -248,6 +249,12 @@
       H.weather.load().then(function (r) { if (r && (!r.error || !state.wx || state.wx.error)) state.wx = r; renderWx(); });
       H.weather.loadSnotel().then(function (r) { if (r && (!r.error || !state.wxSno || state.wxSno.error)) state.wxSno = r; renderWx(); });
     }
+    if (H.hazards) H.hazards.load().then(function (r) {
+      // Keep the last good half when one source fails on a later poll.
+      if (state.hz && r.firesError && !state.hz.firesError) { r.fires = state.hz.fires; r.firesError = null; r.firesStale = true; }
+      if (state.hz && r.alertsError && !state.hz.alertsError) { r.alerts = state.hz.alerts; r.alertsError = null; }
+      state.hz = r; renderHazards();
+    });
     // Full 7-day load at start and hourly (picks up agency revisions); otherwise only the last
     // 3 hours, spliced onto what is already loaded, so frequent polls stay light.
     var full = !state.snap || !state.fullAt || Date.now() - state.fullAt > FULL_MS;
@@ -1100,6 +1107,97 @@
     if (state.selectedId && byId[state.selectedId] && byId[state.selectedId].kind === 'reservoir') renderDetails();
   }
 
+  // ---- Area status cards: wildfire, NWS alerts, power (js/hazards.js) ---------------
+
+  var HZ_ICON = {
+    fire: '<path d="M12 22c4 0 7-2.7 7-6.6 0-3.2-2-5.4-3.5-7-.3 1.8-1.2 3-2.4 3.6.4-3.4-1.2-6.6-4.1-9 .2 3.4-1.5 5.4-3 7.2C4.6 11.9 5 13.6 5 15.4 5 19.3 8 22 12 22z"/>',
+    bell: '<path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4l2-2zM10 20a2 2 0 0 0 4 0"/>',
+    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>'
+  };
+  function hzIcon(k) { return '<svg class="sc-ic" viewBox="0 0 24 24" aria-hidden="true">' + HZ_ICON[k] + '</svg>'; }
+  var fHz = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  function hzT(t) { return t == null ? '—' : fHz.format(new Date(t)); }
+
+  function card(key, level, icon, title, status, body) {
+    return '<details class="sc sc-' + level + '" data-card="' + key + '"><summary>' + hzIcon(icon) +
+      '<span class="sc-t">' + title + '</span><span class="sc-s">' + status + '</span><span class="sc-chev" aria-hidden="true"></span></summary>' +
+      '<div class="sc-body">' + body + '</div></details>';
+  }
+
+  // Geographic mini map: projects (squares) and fires (dots sized by acres) in the query box.
+  function fireMap(fires) {
+    var Z = H.hazards, B = Z.BOX, k = Math.cos(44 * Math.PI / 180), sc = 160, pad = 6;
+    var w = Math.round((B.xmax - B.xmin) * k * sc), h = Math.round((B.ymax - B.ymin) * sc);
+    var x = function (lon) { return +((lon - B.xmin) * k * sc).toFixed(1); }, y = function (lat) { return +((B.ymax - lat) * sc).toFixed(1); };
+    // Labels to the right, or to the left near the right edge, so nothing is clipped.
+    var lab = function (cls, px, py, dx, txt) { var left = px > w * 0.72; return '<text class="' + cls + '" x="' + (left ? px - dx : px + dx) + '" y="' + (py + 3.5) + '" text-anchor="' + (left ? 'end' : 'start') + '">' + esc(txt) + '</text>'; };
+    var s = '<svg class="fire-map" viewBox="' + (-pad) + ' ' + (-pad) + ' ' + (w + 2 * pad) + ' ' + (h + 2 * pad) + '" role="img" aria-label="Map of active fires near the projects">';
+    // Projects sharing a point (Lookout Point / Dexter) get one marker and a joint label.
+    var pts = [], seen = {};
+    Z.projectPoints().forEach(function (p) { var key = p.lat + ',' + p.lon; if (seen[key]) seen[key].code += '/' + p.code; else { seen[key] = { code: p.code, lat: p.lat, lon: p.lon }; pts.push(seen[key]); } });
+    pts.forEach(function (p) { s += '<circle class="fm-ring" cx="' + x(p.lon) + '" cy="' + y(p.lat) + '" r="' + (25 / 69 * sc).toFixed(1) + '"/>'; });
+    s += '<circle class="fm-city" cx="' + x(-123.09) + '" cy="' + y(44.05) + '" r="2.5"/><text class="fm-city-lab" x="' + x(-123.09) + '" y="' + (y(44.05) + 13) + '" text-anchor="middle">Eugene</text>';
+    pts.forEach(function (p) { s += '<rect class="fm-dam" x="' + (x(p.lon) - 3) + '" y="' + (y(p.lat) - 3) + '" width="6" height="6"/>' + lab('fm-lab', x(p.lon), y(p.lat), 6, p.code); });
+    fires.forEach(function (f) {
+      var r = Math.max(4, Math.min(14, 3 + Math.sqrt(+f.acres || 1) / 6)), fx = x(f.lon), fy = y(f.lat);
+      s += '<circle class="fm-fire ' + f.type + '" cx="' + fx + '" cy="' + fy + '" r="' + r.toFixed(1) + '"><title>' + esc(f.name + (f.acres != null ? ' · ' + fmt(f.acres, 0) + ' ac' : '')) + '</title></circle>' + lab('fm-fire-lab', fx, fy, r + 3, f.name);
+    });
+    return s + '</svg><p class="hint fm-key"><span class="fm-k dam"></span>USACE project (ring = 25 mi) <span class="fm-k fire"></span>wildfire <span class="fm-k rx"></span>prescribed burn · geographic, north up</p>';
+  }
+
+  function fireRow(f) {
+    return '<tr><th>' + esc(f.name) + (f.type === 'prescribed' ? ' <span class="sc-tag">prescribed</span>' : '') + '</th>' +
+      '<td class="mono">' + (f.acres != null ? fmt(f.acres, 0) + ' ac' : '—') + '</td>' +
+      '<td class="mono">' + (f.contained != null ? fmt(f.contained, 0) + '%' : '—') + '</td>' +
+      '<td>' + fmt(f.near.mi, 0) + ' mi ' + esc(f.near.dir) + ' of ' + esc(f.near.name) + '</td>' +
+      '<td>' + esc(f.cause || '—') + '</td><td class="mono">' + hzT(f.discovered) + '</td></tr>';
+  }
+
+  function renderHazards() {
+    var box = $('#status-cards');
+    if (!box || !H.hazards) return;
+    var hz = state.hz, h = '';
+    // Wildfire
+    if (!hz) h += card('fire', 'pending', 'fire', 'Wildfire', '<span class="na loading">checking…</span>', '');
+    else {
+      var fs = H.hazards.fireStatus(hz.fires, hz.alerts), wf = fs.fires;
+      var status = hz.firesError ? '<span class="na">fire data unavailable</span>'
+        : !wf.length ? 'No active wildfires within ' + H.hazards.NEAR_MI + ' mi' + (fs.rx.length ? ' · ' + fs.rx.length + ' prescribed burn' + (fs.rx.length > 1 ? 's' : '') : '')
+          : '<b>' + wf.length + ' active wildfire' + (wf.length > 1 ? 's' : '') + '</b> · nearest ' + esc(wf[0].name) + ', ' + fmt(wf[0].near.mi, 0) + ' mi ' + esc(wf[0].near.dir) + ' of ' + esc(wf[0].near.name);
+      if (fs.fireAlerts.length) status += ' · <b class="sc-alert-txt">' + esc(fs.fireAlerts.map(function (a) { return a.event; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', ')) + '</b>';
+      var level = hz.firesError ? 'unknown' : fs.level, body = '';
+      if (fs.fireAlerts.length) body += '<ul class="sc-alerts">' + fs.fireAlerts.map(function (a) { return '<li><b>' + esc(a.event) + '</b> until ' + hzT(a.ends) + '<br><span class="hint">' + esc(a.area) + '</span></li>'; }).join('') + '</ul>';
+      var all = wf.concat(fs.rx);
+      body += all.length ? '<div class="table-scroll"><table class="ws-table sc-table"><thead><tr><th>Fire</th><th>Size</th><th>Contained</th><th>Where</th><th>Cause</th><th>Discovered</th></tr></thead><tbody>' + all.map(fireRow).join('') + '</tbody></table></div>'
+        : '<p class="sc-none">No active fire incidents reported within ' + H.hazards.NEAR_MI + ' miles of any project.</p>';
+      body += fireMap(all);
+      body += '<p class="hint">NIFC WFIGS current incidents' + (hz.firesStale ? ' (last good update; latest request failed)' : '') + ' and NWS alerts, checked ' + hzT(hz.fetchedAt) + '. Incidents can lag the first reports by hours. ' +
+        '<a href="https://app.watchduty.org/" target="_blank" rel="noopener">Watch Duty map ↗</a> · <a href="https://inciweb.wildfire.gov/state/oregon" target="_blank" rel="noopener">InciWeb Oregon ↗</a> · ' +
+        '<a href="' + esc(H.hazards.fireUrl()) + '" target="_blank" rel="noopener">raw WFIGS data ↗</a></p>';
+      h += card('fire', level, 'fire', 'Wildfire', status, body);
+    }
+    // NWS alerts (non-fire; fire alerts are on the wildfire card)
+    if (!hz) h += card('alerts', 'pending', 'bell', 'NWS alerts', '<span class="na loading">checking…</span>', '');
+    else {
+      var al = (hz.alerts || []).filter(function (a) { return !a.fire; });
+      var ev = al.map(function (a) { return a.event; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+      var lvl = hz.alertsError ? 'unknown' : !al.length ? 'ok' : al.some(function (a) { return /warning/i.test(a.event); }) ? 'alert' : 'watch';
+      h += card('alerts', lvl, 'bell', 'NWS alerts', hz.alertsError ? '<span class="na">alerts unavailable</span>' : al.length ? '<b>' + esc(ev.join(', ')) + '</b>' : 'No active warnings or advisories for the basin',
+        (al.length ? '<ul class="sc-alerts">' + al.map(function (a) {
+          return '<li><b>' + esc(a.event) + '</b> · ' + esc(a.severity || '') + ' · until ' + hzT(a.ends) + '<br>' + esc(a.headline) + '<br><span class="hint">' + esc(a.area) + '</span></li>';
+        }).join('') + '</ul>' : '<p class="sc-none">No active NWS alerts name Lane, Linn or the Willamette/Cascade zones.</p>') +
+        '<p class="hint">National Weather Service active alerts for Oregon, filtered to the basin’s counties and zones, checked ' + hzT(hz.fetchedAt) + '. <a href="https://www.weather.gov/pqr/" target="_blank" rel="noopener">NWS Portland ↗</a></p>');
+    }
+    // Power: not monitored yet (no verified live feed); links to the utilities' own maps.
+    h += card('power', 'unknown', 'bolt', 'Power outages', '<span class="na">not monitored yet · utility maps</span>',
+      '<p class="sc-none">Live outage data is not connected yet: the utilities’ outage feeds still have to be verified. Their own live maps:</p><ul class="sc-links">' +
+      [['EWEB (Eugene)', 'https://www.eweb.org/outage'], ['Pacific Power', 'https://www.pacificpower.net/outages-safety.html'], ['Lane Electric Cooperative', 'https://www.laneelectric.com/outages/outage-map/'],
+        ['Emerald PUD', 'https://www.epud.org/'], ['Springfield Utility Board', 'https://www.subutil.com/'], ['Consumers Power Inc.', 'https://outage.cpi.coop/'],
+        ['Blachly-Lane Electric', 'https://www.blachlylane.coop/outages-safety/outage-center/outage-map/'], ['BPA transmission interruptions (7 days)', 'https://transmission.bpa.gov/Business/Operations/Outages/default.aspx']]
+        .map(function (u) { return '<li><a href="' + u[1] + '" target="_blank" rel="noopener">' + esc(u[0]) + ' ↗</a></li>'; }).join('') + '</ul>');
+    setHTML(box, h);
+  }
+
   // ---- Snowpack (NRCS SNOTEL) --------------------------------------------------
 
   var fSnowDay = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
@@ -1898,6 +1996,7 @@
   function renderAll(dataChanged) {
     renderFeed();
     renderTotals();
+    renderHazards();
     renderMapNodes();
     renderList();
     renderDetails();

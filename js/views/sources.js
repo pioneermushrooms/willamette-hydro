@@ -87,6 +87,17 @@
         a: '<p>NRCS SNOTEL stations in the same basin: hourly accumulated precipitation (6 h and 24 h differences shown) and daily snow water equivalent and depth. They are high-elevation gauges, so they usually read wetter than the reservoir, and they catch snow as well as rain.</p>',
         src: [['NRCS AWDB REST API', 'https://wcc.sc.egov.usda.gov/awdbRestApi/swagger-ui/index.html']] }
     ] },
+    { title: 'Area status cards', items: [
+      { q: 'Wildfire card', kind: 'reported',
+        a: '<p>Current fire incidents from the National Interagency Fire Center’s WFIGS “Incident Locations – Current” service, for a box around the southern Willamette basin, kept when within 60 miles of a project. Shown: name, wildfire or prescribed burn, acres, % contained, cause, discovery time, and distance and direction from the nearest project. Red Flag Warnings and Fire Weather Watches come from NWS alerts. The card is red when a wildfire is within 25 miles or a Red Flag Warning is in effect, amber for other active wildfires or fire-weather alerts.</p>' +
+          '<p>Incidents appear once an agency enters them, which can lag first reports by hours; Watch Duty often has earlier reports. The map is geographic (north up) with 25-mile rings around each project.</p>',
+        src: [['WFIGS current incidents (query)', 'https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Incident_Locations_Current/FeatureServer/0'], ['Watch Duty', 'https://app.watchduty.org/']] },
+      { q: 'NWS alerts card', kind: 'reported',
+        a: '<p>Active National Weather Service alerts for Oregon from api.weather.gov, kept when the alert area names Lane, Linn or Douglas County or a Willamette / Cascade zone (wind, winter storm, flood, heat, etc.). Fire-weather alerts are shown on the wildfire card.</p>',
+        src: [['NWS active alerts, Oregon', 'https://api.weather.gov/alerts/active?area=OR']] },
+      { q: 'Power outages card', kind: null,
+        a: '<p>Not monitored yet. The local utilities’ live outage feeds have not been verified, so the card shows no status rather than a possibly wrong one, and links to each utility’s own outage map and BPA’s transmission interruptions report.</p>' }
+    ] },
     { title: 'Tables, calculator and BPA', items: [
       { q: 'Rating tables', kind: 'published',
         a: '<p>Reservoir elevation–storage, elevation–area, spillway and outlet ratings from USACE CWMS; stage–discharge ratings for river gauges from USGS (exsa files). Shown as published.</p>',

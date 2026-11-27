@@ -339,6 +339,24 @@ console.log('tdg / snotel / odeq');
   check(SN.STATIONS.length === 8 && SN.STATIONS.every((s) => /^\d+:OR:SNTL$/.test(s.triplet) && s.elevFt > 0), 'snotel: 8 Oregon SNOTEL stations configured');
   check(/stationTriplets=388:OR:SNTL,/.test(SN.url(9, Date.UTC(2026, 9, 30))) && /beginDate=2026-10-21&endDate=2026-10-30/.test(SN.url(9, Date.UTC(2026, 9, 30))) && /elements=WTEQ,SNWD/.test(SN.url()), 'snotel: request URL');
 
+  // Area hazards (js/hazards.js): wildfires near the projects and NWS alerts for the basin
+  {
+    const HZ = require('./js/hazards.js');
+    check(Math.abs(HZ.miles(44.05, -123.09, 43.75, -122.46) - 37.8) < 1.5 && Math.round(HZ.bearing(44, -123, 45, -123)) === 0, 'hazards: great-circle miles and bearing');
+    const fj = { features: [
+      { attributes: { IncidentName: 'Near Fire', IncidentTypeCategory: 'WF', IncidentSize: 1200, PercentContained: 20, FireCause: 'Human', FireDiscoveryDateTime: 1764000000000 }, geometry: { x: -122.30, y: 44.20 } },
+      { attributes: { IncidentName: 'Rx Burn', IncidentTypeCategory: 'RX', IncidentSize: 50 }, geometry: { x: -122.9, y: 43.8 } },
+      { attributes: { IncidentName: 'Far Fire', IncidentTypeCategory: 'WF', IncidentSize: 5 }, geometry: { x: -119.0, y: 42.0 } },
+      { attributes: { IncidentName: 'Out Fire', IncidentTypeCategory: 'WF', FireOutDateTime: 1764000000000 }, geometry: { x: -122.3, y: 44.2 } }] };
+    const fires = HZ.parseFires(fj, Date.now());
+    check(fires.length === 2 && fires[0].name === 'Near Fire' && fires[0].near.code === 'BLU' && fires[0].near.mi < 5 && fires[0].type === 'wildfire' && fires[1].type === 'prescribed', 'hazards: fires near projects, nearest first, out/far dropped, prescribed flagged');
+    const al = HZ.parseAlerts({ features: [{ properties: { event: 'Red Flag Warning', areaDesc: 'Willamette National Forest; Lane County Cascades', status: 'Actual' } },
+      { properties: { event: 'Wind Advisory', areaDesc: 'Central Oregon Coast', status: 'Actual' } }, { properties: { event: 'High Wind Warning', areaDesc: 'Lane County Cascade Foothills', status: 'Actual' } }] });
+    check(al.length === 2 && al[0].fire && !al[1].fire, 'hazards: NWS alerts kept only for the basin; fire weather flagged');
+    check(HZ.fireStatus([], []).level === 'ok' && HZ.fireStatus(fires, []).level === 'alert' && HZ.fireStatus([], [al[0]]).level === 'alert' && HZ.fireStatus([Object.assign({}, fires[0], { near: { mi: 40 } })], []).level === 'watch', 'hazards: fire card level');
+    check(/WFIGS_Incident_Locations_Current\/FeatureServer\/0\/query\?/.test(HZ.fireUrl()) && /geometry=-124\.1%2C43%2C-121\.4%2C44\.9/.test(HZ.fireUrl()), 'hazards: WFIGS query URL with the basin box');
+  }
+
   // Incremental refresh: splice a short fresh fetch onto the stored series
   {
     const D = require('./js/data.js');

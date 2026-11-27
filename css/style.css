@@ -1315,3 +1315,46 @@ main, .site-footer { max-width: 1680px; }
 .wind-now.wind-advisory .wx-ic-wind { color: var(--warn); }
 .wind-now.wind-warning .wx-ic-wind { color: var(--crit); }
 .ws-wx + .ws-wx { margin-top: -6px; }
+
+/* ==== Area status cards (wildfire, NWS alerts, power) ====================================== */
+.status-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.sc { background: #0b0c0e; border: 1px solid var(--bezel-lo); border-left: 3px solid var(--st-none); border-radius: var(--radius); box-shadow: inset 0 2px 10px rgba(0,0,0,0.85), 0 1px 0 var(--bezel-hi); min-width: 0; }
+.sc[open] { grid-column: 1 / -1; }
+.sc summary { list-style: none; display: grid; grid-template-columns: 22px auto minmax(0, 1fr) 14px; gap: 10px; align-items: center; padding: 10px 12px; cursor: pointer; }
+.sc summary::-webkit-details-marker { display: none; }
+.sc summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.sc-ic { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+.sc-t { font: 600 10.5px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; }
+.sc-s { font-size: 12.5px; color: var(--text); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc[open] .sc-s { white-space: normal; }
+.sc-chev { width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin-top: -4px; transition: transform .15s; }
+.sc[open] .sc-chev { transform: rotate(225deg); margin-top: 4px; }
+.sc-ok { border-left-color: var(--ok); } .sc-ok .sc-ic { color: var(--ok); fill: rgba(61,220,132,0.12); }
+.sc-watch { border-left-color: var(--warn); } .sc-watch .sc-ic { color: var(--warn); fill: rgba(255,176,0,0.15); }
+.sc-alert { border-left-color: var(--crit); } .sc-alert .sc-ic { color: var(--crit); fill: rgba(255,82,82,0.18); }
+.sc-unknown .sc-ic, .sc-pending .sc-ic { color: var(--muted); }
+.sc-alert-txt { color: var(--crit); }
+.sc-body { padding: 0 14px 12px 44px; display: grid; gap: 10px; }
+.sc-none { margin: 0; color: var(--text-2); font-size: 13px; }
+.sc-alerts { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; }
+.sc-links { margin: 0; padding-left: 18px; columns: 2; font-size: 13px; }
+.sc-links a, .sc-body .hint a { color: var(--cyan); }
+.sc-tag { font: 600 9px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn); border: 1px solid currentColor; border-radius: 999px; padding: 0 5px; margin-left: 4px; }
+.sc-table td, .sc-table th { white-space: nowrap; }
+.fire-map { width: 100%; max-width: 520px; height: auto; background: #0e1215; border: 1px solid #1e2226; border-radius: 4px; }
+.fm-ring { fill: none; stroke: #23303a; stroke-dasharray: 3 3; }
+.fm-dam { fill: #8b939b; }
+.fm-lab { font: 9px var(--mono); fill: var(--text-2); }
+.fm-city { fill: #4a525a; } .fm-city-lab { font: 9px var(--sans); fill: var(--muted); }
+.fm-fire.wildfire { fill: rgba(255,82,82,0.55); stroke: #ff8a80; }
+.fm-fire.prescribed { fill: rgba(255,176,0,0.45); stroke: var(--warn); }
+.fm-fire-lab { font: 600 10px var(--sans); fill: #ffb3ad; }
+.fm-key { margin: 4px 0 0; }
+.fm-k { display: inline-block; width: 9px; height: 9px; margin: 0 4px 0 8px; vertical-align: -1px; }
+.fm-k.dam { background: #8b939b; } .fm-k.fire { background: #ff5252; border-radius: 50%; } .fm-k.rx { background: var(--warn); border-radius: 50%; }
+@media (max-width: 640px) { .sc-body { padding-left: 14px; } .sc-links { columns: 1; } }
+.fire-map { max-width: 440px; }
+.fm-lab { font: 10px var(--mono); }
+.fm-fire-lab { font-size: 11px; }
+.fm-city-lab { font-size: 10px; }
+.sc-table tbody th { background: transparent; }
