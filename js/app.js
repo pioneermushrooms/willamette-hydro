@@ -46,6 +46,9 @@
   // ---- Helpers -------------------------------------------------------------
 
   function $(sel) { return document.querySelector(sel); }
+  // Replace an element's markup only when it changed, so periodic refreshes do not rebuild
+  // identical content (which restarts animations and flashes).
+  function setHTML(el, html) { if (el && el.__html !== html) { el.innerHTML = html; el.__html = html; } }
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -228,7 +231,7 @@
       var snap = res[0];
       state.snap = merge(state.snap, snap);
       // Strips drawn from the live series (inflow/outflow) must pick up the new points.
-      Object.keys(state.strips).forEach(function (k) { if (/\|flows\|(24h|7d)$/.test(k)) delete state.strips[k]; });
+      Object.keys(state.strips).forEach(function (k) { if (/\|flows\|(24h|7d)$/.test(k) && state.strips[k] && !state.strips[k].loading) state.strips[k].at = 0; });
       state.nwps = mergeNwps(state.nwps, res[1]);
       // Share the live snapshot with other views (Teacup) — they must not refetch it.
       H.live = { snap: state.snap, nwps: state.nwps, tdg: state.tdg };
@@ -297,7 +300,7 @@
       b.push('<span class="badge ' + (sok === sn ? 'ok' : sok ? 'warn' : 'err') + '" title="NRCS SNOTEL daily snowpack">SNOTEL ' + (sok === sn ? '✓ ' : '') + sok + '/' + sn + '</span>');
     }
     b.push('<span class="badge plain">Fetched ' + stamp(s.fetchedAt) + '</span>');
-    $('#feed-badges').innerHTML = b.join('');
+    setHTML($('#feed-badges'), b.join(''));
   }
 
   // ---- Totals --------------------------------------------------------------
@@ -373,7 +376,7 @@
       sub: s ? '<span class="light watch" aria-hidden="true"></span> ' + stale + ' stale &nbsp;<span class="light low" aria-hidden="true"></span> ' + none + ' no data' : ''
     });
 
-    $('#totals').innerHTML = tiles.map(function (x) {
+    setHTML($('#totals'), tiles.map(function (x) {
       var hm = /\s*<span class="hint">([^<]*)<\/span>/.exec(x.label), label = hm ? x.label.replace(hm[0], '') : x.label;
       var note = (hm ? '<span class="sub-kind">' + hm[1] + '</span>' : '') + (x.sub || '');
       return '<div class="tile' + (x.cls ? ' ' + x.cls : '') + (note ? ' has-pop' : '') + '" tabindex="0">' +
@@ -382,7 +385,7 @@
         (note ? '<div class="tile-sub">' + note + '</div>' : '') + (x.extra || '') +
         (x.bar != null ? '<div class="tile-bar"><span style="width:' + Math.max(0, Math.min(100, x.bar)).toFixed(1) + '%"></span></div>' : '') +
         '</div>';
-    }).join('');
+    }).join(''));
   }
 
   function newestStation(st) {
@@ -547,7 +550,7 @@
       s += '<text class="node-label" x="' + e.map.lx + '" y="' + e.map.ly + '" text-anchor="' + e.map.anchor + '">' + esc(e.short || e.name.toUpperCase()) + '</text>';
       s += '</g>';
     });
-    $('#map-nodes').innerHTML = s;
+    setHTML($('#map-nodes'), s);
     if (focusId) { var n = document.querySelector('.node[data-id="' + focusId + '"]'); if (n) n.focus({ preventScroll: true }); }
   }
 
@@ -732,7 +735,7 @@
     } else {
       h += stationReadouts(e, false, floodKv(e));
     }
-    $('#ws-head').innerHTML = h;
+    setHTML($('#ws-head'), h);
     renderMore(e);
   }
 
@@ -785,7 +788,7 @@
     }
     var st = statusOf(e);
     if (st.reason) h += '<p class="detail-note ' + st.level + '">' + esc(st.reason) + ' <span class="hint">Status derived by this site.</span></p>';
-    $('#ws-more-body').innerHTML = h;
+    setHTML($('#ws-more-body'), h);
   }
 
   // "Levels and targets" (folded in from the old Teacup page): published elevation target today and its
@@ -870,7 +873,7 @@
 
   function renderList() {
     var none = '<span class="na">—</span>';
-    $('#res-list').innerHTML = H.projects.map(function (p) {
+    setHTML($('#res-list'), H.projects.map(function (p) {
       var d = projData(p), el = d && H.latest(d.elev), r = d && H.ruleToday(d.rule), out = d && H.latest(d.out), inn = d && H.latest(d.inflow);
       var dev = el && r ? el.v - r.v : null, st = d && H.latest(d.stor), pf = p.cons && st ? H.percentFull(p, st.v) : null;
       var tip = p.name + (el ? ' · pool ' + fmt(el.v, 1) + ' ft' : '') + (pf ? ' · ' + (pf.below ? 'below conservation pool' : fmt(pf.clamped, 1) + ' % full') : '') + (r ? ' · rule curve ' + fmt(r.v, 1) + ' ft' : '');
@@ -879,8 +882,8 @@
         cell(dev == null ? none : signed(dev, 1), dev == null ? '' : dev < -H.SETTINGS.ruleBelowFt || dev > H.SETTINGS.ruleAboveFt ? 'off' : '', r ? 'Rule curve ' + fmt(r.v, 1) + ' ft today' : '') +
         cell(inn ? fmt(inn.v, 0) : none, inn && inn.v < 0 ? 'neg' : '', 'Inflow (computed by USACE)') +
         cell(out ? fmt(out.v, 0) : none), miniCup(p, el, r), tip);
-    }).join('');
-    $('#riv-list').innerHTML = H.stations.map(function (s) {
+    }).join(''));
+    setHTML($('#riv-list'), H.stations.map(function (s) {
       var d = stData(s), prim = d && H.stationPrimary(s, d), l = prim && H.latest(prim), w = window24(prim);
       var flow = s.primary === 'flow', ch = w && w.v.length > 1 ? w.v[w.v.length - 1] - w.v[0] : null;
       var g = nwpsGauge(s), cat = g && (g.observed.category || (N && N.categoryFor(l && !flow ? l.v : g.observed.stage, g.thresholds)));
@@ -888,7 +891,7 @@
         '<span class="ws-v">' + miniSpark(prim) + '</span>' +
         cell(l ? fmt(l.v, flow ? 0 : 2) + '<span class="unit">' + (flow ? 'cfs' : 'ft') + '</span>' : none, 'hl') +
         cell(ch == null ? none : signed(ch, flow ? 0 : 2), '', '24 h change'), null, null, cat && cat !== 'none' ? fcatBadge(cat, '') : '');
-    }).join('');
+    }).join(''));
   }
 
   function bindCards() {
@@ -1136,18 +1139,22 @@
   function histFor(e) {
     if (!isLong(state.range) || !H.history) return null;
     var key = e.id + ':' + state.range, hv = state.hist[key];
-    if (hv && !hv.loading) return hv;
-    if (!hv) {
-      state.hist[key] = { loading: true };
+    // Fresh enough, or already refreshing in the background: draw what we have.
+    if (hv && !hv.loading && (hv.refreshing || Date.now() - hv.at < 30 * 60 * 1000)) return hv;
+    if (!hv || !hv.loading) {
+      var prevH = hv && !hv.loading ? hv : null, first = !prevH;
+      if (prevH) prevH.refreshing = true; else state.hist[key] = { loading: true };
       var d = e.kind === 'reservoir' ? projData(e) : null;
       // Calendar YEAR: reservoirs read the year's lake record (plus live readings); rivers use the 1-yr history.
       var pr = state.range !== 'year' ? H.history.load(e, state.range, d && d.elev)
         : e.kind === 'reservoir' ? H.history.loadYear(e, curYear()).then(function (r) { if (r.pool && d && d.elev) r.pool = H.history.appendLive(r.pool, d.elev); return r; })
           : H.history.load(e, '1y', null);
       pr.then(function (r) {
+        // A failed background refresh keeps the history already on screen.
+        if (prevH && (!r || r.error)) { prevH.refreshing = false; prevH.at = Date.now(); return; }
+        r.at = Date.now();
         state.hist[key] = r;
-        if (state.chartId === e.id && e.id + ':' + state.range === key) renderChart(true);
-        setTimeout(function () { if (state.hist[key] === r) delete state.hist[key]; }, 30 * 60 * 1000);
+        if (state.chartId === e.id && e.id + ':' + state.range === key) renderChart(first);
       });
     }
     return state.hist[key];
@@ -1678,8 +1685,9 @@
   function stripData(e, def, M) {
     var ck = e.id + '|' + def.key + '|' + state.range, sd = state.strips[ck];
     if (L.unavailable(e, def.key)) return { empty: true, lines: [], static: L.unavailable(e, def.key) };
-    if (!sd || (!sd.loading && Date.now() - sd.at > 10 * 60 * 1000)) {
-      state.strips[ck] = sd = { loading: true };
+    if (!sd || (!sd.loading && !sd.refreshing && Date.now() - sd.at > 10 * 60 * 1000)) {
+      // Refresh in the background: keep the current lines on screen until the new ones land.
+      state.strips[ck] = sd = sd && !sd.error ? Object.assign({}, sd, { refreshing: true }) : { loading: true };
       L.load(e, def.key, M.fullStart, Math.min(M.fullEnd, Date.now()), e.kind === 'reservoir' ? projData(e) : null).then(function (r) {
         r.at = Date.now(); state.strips[ck] = r;
         if (state.geom && state.geom.M.e === e) { renderLayerBar(state.geom.M); renderStrips(); }
@@ -1697,7 +1705,7 @@
     var M = g.M, e = M.e;
     var defs = L.stripsFor(e, M.param).filter(function (d) { return L.isOn(stripItem(e, d)) && !stripOff(stripData(e, d, M)); });
     state.stripView = [];
-    box.innerHTML = defs.map(function (def) { return stripHTML(def, stripData(e, def, M), g); }).join('');
+    setHTML(box, defs.map(function (def) { return stripHTML(def, stripData(e, def, M), g); }).join(''));
   }
 
   function stripHTML(def, sd, g) {
@@ -1844,7 +1852,7 @@
     renderList();
     renderDetails();
     renderSnow();
-    if (dataChanged) renderChart(true);
+    if (dataChanged) renderChart(false);   // background refresh: no draw-in animation
   }
 
   $('#refresh').addEventListener('click', poll);

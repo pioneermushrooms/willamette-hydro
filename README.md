@@ -176,6 +176,10 @@ Every local script and stylesheet in `index.html` is loaded as `?v=<hash of js/ 
 
 A plain-language FAQ (`js/views/sources.js`): is anything made up, how to check a number (the ↗ links), how fresh data is, and one entry per value on the site (pool, inflow, outflow, storage, rule curve, vs rule and status lights, % full, totals, levels/targets/30-yr bands, TDG, river values, NWS flood, basin rain and the weather icon, SNOTEL, ratings, calculator, BPA). Each entry is tagged Reported, Agency-computed, Derived here, Weather model, Published reference or Site rule, with source links.
 
+## No flicker on refresh
+
+Background updates (every 5 min, and the 1-minute age refresh) redraw quietly: the chart's draw-in animation plays only when you pick a point or range; long-range history refreshes in the background every 30 min and keeps the old chart on screen until the new data lands; strips keep their lines while refreshing; and the list, header, "More", totals, feed badges and map are only rebuilt when their content actually changed (so animations such as the selected map ring do not restart).
+
 ## Popovers instead of expanding cells
 
 Secondary notes (formulas, "derived"/"model", reading counts) on the totals tiles and the Overview header numbers float as a small popover on hover, keyboard focus or tap; a small dot marks cells that have one. Nothing changes size.
