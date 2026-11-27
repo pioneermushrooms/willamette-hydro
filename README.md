@@ -112,7 +112,9 @@ Each reservoir card has a **BASIN RAIN** line (past 24 h, next 24 h, raining sin
 
 The current-conditions line has an icon and label from the model's WMO weather code for the latest hour (the most significant of the project's two points): sunny / clear (moon at night), partly cloudy, cloudy, fog, drizzle, rain, freezing rain, snow, thunderstorms. While an event is on: "Raining / Snowing / Drizzle … since <time>" when it is wet now, "Rain on and off since <time>" during a break; otherwise "Dry since <time>". The forecast end or next rain follows.
 
-Each project has its own estimate (its own two points), so neighbouring basins can differ; it is not one shared gauge. Model data: Open-Meteo forecast API, hourly precipitation averaged over two hand-placed points per project (near the dam, upper basin). Past hours are the model's analysis, not rain gauges or radar. An hour counts as wet at ≥ 0.01 in; 6 dry hours in a row end an event. Drainage areas and points are approximate.
+Each project has its own estimate (its own two points), so neighbouring basins can differ; it is not one shared gauge. **Wind** (same model, 10 m, mph): a second line under the rain line — direction (arrow points where the wind blows to), mean speed of the two points, the highest gust, and the strongest gust in the next 24 h with its time; "More" adds the past-24 h and 3-day peaks. Tags use NWS Portland criteria for reference only: breezy (gusts ≥ 30), advisory-level (sustained 31–39 or gusts 46–57), warning-level (sustained ≥ 40 or gusts ≥ 58). Not an NWS alert.
+
+Model data: Open-Meteo forecast API, hourly precipitation averaged over two hand-placed points per project (near the dam, upper basin). Past hours are the model's analysis, not rain gauges or radar. An hour counts as wet at ≥ 0.01 in; 6 dry hours in a row end an event. Drainage areas and points are approximate.
 
 The Trend Recorder has a **Basin precipitation** strip for reservoirs: hourly model data up to 92 days back, Open-Meteo archive (ERA5) daily sums beyond that.
 

@@ -55,8 +55,8 @@
   }
 
   function url(codes, pastDays, fcDays) {
-    return BASE + '?' + pointList(codes) + '&hourly=precipitation,freezing_level_height,temperature_2m,weather_code,is_day,cloud_cover' +
-      '&precipitation_unit=inch&temperature_unit=fahrenheit&timeformat=unixtime&timezone=GMT' +
+    return BASE + '?' + pointList(codes) + '&hourly=precipitation,freezing_level_height,temperature_2m,weather_code,is_day,cloud_cover,wind_speed_10m,wind_gusts_10m,wind_direction_10m' +
+      '&precipitation_unit=inch&temperature_unit=fahrenheit&wind_speed_unit=mph&timeformat=unixtime&timezone=GMT' +
       '&past_days=' + (pastDays == null ? 3 : pastDays) + '&forecast_days=' + (fcDays == null ? 3 : fcDays);
   }
 
@@ -74,7 +74,7 @@
       var n = BASINS[c].pts.length, parts = arr.slice(k, k + n).filter(function (x) { return x && x[key] && x[key].time; });
       k += n;
       if (!parts.length) return;
-      var base = parts[0][key], s = { t: [], p: [], fz: [], temp: [], wc: [], day: [], cc: [] };
+      var base = parts[0][key], s = { t: [], p: [], fz: [], temp: [], wc: [], day: [], cc: [], ws: [], wg: [], wd: [] };
       var pk = key === 'daily' ? 'precipitation_sum' : 'precipitation';
       var avg = function (name, i, scale) {
         var sum = 0, m = 0;
@@ -90,6 +90,14 @@
         var wc = null;
         parts.forEach(function (x) { var c = x[key].weather_code && x[key].weather_code[i]; if (c != null && isFinite(c) && (wc == null || +c > wc)) wc = +c; });
         s.wc.push(wc); s.day.push(parts[0][key].is_day ? parts[0][key].is_day[i] : null); s.cc.push(avg('cloud_cover', i));
+        // Wind (mph, 10 m): mean speed of the points, the highest gust, and the vector-mean direction.
+        var gust = null, ux = 0, uy = 0, nd = 0;
+        parts.forEach(function (x) {
+          var g = x[key].wind_gusts_10m && x[key].wind_gusts_10m[i], d = x[key].wind_direction_10m && x[key].wind_direction_10m[i], sp = x[key].wind_speed_10m && x[key].wind_speed_10m[i];
+          if (g != null && isFinite(g) && (gust == null || +g > gust)) gust = +g;
+          if (d != null && isFinite(d)) { var wgt = sp != null && isFinite(sp) ? Math.max(+sp, 0.1) : 1; ux += wgt * Math.sin(d * Math.PI / 180); uy += wgt * Math.cos(d * Math.PI / 180); nd++; }
+        });
+        s.ws.push(avg('wind_speed_10m', i)); s.wg.push(gust); s.wd.push(nd ? (Math.atan2(ux, uy) * 180 / Math.PI + 360) % 360 : null);
       });
       out[c] = s;
     });
@@ -119,6 +127,7 @@
       next6: sumBetween(s, now, now + 6 * HOUR), next24: sumBetween(s, now, now + DAY), next72: sumBetween(s, now, now + 3 * DAY),
       rateNow: s.p[iNow], tNow: s.t[iNow], fzNow: s.fz[iNow], tempNow: s.temp[iNow],
       wcNow: s.wc ? s.wc[iNow] : null, dayNow: s.day ? s.day[iNow] : null, ccNow: s.cc ? s.cc[iNow] : null,
+      wind: windSummary(s, iNow, now),
       raining: s.p[iNow] >= WET || (iNow > 0 && s.p[iNow - 1] >= WET),
       event: null, nextStart: null, ends: null, horizon: s.t[s.t.length - 1]
     };
@@ -154,6 +163,33 @@
       r.volNext24cfs = r.volNext24 / CFS_DAY_ACFT;
     }
     return r;
+  }
+
+  // NWS Portland wind criteria (reference for the colour only): advisory = sustained 31–39 mph or
+  // gusts 46–57; high wind warning = sustained ≥ 40 or gusts ≥ 58.
+  function windLevel(speed, gust) {
+    if ((speed != null && speed >= 40) || (gust != null && gust >= 58)) return 'warning';
+    if ((speed != null && speed >= 31) || (gust != null && gust >= 46)) return 'advisory';
+    if (gust != null && gust >= 30) return 'breezy';
+    return 'calm';
+  }
+  var COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+  function compass(deg) { return deg == null ? '' : COMPASS[Math.round(deg / 22.5) % 16]; }
+
+  // Wind now (latest complete hour), the strongest gust in the past 24 h, and the strongest in the
+  // next 24 h and 72 h with their times.
+  function windSummary(s, iNow, now) {
+    if (!s.ws || iNow < 0 || s.ws[iNow] == null) return null;
+    var peak = function (a, b) {
+      var best = null;
+      for (var i = 0; i < s.t.length; i++) if (s.t[i] > a && s.t[i] <= b && s.wg[i] != null && (!best || s.wg[i] > best.gust)) best = { gust: s.wg[i], t: s.t[i], speed: s.ws[i], dir: s.wd[i] };
+      return best;
+    };
+    var w = { speed: s.ws[iNow], gust: s.wg[iNow], dir: s.wd[iNow], from: compass(s.wd[iNow]), past24: peak(now - DAY, now), next24: peak(now, now + DAY), next72: peak(now, now + 3 * DAY) };
+    w.level = windLevel(w.speed, w.gust);
+    if (w.next24) w.next24.level = windLevel(w.next24.speed, w.next24.gust);
+    if (w.next72) w.next72.level = windLevel(w.next72.speed, w.next72.gust);
+    return w;
   }
 
   /*
@@ -272,7 +308,7 @@
 
   return {
     BASE: BASE, BASINS: BASINS, CODES: CODES, WET: WET, DRY_GAP: DRY_GAP, ACFT_PER_IN_SQMI: ACFT_PER_IN_SQMI,
-    url: url, archiveUrl: archiveUrl, parse: parse, summarize: summarize, sumBetween: sumBetween, condition: condition,
+    url: url, archiveUrl: archiveUrl, parse: parse, summarize: summarize, sumBetween: sumBetween, condition: condition, windLevel: windLevel, compass: compass,
     snotelUrl: snotelUrl, parseSnotel: parseSnotel, accumDiff: accumDiff, stationsFor: stationsFor, pstMs: pstMs,
     load: load, loadSnotel: loadSnotel, loadRange: loadRange, pageUrl: pageUrl, nwsUrl: nwsUrl,
     _clear: function () { cache = null; snoCache = null; }

@@ -1303,3 +1303,15 @@ main, .site-footer { max-width: 1680px; }
 .readout-live { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .readout-live .live-dot { width: 7px; height: 7px; margin-right: 2px; }
 @media (max-width: 760px) { .clocks { grid-template-columns: 1fr; } .readout-live { white-space: normal; flex-wrap: wrap; } }
+
+/* Wind line */
+.wx-ic-wind { color: #a9d8e0; }
+.wind-arrow { width: 16px; height: 16px; fill: none; stroke: var(--text-2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.wind-v { color: var(--text); font-weight: 600; }
+.wind-tag { font: 600 9.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; border: 1px solid currentColor; }
+.wind-tag.wind-breezy { color: #a9d8e0; }
+.wind-tag.wind-advisory { color: var(--warn); }
+.wind-tag.wind-warning { color: var(--crit); }
+.wind-now.wind-advisory .wx-ic-wind { color: var(--warn); }
+.wind-now.wind-warning .wx-ic-wind { color: var(--crit); }
+.ws-wx + .ws-wx { margin-top: -6px; }

@@ -759,7 +759,7 @@
       var w = wxSummary(e), rain = !H.weather || !H.weather.BASINS[e.code] ? '' :
         kv('Rain 24 h <span class="hint">model · basin above the dam</span>', !state.wx ? LOADING : w ? inch(w.past24) : NA, w ? 'in' : '', '', w ? 'Past 24 h, mean of two model points for this basin (not a gauge). Next 24 h: ' + inch(w.next24) + ' in.' : '');
       h += reservoirReadouts(e, false, rain);
-      if (w) h += '<p class="ws-wx">' + wxState(w) + '</p>';
+      if (w) h += '<p class="ws-wx">' + wxState(w) + '</p>' + (w.wind ? '<p class="ws-wx">' + windText(w, false) + '</p>' : '');
     } else {
       h += stationReadouts(e, false, floodKv(e));
     }
@@ -1001,6 +1001,27 @@
       fc(w.nextStart ? 'next rain ~' + wxT(w.nextStart) : 'no rain in the 3-day forecast') + '</span>';
   }
 
+  // Wind line: arrow (pointing where the wind blows to), direction, speed, gusts and the forecast peak.
+  var WIND_LABEL = { calm: '', breezy: 'breezy', advisory: 'advisory-level', warning: 'warning-level' };
+  function windArrow(dir) {
+    if (dir == null) return '';
+    return '<svg class="wind-arrow" viewBox="0 0 24 24" aria-hidden="true"><g transform="rotate(' + Math.round(dir) + ' 12 12)"><path d="M12 3v16M7 14l5 6 5-6"/></g></svg>';
+  }
+  function windText(w, full) {
+    var x = w && w.wind;
+    if (!x) return '';
+    var gust = function (o) { return '<b class="mono">' + fmt(o.gust, 0) + ' mph</b>'; };
+    var h = '<span class="wx-now wind-now wind-' + x.level + '">' +
+      '<svg class="wx-ic wx-ic-wind" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8"/></svg>' +
+      '<span class="wx-cond">Wind</span>' + windArrow(x.dir) +
+      '<b class="wind-v">' + esc(x.from) + ' ' + fmt(x.speed, 0) + ' mph' + (x.gust != null ? ', gusts ' + fmt(x.gust, 0) : '') + '</b>' +
+      (WIND_LABEL[x.level] ? '<span class="wind-tag wind-' + x.level + '">' + WIND_LABEL[x.level] + '</span>' : '');
+    if (x.next24) h += '<span class="wx-fc">next 24 h: gusts to ' + gust(x.next24) + ' ~' + wxT(x.next24.t) + (WIND_LABEL[x.next24.level] && x.next24.level !== x.level ? ' <span class="wind-tag wind-' + x.next24.level + '">' + WIND_LABEL[x.next24.level] + '</span>' : '') + '</span>';
+    if (full && x.past24) h += '<span class="wx-fc">past 24 h peak ' + gust(x.past24) + ' ' + wxT(x.past24.t) + '</span>';
+    if (full && x.next72) h += '<span class="wx-fc">3-day peak ' + gust(x.next72) + ' ~' + wxT(x.next72.t) + '</span>';
+    return h + '</span>';
+  }
+
   function wxLine(p) {
     if (!H.weather || !H.weather.BASINS[p.code]) return '';
     if (!state.wx) return '<p class="wx-line"><span class="wx-h">BASIN RAIN</span> <span class="na loading">loading…</span></p>';
@@ -1042,7 +1063,7 @@
   function wxBlock(p) {
     var W = H.weather, b = W && W.BASINS[p.code];
     if (!b) return '';
-    var head = '<h3>Basin precipitation <span class="hint">≈ ' + fmt(b.area) + ' sq mi above the dam · model</span></h3>';
+    var head = '<h3>Basin rain and wind <span class="hint">≈ ' + fmt(b.area) + ' sq mi above the dam · model</span></h3>';
     if (!state.wx) return '<section class="ws-sec wx-box">' + head + '<p class="na loading">Loading weather…</p></section>';
     var s = state.wx.basins[p.code], w = wxSummary(p);
     if (!w) return '<section class="ws-sec wx-box">' + head + '<p class="na">Weather model unavailable' + (state.wx.error ? ' (' + esc(state.wx.error) + ')' : '') + '.</p></section>';
@@ -1055,6 +1076,7 @@
       '<dl class="ws-facts">' +
       '<div><dt>Now</dt><dd>' + wxState(w) + '</dd></div>' +
       (w.event ? '<div><dt>' + (w.event.end ? 'Last event' : 'This event') + '</dt><dd><span class="mono">' + inch(w.event.total) + ' in</span> ' + (w.event.openStart ? 'over 3+ days' : 'from ' + wxT(w.event.start)) + (w.event.end ? ' to ' + wxT(w.event.end) : ' so far') + '</dd></div>' : '') +
+      (w.wind ? '<div><dt>Wind</dt><dd>' + windText(w, true) + '</dd></div>' : '') +
       (w.fzNow != null ? '<div><dt>Freezing level</dt><dd><span class="mono">' + fmt(Math.round(w.fzNow / 100) * 100) + ' ft</span>' + (w.tempNow != null ? ' · ' + fmt(w.tempNow, 0) + ' °F basin mean' : '') + ' · rain below, snow above</dd></div>' : '') +
       '</dl>' + wxChart(s, Date.now());
     var sts = W.stationsFor(p.code);

@@ -78,6 +78,9 @@
         a: '<p>No, and it is not a gauge. Each project has its own estimate from the <b>Open-Meteo weather model</b>, averaged over two points (near the dam and in the upper drainage). Past hours are the model’s analysis, not rain gauges or radar; amounts in the Cascades can be off by 20–50%, timing is usually good. Totals use the hours stamped in each window; an hour counts as wet at ≥ 0.01 in, and 6 dry hours end an event.</p>' +
           '<p>“Rain on the basin” = inches × drainage area × 53.33 ac-ft per inch per square mile. It is rain that fell, <b>not runoff</b>. Drainage areas and points are approximate.</p>',
         src: [['Open-Meteo forecast API', 'https://open-meteo.com/en/docs']] },
+      { q: 'Wind', kind: 'model',
+        a: '<p>From the same weather model at 10 m above ground, in mph: mean wind speed of the two points, the highest gust of the two, and the direction (vector average). The arrow points where the wind is blowing <i>to</i>. “Next 24 h” is the strongest forecast gust and when.</p>' +
+          '<p>The breezy / advisory-level / warning-level tags use the NWS Portland criteria (advisory: sustained 31–39 mph or gusts 46–57; warning: sustained ≥ 40 or gusts ≥ 58) for reference only. They are not NWS alerts; check weather.gov for actual warnings. Model winds in steep terrain are rough estimates.</p>' },
       { q: 'The weather icon (sun, rain, snow…)', kind: 'model',
         a: '<p>The model’s standard WMO weather code for the latest hour, taking the more significant of the two points (if one says rain and the other snow, snow). Moon instead of sun at night. “Rain on and off since …” means the event is still on but the current hour is dry.</p>' },
       { q: 'Measured precipitation and snowpack (SNOTEL)', kind: 'reported',

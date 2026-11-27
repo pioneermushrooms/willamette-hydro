@@ -388,6 +388,13 @@ console.log('tdg / snotel / odeq');
     check(C({ rateNow: 0.05, tempNow: 30 }).key === 'snow' && C({ rateNow: 0.05 }).key === 'rain' && C({ ccNow: 90 }).key === 'cloudy' && C({}) === null, 'weather: fallback without a weather code');
     const pw = WX.parse([{ hourly: { time: [T0 / 1000], precipitation: [0.1], weather_code: [61], is_day: [1], cloud_cover: [100] } }, { hourly: { time: [T0 / 1000], precipitation: [0.1], weather_code: [73], is_day: [1], cloud_cover: [80] } }], ['BLU']);
     check(pw.BLU.wc[0] === 73 && pw.BLU.cc[0] === 90, 'weather: most significant code of the points, mean cloud cover');
+    // Wind: mean speed, highest gust, vector-mean direction (350° and 10° average to north, not 180°)
+    const pwd = WX.parse([{ hourly: { time: [T0 / 1000], precipitation: [0], wind_speed_10m: [10], wind_gusts_10m: [30], wind_direction_10m: [350] } }, { hourly: { time: [T0 / 1000], precipitation: [0], wind_speed_10m: [20], wind_gusts_10m: [48], wind_direction_10m: [10] } }], ['BLU']);
+    check(pwd.BLU.ws[0] === 15 && pwd.BLU.wg[0] === 48 && (pwd.BLU.wd[0] < 5 || pwd.BLU.wd[0] > 355), 'weather: wind mean speed, max gust, vector-mean direction');
+    check(WX.compass(225) === 'SW' && WX.compass(0) === 'N' && WX.compass(355) === 'N' && WX.windLevel(10, 25) === 'calm' && WX.windLevel(10, 35) === 'breezy' && WX.windLevel(32, 20) === 'advisory' && WX.windLevel(10, 46) === 'advisory' && WX.windLevel(10, 58) === 'warning' && WX.windLevel(40, 0) === 'warning', 'weather: compass and NWS wind levels');
+    const sw = { t: [1, 2, 3, 4].map((h) => T0 + h * Hr), p: [0, 0, 0, 0], ws: [8, 12, 15, 30], wg: [20, 25, 47, 60], wd: [200, 225, 230, 240], wc: [], day: [], cc: [], fz: [], temp: [] };
+    const ww = WX.summarize(sw, T0 + 2.5 * Hr, 88).wind;
+    check(ww.speed === 12 && ww.gust === 25 && ww.from === 'SW' && ww.past24.gust === 25 && ww.next24.gust === 60 && ww.next24.t === T0 + 4 * Hr && ww.next24.level === 'warning', 'weather: wind now, past and next-24 h peak gusts');
   }
 
   // ODEQ 2006 TMDL target: monthly steps (interpolate-string F), degC -> degF
