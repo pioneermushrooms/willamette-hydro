@@ -167,7 +167,8 @@
         : Promise.resolve({ lines: [], src: 'No public TDG series below ' + e.name + ' (published for Dexter and Cougar only).' });
     } else if (res && key === 'precip') {
       p = H.weather.loadRange(e.code, start, end).then(function (r) {
-        var s = r.s;
+        var s = r.s, now = Date.now();
+        if (s) { var k = 0; while (k < s.t.length && s.t[k] <= now) k++; s = { t: s.t.slice(0, k), p: s.p.slice(0, k) }; }   // past hours only
         return { lines: s && s.t.length ? [{ label: r.hourly ? 'Rain per hour (model)' : 'Rain per day (model)', t: s.t, v: s.p, cls: 'st-a' }] : [], src: r.src };
       });
     } else if (!res && PCODE[key]) {

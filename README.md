@@ -153,7 +153,7 @@ A planning aid — verify against the water control manual and current operating
 Every local script and stylesheet in `index.html` is loaded as `?v=<hash of js/ and css/>`, so a newly deployed page can never run with code the browser cached from the previous version (GitHub Pages allows 10-minute browser caching). After changing anything in `js/` or `css/`, run `node scripts/stamp-version.js`; `check.js` fails if the tag is stale.
 
 
-`js/update-check.js` fingerprints the deployed code (index.html plus every same-origin script and stylesheet, fetched uncached) when the page loads, then re-checks every 10 minutes and when the tab becomes visible. If the code changed, an open page reloads itself on the same route. On the Calculator page, or while a form field has focus, it shows a "new version available · Reload" banner instead so inputs are not lost. Data files are not part of the fingerprint, so the BPA data commits do not trigger reloads.
+`js/update-check.js` fingerprints the deployed code (index.html plus every same-origin script and stylesheet, fetched uncached) when the page loads, then re-checks every 10 minutes and when the tab becomes visible. If the code changed while the tab is hidden, the page reloads itself quietly on the same route. While the page is on screen it never reloads by itself: it shows a "new version available · Reload" banner instead (the Calculator page always gets the banner, so inputs are not lost). Data files are not part of the fingerprint, so the BPA data commits do not trigger reloads.
 
 ## Pages (hash routes)
 
@@ -291,7 +291,7 @@ This is a shared helper for the upcoming Teacup and target overlays.
 
 ## Polling and refresh
 
-- **USGS and USACE** are fetched directly by the browser, since both send `Access-Control-Allow-Origin: *`. The page fetches on load and then every 15 minutes, and the **Refresh** button fetches immediately.
+- **USGS and USACE** are fetched directly by the browser, since both send `Access-Control-Allow-Origin: *`. The page fetches the full 7 days on load and then hourly; in between it polls every **5 minutes** for only the last 3 hours and splices that onto what it has (agency revisions to those hours win). It also refreshes as soon as the tab is shown again, the window regains focus or the phone wakes, if the data is more than 2 minutes old (browsers throttle timers in background tabs). The **Refresh** button fetches immediately. Agency publishing lag still applies: CWMS values usually appear 15–35 minutes after their timestamp, USGS 5–15 minutes.
 - **Failure handling:**
   - Each request is retried once on network errors and HTTP 5xx.
   - CWMS requests run at most 8 at a time.

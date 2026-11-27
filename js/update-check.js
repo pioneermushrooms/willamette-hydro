@@ -4,8 +4,9 @@
  * GitHub Pages has no build stamp, so the page fingerprints its own code: index.html plus every
  * same-origin script and stylesheet it loads (fetched with cache: 'no-store', FNV-1a hash).
  * It checks every 10 minutes and whenever the tab becomes visible again. When the fingerprint
- * changes it reloads, keeping the current route. On the Calculator page, or while a form field
- * has focus, it shows a banner with a Reload button instead, so typed inputs are not lost.
+ * changes while the tab is hidden it reloads quietly (keeping the route), so the page is already
+ * current when you come back. While you are looking at the page it never reloads by itself: it
+ * shows a banner with a Reload button instead. The Calculator page always gets the banner.
  * Data files (data/bpa.json) are not part of the fingerprint.
  */
 (function (root) {
@@ -36,11 +37,6 @@
     })).then(function (texts) { return fnv(texts.join('\u0000')); }, function () { return null; });
   }
 
-  function editing() {
-    var a = document.activeElement;
-    return /^#\/calc/.test(location.hash) || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
-  }
-
   function banner() {
     if (document.getElementById('update-banner')) return;
     var d = document.createElement('div');
@@ -58,8 +54,8 @@
     fingerprint().then(function (fp) {
       busy = false;
       if (!fp || fp === base) return;
-      if (editing()) banner();
-      else location.reload();
+      if (document.hidden && !/^#\/calc/.test(location.hash)) location.reload();
+      else banner();
     });
   }
 
@@ -67,7 +63,7 @@
     fingerprint().then(function (fp) { base = fp; });
     setInterval(check, EVERY_MS);
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden && Date.now() - lastCheck > 60 * 1000) check();
+      if (Date.now() - lastCheck > 60 * 1000) check();
     });
   }
 

@@ -25,7 +25,7 @@
   var DAY = 24 * HOUR;
 
   var SETTINGS = {
-    pollMinutes: 15,
+    pollMinutes: 5,
     historyDays: 7,
     staleHours: 3,        // older than this -> STALE (amber)
     veryStaleHours: 12,   // older than this -> red
@@ -241,9 +241,28 @@
 
   // ---- USGS ----------------------------------------------------------------
 
-  function usgsUrl(days) {
+  // hours (optional): only the last N hours (incremental refresh).
+  function usgsUrl(days, hours) {
     var sites = stations.map(function (s) { return s.site; }).join(',');
-    return USGS_IV + '?format=json&sites=' + sites + '&parameterCd=00060,00065,00010&period=P' + (days || SETTINGS.historyDays) + 'D';
+    return USGS_IV + '?format=json&sites=' + sites + '&parameterCd=00060,00065,00010&period=' + (hours ? 'PT' + Math.ceil(hours) + 'H' : 'P' + (days || SETTINGS.historyDays) + 'D');
+  }
+
+  /*
+   * Incremental refresh: a series covering [a's start, now] from the stored series `a` and a short
+   * fresh fetch `b`. Points of `a` at or after b's first stamp are replaced by b (revisions win);
+   * points older than keepFrom are dropped. An empty or missing `b` keeps `a`.
+   */
+  function spliceSeries(a, b, keepFrom) {
+    if (!b || !b.t || !b.t.length) return a || b;
+    if (!a || !a.t || !a.t.length) return b;
+    var t0 = b.t[0], out = Object.assign({}, b, { t: [], v: [], q: a.q || b.q ? [] : null });
+    for (var i = 0; i < a.t.length; i++) {
+      if (a.t[i] >= t0) break;
+      if (a.t[i] < keepFrom) continue;
+      out.t.push(a.t[i]); out.v.push(a.v[i]); if (out.q) out.q.push(a.q ? a.q[i] : null);
+    }
+    for (i = 0; i < b.t.length; i++) { out.t.push(b.t[i]); out.v.push(b.v[i]); if (out.q) out.q.push(b.q ? b.q[i] : null); }
+    return out;
   }
 
   // Returns { <site>: { flow: Series, stage: Series, tempC: Series } } (only series present in the response).
@@ -353,8 +372,10 @@
     opts = opts || {};
     var now = opts.now || Date.now();
     var begin = now - SETTINGS.historyDays * DAY;
+    // opts.since: only fetch from this time on (the caller splices onto what it already has).
+    if (opts.since) begin = Math.max(begin, opts.since);
     var snap = {
-      startedAt: now, fetchedAt: null,
+      startedAt: now, fetchedAt: null, since: opts.since || null,
       stations: {}, projects: {}, bpa: null,
       sources: {
         usgs: { ok: false, error: null, series: 0 },
@@ -363,7 +384,7 @@
       }
     };
 
-    var usgsP = fetchJson(usgsUrl(), {}, SETTINGS.timeoutMs).then(function (j) {
+    var usgsP = fetchJson(opts.since ? usgsUrl(null, (now - begin) / HOUR) : usgsUrl(), {}, SETTINGS.timeoutMs).then(function (j) {
       var parsed = parseUsgs(j);
       stations.forEach(function (st) {
         snap.stations[st.id] = parsed[st.site] || {};
@@ -543,6 +564,7 @@
     basinMap: basinMap,
     usgsUrl: usgsUrl,
     cwmsUrl: cwmsUrl,
+    spliceSeries: spliceSeries,
     cwmsSeriesPage: cwmsSeriesPage,
     usgsSitePage: usgsSitePage,
     srcLink: srcLink,

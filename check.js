@@ -339,6 +339,19 @@ console.log('tdg / snotel / odeq');
   check(SN.STATIONS.length === 8 && SN.STATIONS.every((s) => /^\d+:OR:SNTL$/.test(s.triplet) && s.elevFt > 0), 'snotel: 8 Oregon SNOTEL stations configured');
   check(/stationTriplets=388:OR:SNTL,/.test(SN.url(9, Date.UTC(2026, 9, 30))) && /beginDate=2026-10-21&endDate=2026-10-30/.test(SN.url(9, Date.UTC(2026, 9, 30))) && /elements=WTEQ,SNWD/.test(SN.url()), 'snotel: request URL');
 
+  // Incremental refresh: splice a short fresh fetch onto the stored series
+  {
+    const D = require('./js/data.js');
+    const a = { t: [1, 2, 3, 4, 5], v: [10, 20, 30, 40, 50], q: null, name: 'x' }, b = { t: [4, 5, 6], v: [41, 51, 61], q: null, name: 'x' };
+    const m = D.spliceSeries(a, b, 2);
+    check(m.t.join() === '2,3,4,5,6' && m.v.join() === '20,30,41,51,61', 'splice: revisions win, new points appended, old points trimmed');
+    check(D.spliceSeries(a, { t: [], v: [] }, 0) === a && D.spliceSeries(a, null, 0) === a && D.spliceSeries(null, b, 0) === b, 'splice: empty fetch keeps the stored series');
+    const qa = D.spliceSeries({ t: [1, 2], v: [1, 2], q: ['A', 'P'] }, { t: [2, 3], v: [9, 9], q: ['P', 'P'] }, 0);
+    check(qa.q.join() === 'A,P,P' && qa.v.join() === '1,9,9', 'splice: USGS qualifiers kept in step');
+    check(/period=PT3H$/.test(D.usgsUrl(null, 3)) && /period=P7D$/.test(D.usgsUrl()), 'usgs: incremental URL asks for the last N hours');
+    check(D.SETTINGS.pollMinutes === 5, 'poll every 5 minutes');
+  }
+
   // Basin precipitation (js/weather.js)
   {
     const WX = require('./js/weather.js'), Hr = 3600e3, T0 = Date.UTC(2026, 10, 27, 0);

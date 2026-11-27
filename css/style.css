@@ -1093,3 +1093,6 @@ i.dd-k-pubtgt { border-top: 2px dotted var(--tgt); }
 .wx-meas { margin: 8px 0 0; font-size: 12px; line-height: 1.6; }
 .wx-src { margin: 6px 0 0; font-size: 11px; }
 .wx-src a { color: inherit; text-decoration: underline; text-decoration-color: var(--muted); }
+.st-svg .st-xg { stroke: var(--grid); opacity: .5; }
+.st-last { font-size: 10.5px; color: var(--text-2); margin-left: 3px; }
+.st-lab-1 { color: var(--muted); font-size: 10.5px; }

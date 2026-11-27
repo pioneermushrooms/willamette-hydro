@@ -9,6 +9,7 @@
   var HOUR = 3600 * 1000;
   var DAY = 24 * HOUR;
   var POLL_MS = H.SETTINGS.pollMinutes * 60 * 1000;
+  var FULL_MS = 60 * 60 * 1000;   // full 7-day reload this often; incremental polls in between
   var BPA_URL = 'data/bpa.json';
   var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -161,13 +162,23 @@
 
   // Keep the previous good series when a single series fails on a later poll;
   // its timestamp keeps ageing so it turns STALE honestly.
+  // An incremental poll (next.since set) only holds the last few hours: splice it onto prev.
   function merge(prev, next) {
     if (!prev) return next;
+    var keepFrom = Date.now() - H.SETTINGS.historyDays * DAY;
     H.projects.forEach(function (p) {
       var a = prev.projects[p.id] || {}, b = next.projects[p.id] || (next.projects[p.id] = {});
-      Object.keys(p.series).forEach(function (k) { if (p.series[k] && b[k] == null && a[k]) b[k] = a[k]; });
+      Object.keys(p.series).forEach(function (k) {
+        if (!p.series[k]) return;
+        if (b[k] == null) { if (a[k]) b[k] = a[k]; }
+        else if (next.since && k !== 'rule') b[k] = H.spliceSeries(a[k], b[k], keepFrom);
+      });
     });
     if (!next.sources.usgs.ok) next.stations = prev.stations;
+    else if (next.since) H.stations.forEach(function (st) {
+      var a = prev.stations[st.id] || {}, b = next.stations[st.id] || (next.stations[st.id] = {});
+      Object.keys(a).forEach(function (k) { b[k] = H.spliceSeries(a[k], b[k], keepFrom); });
+    });
     if (!next.sources.bpa.ok && prev.bpa) next.bpa = prev.bpa;
     return next;
   }
@@ -201,11 +212,18 @@
       H.weather.load().then(function (r) { if (r && (!r.error || !state.wx || state.wx.error)) state.wx = r; renderWx(); });
       H.weather.loadSnotel().then(function (r) { if (r && (!r.error || !state.wxSno || state.wxSno.error)) state.wxSno = r; renderWx(); });
     }
-    Promise.all([H.loadAll({ bpaUrl: BPA_URL }), nwpsP, tdgP, snowP]).then(function (res) {
+    // Full 7-day load at start and hourly (picks up agency revisions); otherwise only the last
+    // 3 hours, spliced onto what is already loaded, so frequent polls stay light.
+    var full = !state.snap || !state.fullAt || Date.now() - state.fullAt > FULL_MS;
+    var started = Date.now();
+    Promise.all([H.loadAll({ bpaUrl: BPA_URL, since: full ? null : started - 3 * HOUR }), nwpsP, tdgP, snowP]).then(function (res) {
+      if (full && res[0].sources.cwms.ok) state.fullAt = started;
       if (res[2]) state.tdg = mergeTdg(state.tdg, res[2]);
       if (res[3]) state.snow = res[3].error && state.snow && !state.snow.error ? state.snow : res[3];
       var snap = res[0];
       state.snap = merge(state.snap, snap);
+      // Strips drawn from the live series (inflow/outflow) must pick up the new points.
+      Object.keys(state.strips).forEach(function (k) { if (/\|flows\|(24h|7d)$/.test(k)) delete state.strips[k]; });
       state.nwps = mergeNwps(state.nwps, res[1]);
       // Share the live snapshot with other views (Teacup) — they must not refetch it.
       H.live = { snap: state.snap, nwps: state.nwps, tdg: state.tdg };
@@ -1169,6 +1187,7 @@
     });
     // x ticks on Pacific-time boundaries (Pacific offsets are whole hours, so UTC hour starts align)
     // Tick style follows the visible span, so zooming in switches months -> days -> hours.
+    var xl = [], xtext = function (xx, lab) { xl.push({ x: +xx, lab: lab }); return '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + lab + '</text>'; };
     var spanH = (M.end - M.start) / HOUR, tickMode = spanH <= 48 ? 'hours' : spanH <= 240 ? 'days' : spanH <= 75 * 24 ? 'weeks' : 'months';
     if (tickMode === 'weeks' || tickMode === 'months') {
       // Weeks: faint daily lines, Mondays labelled. Months: month starts labelled (year on January).
@@ -1177,14 +1196,14 @@
         H.history.dayTicks(M.start, M.end, false).forEach(function (o) {
           var xx = x(o.t).toFixed(1), p2 = parts(o.t + HOUR);
           s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:' + (o.dow === 1 ? '.6' : '.18') + '"/>';
-          if (o.dow === 1) s += '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + (pw < 420 ? p2.month + '/' + p2.day : 'Mon ' + p2.month + '/' + p2.day) + '</text>';
+          if (o.dow === 1) s += xtext(xx, pw < 420 ? p2.month + '/' + p2.day : 'Mon ' + p2.month + '/' + p2.day);
         });
       } else {
         var mt2 = H.history.monthTicks(M.start, M.end), skip = spanH > 200 * 24 && pw < 420 ? 2 : 1;
         mt2.forEach(function (o, i) {
           var xx = x(o.t).toFixed(1);
           s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:.55"/>';
-          if (i % skip === 0) s += '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + MN[o.m - 1] + (o.m === 1 ? " '" + String(o.y).slice(2) : '') + '</text>';
+          if (i % skip === 0) s += xtext(xx, MN[o.m - 1] + (o.m === 1 ? " '" + String(o.y).slice(2) : ''));
         });
       }
     } else {
@@ -1201,7 +1220,7 @@
         if (tickMode === 'hours') lab = o.p.h === 0 ? o.p.weekday + ' ' + o.p.day : String(o.p.h).padStart(2, '0') + ':00';
         else lab = narrow ? o.p.day : o.p.weekday + ' ' + o.p.day;
         s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + mt + '" y2="' + (mt + ph) + '" style="opacity:.55"/>';
-        s += '<text x="' + xx + '" y="' + (H2 - 9) + '" text-anchor="middle">' + lab + '</text>';
+        s += xtext(xx, lab);
       });
     }
     s += '</g>';
@@ -1264,7 +1283,7 @@
       var line = $('#chart-line');
       line.style.setProperty('--len', Math.ceil(line.getTotalLength()));
     }
-    state.geom = { M: M, x: x, y: y, ml: ml, pw: pw, W: W, mt: mt, ph: ph };
+    state.geom = { M: M, x: x, y: y, ml: ml, pw: pw, W: W, mt: mt, ph: ph, xl: xl };
     renderTrendZoom(M);
     renderLayerBar(M);
     renderStrips();
@@ -1509,7 +1528,9 @@
 
   function stripHTML(def, sd, g) {
     var M = g.M, unit = esc(def.unit);
-    var keys = sd.lines && sd.lines.length > 1 ? sd.lines.map(function (l) { return '<span class="st-key"><i class="' + l.cls + '"></i>' + esc(l.label) + '</span>'; }).join('') : '';
+    // Each line's newest reading, so a series that reports later (hourly vs 15-min) is visible as such.
+    var lastOf = function (l) { return l.t.length ? ' <span class="st-last mono" title="Newest reading of this series">' + esc(fmtClock.format(l.t[l.t.length - 1]).replace(/^24/, '00').slice(0, 5)) + '</span>' : ''; };
+    var keys = sd.lines && sd.lines.length ? sd.lines.map(function (l) { return '<span class="st-key">' + (sd.lines.length > 1 ? '<i class="' + l.cls + '"></i>' + esc(l.label) : '<span class="st-lab-1">latest</span>') + lastOf(l) + '</span>'; }).join('') : '';
     var head = '<div class="st-head"><b>' + esc(def.label) + '</b> <span class="st-unit">' + unit + '</span>' + keys + '<span class="st-read mono"></span></div>';
     var wrap = function (inner, src) { return '<div class="strip" data-strip="' + def.key + '">' + head + inner + (src ? '<p class="st-src">' + H.linkSources(src) + '</p>' : '') + '</div>'; };
     if (sd.loading) return wrap('<p class="na loading st-msg">loading…</p>');
@@ -1520,11 +1541,15 @@
     if (def.ref) vals.push(def.ref);
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo || Math.abs(hi) * 0.05 || 1) * 0.12;
     var nt = niceTicks(lo - pad, hi + pad, 3), yMin = Math.min(nt.ticks[0], lo - pad), yMax = Math.max(nt.ticks[nt.ticks.length - 1], hi + pad);
-    var Hs = 84, mt = 6, mb = 6, ph = Hs - mt - mb, W = g.W, ml = g.ml, pw = g.pw;
+    var Hs = 100, mt = 6, mb = 20, ph = Hs - mt - mb, W = g.W, ml = g.ml, pw = g.pw;
     var x = function (t) { return ml + ((t - M.start) / (M.end - M.start)) * pw; }, y = function (v) { return mt + (1 - (v - yMin) / (yMax - yMin)) * ph; };
     var dec = nt.step < 1 ? (nt.step < 0.1 ? 2 : 1) : 0;
     var svg = '<svg class="st-svg" viewBox="0 0 ' + W + ' ' + Hs + '" width="100%" height="' + Hs + '" aria-hidden="true"><defs><clipPath id="st-clip-' + def.key + '"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath></defs><g class="axis">';
     nt.ticks.forEach(function (v) { if (v < yMin || v > yMax) return; svg += '<line x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/><text x="' + (ml - 8) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, dec) + '</text>'; });
+    (g.xl || []).forEach(function (o) {
+      if (o.x < ml || o.x > ml + pw) return;
+      svg += '<line class="st-xg" x1="' + o.x + '" x2="' + o.x + '" y1="' + mt + '" y2="' + (mt + ph) + '"/><text x="' + o.x + '" y="' + (Hs - 5) + '" text-anchor="middle">' + o.lab + '</text>';
+    });
     svg += '</g><g clip-path="url(#st-clip-' + def.key + ')">';
     if (def.ref) svg += '<line class="st-ref" x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(def.ref).toFixed(1) + '" y2="' + y(def.ref).toFixed(1) + '"/><text class="st-ref-lab" x="' + (ml + pw - 4) + '" y="' + (y(def.ref) - mt < 12 ? y(def.ref) + 11 : y(def.ref) - 3).toFixed(1) + '" text-anchor="end">' + esc(def.refLabel) + '</text>';
     sd.lines.forEach(function (l) {
@@ -1655,9 +1680,16 @@
   }
 
   $('#refresh').addEventListener('click', poll);
-  document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && state.nextPollAt && Date.now() >= state.nextPollAt) poll();
-  });
+  // Back on screen (tab shown, window focused, phone woken): refresh if the data is over 2 minutes old.
+  // Hidden tabs have their timers throttled by the browser, so this is what keeps a returning view fresh.
+  function wake() {
+    if (document.hidden || state.fetching) return;
+    if (!state.snap || Date.now() - (state.snap.fetchedAt || 0) > 2 * 60 * 1000 || (state.nextPollAt && Date.now() >= state.nextPollAt)) poll();
+  }
+  document.addEventListener('visibilitychange', wake);
+  window.addEventListener('focus', wake);
+  window.addEventListener('pageshow', wake);
+  window.addEventListener('online', wake);
 
   tickClock();
   setInterval(tickClock, 1000);
