@@ -276,6 +276,40 @@
 
   // ---- USACE CWMS ----------------------------------------------------------
 
+  // ---- Source links (one per displayed value) --------------------------------
+  // A page a person can open to check a value: the raw CWMS series (last 24 h; browsers get XML)
+  // or the USGS monitoring-location page for a site, opened on one parameter when given.
+  function cwmsSeriesPage(name, unit) {
+    return CWMS_TS + '?office=NWDP&name=' + encodeURIComponent(name) + '&unit=' + encodeURIComponent(unit || 'EN');
+  }
+  function usgsSitePage(site, pcode) {
+    return 'https://waterdata.usgs.gov/monitoring-location/' + site + '/' + (pcode ? '#parameterCode=' + pcode + '&period=P7D' : '');
+  }
+  function escHtml(x) { return String(x).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  // Small "↗" link placed next to a value. src: { cwms: name, unit } or { usgs: site, param }.
+  function srcLink(src) {
+    if (!src) return '';
+    var href = src.cwms ? cwmsSeriesPage(src.cwms, src.unit) : usgsSitePage(src.usgs, src.param);
+    var title = src.cwms ? 'Source: USACE CWMS ' + src.cwms + ' (raw data, last 24 h)' : 'Source: USGS ' + src.usgs + (src.param ? ' parameter ' + src.param : '');
+    return ' <a class="src-link" href="' + escHtml(href) + '" target="_blank" rel="noopener" title="' + escHtml(title) + '" aria-label="' + escHtml(title) + '">↗</a>';
+  }
+  // Escapes a plain-text source note and turns CWMS series names and USGS site numbers into links.
+  var CWMS_NAME_RE = /\b[A-Z][A-Z0-9]{1,7}(?:-[A-Za-z0-9]+)?\.[A-Za-z0-9%-]+\.(?:Inst|Ave|Max|Min|Total|Const)\.[A-Za-z0-9~]+\.[A-Za-z0-9~]+\.[A-Za-z0-9-]*[A-Za-z0-9]/g;
+  var USGS_SITE_RE = /\b14\d{6}(?:\d{7})?\b/g;
+  function linkSources(text) {
+    var t = String(text == null ? '' : text), out = '', last = 0, hits = [], m;
+    CWMS_NAME_RE.lastIndex = 0; USGS_SITE_RE.lastIndex = 0;
+    while ((m = CWMS_NAME_RE.exec(t))) hits.push({ i: m.index, s: m[0], cwms: true });
+    while ((m = USGS_SITE_RE.exec(t))) if (!hits.some(function (h) { return m.index >= h.i && m.index < h.i + h.s.length; })) hits.push({ i: m.index, s: m[0] });
+    hits.sort(function (a, b) { return a.i - b.i; }).forEach(function (h) {
+      var href = h.cwms ? cwmsSeriesPage(h.s) : usgsSitePage(h.s);
+      out += escHtml(t.slice(last, h.i)) + '<a href="' + escHtml(href) + '" target="_blank" rel="noopener">' + escHtml(h.s) + '</a>';
+      last = h.i + h.s.length;
+    });
+    return out + escHtml(t.slice(last));
+  }
+
+
   function cwmsUrl(name, unit, begin, end, page) {
     var q = 'office=NWDP&name=' + encodeURIComponent(name) + '&unit=' + encodeURIComponent(unit) +
       '&begin=' + new Date(begin).toISOString() + '&end=' + new Date(end).toISOString() + '&page-size=5000';
@@ -509,6 +543,10 @@
     basinMap: basinMap,
     usgsUrl: usgsUrl,
     cwmsUrl: cwmsUrl,
+    cwmsSeriesPage: cwmsSeriesPage,
+    usgsSitePage: usgsSitePage,
+    srcLink: srcLink,
+    linkSources: linkSources,
     parseUsgs: parseUsgs,
     fetchCwms: fetchCwms,
     loadAll: loadAll,

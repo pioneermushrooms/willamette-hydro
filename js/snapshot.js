@@ -192,6 +192,7 @@
   var USGS_NAMES = { '14145110': 'Hills Creek Dam tailwater gage, datum 0 ft NGVD29 (gage height = elevation)',
     '14159410': 'Cougar Dam tailwater gage, datum 0 ft NGVD29 (gage height = elevation)',
     '14145500': 'MF Willamette abv Salt Crk (HCRO)', '14150000': 'MF Willamette nr Dexter (DEXO)', '14159500': 'SF McKenzie nr Rainbow (CGRO)' };
+  function srcA(s) { return H && H.srcLink ? H.srcLink(s.src === 'cwms' ? { cwms: s.name, unit: 'EN' } : { usgs: s.site, param: s.param }) : ''; }
   function srcText(s) { return s.src === 'cwms' ? 'USACE CWMS ' + s.name : 'USGS ' + s.site + ' ' + (USGS_NAMES[s.site] || '') + ' (' + s.param + ')'; }
 
   var AGE_TXT = { ok: '', lag: 'LAG', stale: 'STALE', none: '' };
@@ -220,7 +221,7 @@
   function cellHTML(m, now) {
     var it = m.it, h = '<div class="snap-cell ' + m.age + '" title="' + esc(srcText(it.main) + (it.sub ? ' · stage ' + srcText(it.sub) : '') +
       (it.check ? ' · cross-check USGS lake gage ' + it.check.site : '')) + '">';
-    h += '<span class="snap-lab">' + esc(it.label) + '</span>';
+    h += '<span class="snap-lab">' + esc(it.label) + srcA(it.main) + '</span>';
     if (!m.latest) {
       var why = it.none || (m.err ? 'unavailable (' + m.err + ')' : state.fetchedAt ? 'no data in last 3 h' : 'loading…');
       return h + '<span class="snap-na">' + (it.none ? 'n/a' : state.fetchedAt ? 'no data' : '…') + '</span><span class="snap-why">' + esc(why) + '</span></div>';

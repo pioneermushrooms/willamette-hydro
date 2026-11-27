@@ -620,9 +620,10 @@
   function reservoirReadouts(p, full) {
     var d = projData(p), L = function (k) { return d && H.latest(d[k]); };
     var e = L('elev'), r = d && H.ruleToday(d.rule), st = L('stor'), out = L('out'), inn = L('inflow');
-    var h = kvVal('Pool elev', val(e, 1, 'ft', 'hl', e ? staleTag(e.t).trim() : ''));
+    var S = function (k) { return p.series[k] ? H.srcLink({ cwms: p.series[k].name, unit: p.series[k].unit }) : ''; };
+    var h = kvVal('Pool elev' + S('elev'), val(e, 1, 'ft', 'hl', e ? staleTag(e.t).trim() : ''));
     var dev = e && r ? e.v - r.v : null;
-    h += kv('vs rule curve', !d ? LOADING : dev == null ? NA : signed(dev, 1), dev == null ? '' : 'ft', '', r ? 'USACE rule ' + fmt(r.v, 1) + ' ft today' : '');
+    h += kv('vs rule curve' + S('rule'), !d ? LOADING : dev == null ? NA : signed(dev, 1), dev == null ? '' : 'ft', '', r ? 'USACE rule ' + fmt(r.v, 1) + ' ft today' : '');
     if (p.cons) {
       var pf = st ? H.percentFull(p, st.v) : null;
       h += kv('% full <span class="hint">derived</span>', !d ? LOADING : !pf ? NA : pf.below ? 'Below cons. pool' : fmt(pf.clamped, 1),
@@ -632,10 +633,10 @@
     } else {
       h += kv('% full', p.consFromLevels && p.consTried !== true ? LOADING : NA, '', 'na', 'needs CWMS conservation limits');
     }
-    h += kvVal('Outflow', val(out, 0, 'cfs', '', p.cbt ? 'hourly average' : ''));
-    h += kvVal('Computed inflow', val(inn, 0, 'cfs', inn && inn.v < 0 ? 'neg' : '', inn ? (inn.v < 0 ? 'computed from storage change; negative as reported' : 'computed by USACE') : ''));
+    h += kvVal('Outflow' + S('out'), val(out, 0, 'cfs', '', p.cbt ? 'hourly average' : ''));
+    h += kvVal('Computed inflow' + S('inflow'), val(inn, 0, 'cfs', inn && inn.v < 0 ? 'neg' : '', inn ? (inn.v < 0 ? 'computed from storage change; negative as reported' : 'computed by USACE') : ''));
     if (full) {
-      h += kvVal('Storage', p.noStorage ? { html: 'n/a', unit: '', cls: 'na', sub: 'not published' } : val(st, 0, 'ac-ft'));
+      h += kvVal('Storage' + S('stor'), p.noStorage ? { html: 'n/a', unit: '', cls: 'na', sub: 'not published' } : val(st, 0, 'ac-ft'));
       if (p.cons) h += kv('Conservation pool', fmt(p.cons.elevBottom, 1) + '–' + fmt(p.cons.elevTop, 1), 'ft', '', 'CWMS bottom/top of conservation' + (p.consFromLevels ? ' (read at runtime)' : ''));
     }
     return '<dl class="kv">' + h + '</dl>';
@@ -644,18 +645,19 @@
   function stationReadouts(s, full) {
     var d = stData(s), L = function (k) { return d && H.latest(d[k]); };
     var flow = L('flow'), stage = L('stage'), tc = L('tempC');
+    var U = function (pc) { return H.srcLink({ usgs: s.site, param: pc }); };
     var h = s.params.indexOf('flow') < 0
-      ? kv('Flow', !d ? LOADING : NA, '', '', 'no discharge series published for this gauge')
-      : kvVal('Flow', val(flow, 0, 'cfs', s.primary === 'flow' ? 'hl' : '', flow && isProvisional(flow.q) ? 'provisional' : ''));
-    h += kvVal('Stage', val(stage, 2, 'ft', s.primary === 'stage' ? 'hl' : '', stage && isProvisional(stage.q) ? 'provisional' : ''));
+      ? kv('Flow' + U('00060'), !d ? LOADING : NA, '', '', 'no discharge series published for this gauge')
+      : kvVal('Flow' + U('00060'), val(flow, 0, 'cfs', s.primary === 'flow' ? 'hl' : '', flow && isProvisional(flow.q) ? 'provisional' : ''));
+    h += kvVal('Stage' + U('00065'), val(stage, 2, 'ft', s.primary === 'stage' ? 'hl' : '', stage && isProvisional(stage.q) ? 'provisional' : ''));
     var tf = tc ? { v: H.cToF(tc.v) } : null;
-    h += kvVal('Water temp', val(tf, 1, '°F', '', tc ? fmt(tc.v, 1) + ' °C as reported' : ''));
+    h += kvVal('Water temp' + U('00010'), val(tf, 1, '°F', '', tc ? fmt(tc.v, 1) + ' °C as reported' : ''));
     var prim = d && H.stationPrimary(s, d), w = window24(prim);
     var ch = w && w.v.length > 1 ? w.v[w.v.length - 1] - w.v[0] : null;
     var unit = s.primary === 'flow' ? 'cfs' : 'ft';
     h += kv('24 h change <span class="hint">derived</span>', !d ? LOADING : ch == null ? NA : signed(ch, s.primary === 'flow' ? 0 : 2), ch == null ? '' : unit, '', s.primary === 'stage' ? 'stage' : 'flow');
     if (full) {
-      h += kv('USGS site', s.site, '', '', esc(s.usgsName));
+      h += kv('USGS site' + U(''), s.site, '', '', esc(s.usgsName));
     }
     return '<dl class="kv">' + h + '</dl>';
   }
@@ -1013,7 +1015,7 @@
     }
     $('#chart-title').textContent = M.title;
     $('#trend-tag').textContent = RANGE_TAG[state.range] + (M.long ? ' · HISTORY + LIVE' : ' · LIVE SERIES');
-    $('#chart-src').textContent = 'Source: ' + M.src;
+    $('#chart-src').innerHTML = 'Source: ' + H.linkSources(M.src);
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H2);
     svg.setAttribute('height', H2);
     state.geom = null;
@@ -1404,7 +1406,7 @@
     var M = g.M, unit = esc(def.unit);
     var keys = sd.lines && sd.lines.length > 1 ? sd.lines.map(function (l) { return '<span class="st-key"><i class="' + l.cls + '"></i>' + esc(l.label) + '</span>'; }).join('') : '';
     var head = '<div class="st-head"><b>' + esc(def.label) + '</b> <span class="st-unit">' + unit + '</span>' + keys + '<span class="st-read mono"></span></div>';
-    var wrap = function (inner, src) { return '<div class="strip" data-strip="' + def.key + '">' + head + inner + (src ? '<p class="st-src">' + esc(src) + '</p>' : '') + '</div>'; };
+    var wrap = function (inner, src) { return '<div class="strip" data-strip="' + def.key + '">' + head + inner + (src ? '<p class="st-src">' + H.linkSources(src) + '</p>' : '') + '</div>'; };
     if (sd.loading) return wrap('<p class="na loading st-msg">loading…</p>');
     if (sd.empty) return wrap('<p class="na st-msg">' + (sd.error ? 'unavailable (' + esc(sd.error) + ')' : 'not reported for this window') + '</p>', sd.src);
     var vals = [];

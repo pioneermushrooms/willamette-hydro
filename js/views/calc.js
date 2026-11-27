@@ -45,6 +45,13 @@
     return { elev: L('elev'), out: L('out'), inflow: L('inflow'), inflowEst: inflowEstimate(d && d.inflow), rule: d && d.rule };
   }
 
+  // "<name> now: pool … · outflow … · computed inflow …", each value followed by its source link.
+  function liveLine(p, lv) {
+    var S = function (k) { return H.srcLink && p.series[k] ? H.srcLink({ cwms: p.series[k].name, unit: p.series[k].unit }) : ''; };
+    return esc(p.name) + ' now: pool ' + (lv.elev ? fmt(lv.elev.v, 2) + ' ft' : '—') + S('elev') + ' · outflow ' + (lv.out ? fmt(lv.out.v) + ' cfs' : '—') + S('out') +
+      ' · computed inflow ' + (lv.inflow ? fmt(lv.inflow.v) + ' cfs' : '—') + S('inflow') + (lv.elev ? ' · ' + esc(stamp(lv.elev.t)) : '');
+  }
+
   /*
    * Inflow to plan with. USACE "computed inflow" is outflow + storage change, so pool-reading noise
    * swings single values by hundreds of cfs (even below zero on small reservoirs such as Blue River).
@@ -104,8 +111,7 @@
         return '<button type="button" class="chip" data-code="' + x.code + '" aria-pressed="' + (x.code === st.code) + '">' + esc(x.name) + '</button>';
       }).join('') + '</div>' +
       '<p class="dd-rating" id="dd-rating"></p>' +
-      '<p class="dd-live mono">' + esc(p.name) + ' now: pool ' + (lv.elev ? fmt(lv.elev.v, 2) + ' ft' : '—') + ' · outflow ' + (lv.out ? fmt(lv.out.v) + ' cfs' : '—') +
-      ' · computed inflow ' + (lv.inflow ? fmt(lv.inflow.v) + ' cfs' : '—') + (lv.elev ? ' · ' + esc(stamp(lv.elev.t)) : H.live ? '' : ' · loading live data…') + '</p>' +
+      '<p class="dd-live mono">' + liveLine(p, lv) + (lv.elev ? '' : H.live ? '' : ' · loading live data…') + '</p>' +
 
       // Calculator 1
       '<section class="panel dd-panel"><div class="panel-head"><h2>1 · Volume / Flow / Time</h2><span class="panel-tag mono">ENTER ANY TWO</span></div>' +
@@ -555,7 +561,7 @@
         if (el && el.value === '' && f[1] != null) el.value = f[1];
       });
       var lb = st.el.querySelector('.dd-live');
-      if (lb && lv.elev) lb.textContent = byCode[st.code].name + ' now: pool ' + fmt(lv.elev.v, 2) + ' ft · outflow ' + (lv.out ? fmt(lv.out.v) + ' cfs' : '—') + ' · computed inflow ' + (lv.inflow ? fmt(lv.inflow.v) + ' cfs' : '—') + ' · ' + stamp(lv.elev.t);
+      if (lb && lv.elev) lb.innerHTML = liveLine(byCode[st.code], lv);
     });
   }
 

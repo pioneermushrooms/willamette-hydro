@@ -1063,3 +1063,9 @@ i.dd-k-pubtgt { border-top: 2px dotted var(--tgt); }
 .dd-gates li.dd-g-trim { color: var(--muted); }
 .dd-gstep { margin: 4px 0 6px; padding-left: 20px; font-size: 13px; color: var(--text); }
 .dd-gates li.dd-g-trim { color: var(--muted); }
+
+/* Source links: a small ↗ next to each value, opening the raw agency series */
+.src-link { color: var(--muted); text-decoration: none; font: 400 11px var(--sans); margin-left: 2px; padding: 0 2px; letter-spacing: 0; text-transform: none; }
+.src-link:hover, .src-link:focus-visible { color: var(--amber); text-decoration: underline; }
+.chart-src a, .st-src a, .yr-src a { color: inherit; text-decoration: underline; text-decoration-color: var(--muted); text-underline-offset: 2px; overflow-wrap: anywhere; }
+.chart-src a:hover, .st-src a:hover, .yr-src a:hover { color: var(--amber); }

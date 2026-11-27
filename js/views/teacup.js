@@ -302,9 +302,10 @@
     }
     var R = rulerSVG(m);
     var info = '<dl class="kv tc-kv">';
-    info += '<div><dt>Pool elevation <span class="lbl">LIVE</span></dt><dd class="hl">' + (m.e ? fmt(m.e.v, 1) + '<span class="unit">ft</span>' : na()) + '</dd>' +
+    var S = function (k) { return H.srcLink && m.p.series[k] ? H.srcLink({ cwms: m.p.series[k].name, unit: m.p.series[k].unit }) : ''; };
+    info += '<div><dt>Pool elevation <span class="lbl">LIVE</span>' + S('elev') + '</dt><dd class="hl">' + (m.e ? fmt(m.e.v, 1) + '<span class="unit">ft</span>' : na()) + '</dd>' +
       (m.e ? '<dd class="sub">' + stamp(m.e.t) + '</dd>' : '') + '</div>';
-    info += '<div><dt>Rule curve today <span class="lbl">LIVE</span></dt><dd>' + (m.r ? fmt(m.r.v, 1) + '<span class="unit">ft</span>' : na()) + '</dd><dd class="sub">CWMS daily rule curve</dd></div>';
+    info += '<div><dt>Rule curve today <span class="lbl">LIVE</span>' + S('rule') + '</dt><dd>' + (m.r ? fmt(m.r.v, 1) + '<span class="unit">ft</span>' : na()) + '</dd><dd class="sub">CWMS daily rule curve</dd></div>';
     info += '<div><dt>vs rule curve <span class="lbl">DERIVED</span></dt><dd class="' + (m.rd.status || '') + '-txt">' + (m.rd.delta != null ? signed(m.rd.delta, 1) + '<span class="unit">ft</span>' : na()) + '</dd>' +
       (m.rd.status ? '<dd class="sub">' + STATUS_TXT[m.rd.status] + '</dd>' : '') + '</div>';
     info += '<div><dt>% full <span class="lbl">DERIVED</span></dt><dd>' + (m.p.noStorage ? 'n/a' : !m.pf ? na() : m.pf.below ? '<span class="below-txt">Below cons. pool</span>' : fmt(m.pf.clamped, 1) + '<span class="unit">%</span>') + '</dd>' +

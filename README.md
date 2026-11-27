@@ -79,6 +79,15 @@ The thresholds are this site's own choices, not an agency determination.
 Every card shows its own last-reading time in Pacific time with an age, for example "Oct 30, 4:45 PM PDT · 23 min ago".
 Readings older than 3 hours get a STALE tag.
 
+### Source links on every value
+
+Each displayed value has a small **↗** next to its label (cards, detail panel, Hourly Snapshot, Teacup, Calculator live line). It opens the exact series the value came from:
+
+- USACE values: the raw CWMS Data API series, e.g. `https://cwms-data.usace.army.mil/cwms-data/timeseries?office=NWDP&name=BLU.Flow-In.Ave.15Minutes.6Hours.MIXED-COMPUTED-REV&unit=cfs` (last 24 h; browsers get XML).
+- USGS values: the site's monitoring-location page opened on that parameter (00060 flow, 00065 gage height, 00010 temperature).
+
+The series names in the source notes under the Trend Recorder, its strips and the past-years table are links too (`H.srcLink`, `H.linkSources` in `js/data.js`).
+
 ## Hourly Snapshot (top of every page)
 
 A compact strip above the page tabs with the values recorded hourly:

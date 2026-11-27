@@ -272,7 +272,7 @@
       return '<tr><td><i class="yr-key yr-c' + yearSlot(d.y) + '"></i> ' + d.y + (d.y === cy ? ' (to date)' : '') + '</td><td>' + fmt(sm.min, 2) + ' · ' + day(sm.minT) + '</td><td>' + fmt(sm.max, 2) + ' · ' + day(sm.maxT) + '</td>' +
         '<td>' + (sm.fallMean == null ? '—' : fmt(sm.fallMean, 2)) + '</td>' +
         '<td>' + (checks[d.y] && checks[d.y].n ? pct(checks[d.y].inside) + ' · ' + pct(checks[d.y].below) + ' · ' + pct(checks[d.y].above) + (checks[d.y].medianVsMean == null ? '' : ' · ' + (checks[d.y].medianVsMean >= 0 ? '+' : '−') + fmt(Math.abs(checks[d.y].medianVsMean), 1) + ' ft') : '—') + '</td>' +
-        '<td class="yr-src">' + esc(d.r.src || '') + '</td></tr>';
+        '<td class="yr-src">' + (H.linkSources ? H.linkSources(d.r.src || '') : esc(d.r.src || '')) + '</td></tr>';
     }).join('');
     var checkLine = allCheck && allCheck.n ? '<p class="py-check">Selected years vs the ' + (ps.band === 'record' ? 'lake-record' : '30-yr') + ' band (' + fmt(allCheck.n) + ' daily readings): ' +
       '<b>' + pct(allCheck.inside) + '</b> inside p05–p95 · ' + pct(allCheck.below) + ' below · ' + pct(allCheck.above) + ' above' +
