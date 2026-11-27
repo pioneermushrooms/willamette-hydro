@@ -381,6 +381,13 @@ console.log('tdg / snotel / odeq');
     const d24 = WX.accumDiff(a2, Date.UTC(2026, 10, 28, 0, 30), 24), d6 = WX.accumDiff(a2, Date.UTC(2026, 10, 28, 0, 30), 6);
     check(Math.abs(d24.v - 1.2) < 1e-9 && Math.abs(d6.v - 0.3) < 1e-9, 'weather: SNOTEL 24-h and 6-h measured precipitation');
     check(WX.stationsFor('BLU').length >= 1 && WX.stationsFor('FRN').length === 0, 'weather: SNOTEL stations by basin');
+    const C = (o) => WX.condition(Object.assign({ wcNow: null, dayNow: 1, ccNow: null, rateNow: 0, tempNow: 45 }, o));
+    check(C({ wcNow: 63 }).key === 'rain' && C({ wcNow: 81 }).key === 'rain' && C({ wcNow: 73 }).key === 'snow' && C({ wcNow: 86 }).key === 'snow' && C({ wcNow: 53 }).key === 'drizzle' &&
+      C({ wcNow: 67 }).key === 'freezing' && C({ wcNow: 95 }).key === 'thunder' && C({ wcNow: 45 }).key === 'fog' && C({ wcNow: 3 }).key === 'cloudy' && C({ wcNow: 2 }).key === 'partly', 'weather: WMO code to condition');
+    check(C({ wcNow: 0 }).label === 'Sunny' && C({ wcNow: 0, dayNow: 0 }).label === 'Clear' && C({ wcNow: 0, dayNow: 0 }).night, 'weather: clear is sunny by day, clear at night');
+    check(C({ rateNow: 0.05, tempNow: 30 }).key === 'snow' && C({ rateNow: 0.05 }).key === 'rain' && C({ ccNow: 90 }).key === 'cloudy' && C({}) === null, 'weather: fallback without a weather code');
+    const pw = WX.parse([{ hourly: { time: [T0 / 1000], precipitation: [0.1], weather_code: [61], is_day: [1], cloud_cover: [100] } }, { hourly: { time: [T0 / 1000], precipitation: [0.1], weather_code: [73], is_day: [1], cloud_cover: [80] } }], ['BLU']);
+    check(pw.BLU.wc[0] === 73 && pw.BLU.cc[0] === 90, 'weather: most significant code of the points, mean cloud cover');
   }
 
   // ODEQ 2006 TMDL target: monthly steps (interpolate-string F), degC -> degF

@@ -1245,3 +1245,16 @@ main, .site-footer { max-width: 1680px; }
 .ws-head .kv { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
 .ws-facts > div { grid-template-columns: 150px 1fr; }
 @media (max-width: 420px) { .ws-facts > div { grid-template-columns: 1fr; } }
+
+/* Current weather line: icon · condition · since · forecast */
+.wx-now { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.wx-ic { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; color: var(--text-2); }
+.wx-ic-clear { color: var(--amber); } .wx-ic-clear.night { color: #c9d3e0; }
+.wx-ic-partly { color: #d8c37a; }
+.wx-ic-rain, .wx-ic-drizzle, .wx-ic-thunder { color: #6fb2ff; }
+.wx-ic-snow, .wx-ic-freezing { color: #e6f0ff; }
+.wx-cond { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-2); }
+.wx-fc { color: var(--text-2); }
+.wx-fc::before { content: "·"; margin-right: 8px; color: var(--muted); }
+.ws-facts .wx-now { gap: 2px 8px; }
+.wx-ic { width: 24px; height: 24px; }

@@ -55,7 +55,7 @@
   }
 
   function url(codes, pastDays, fcDays) {
-    return BASE + '?' + pointList(codes) + '&hourly=precipitation,freezing_level_height,temperature_2m' +
+    return BASE + '?' + pointList(codes) + '&hourly=precipitation,freezing_level_height,temperature_2m,weather_code,is_day,cloud_cover' +
       '&precipitation_unit=inch&temperature_unit=fahrenheit&timeformat=unixtime&timezone=GMT' +
       '&past_days=' + (pastDays == null ? 3 : pastDays) + '&forecast_days=' + (fcDays == null ? 3 : fcDays);
   }
@@ -74,7 +74,7 @@
       var n = BASINS[c].pts.length, parts = arr.slice(k, k + n).filter(function (x) { return x && x[key] && x[key].time; });
       k += n;
       if (!parts.length) return;
-      var base = parts[0][key], s = { t: [], p: [], fz: [], temp: [] };
+      var base = parts[0][key], s = { t: [], p: [], fz: [], temp: [], wc: [], day: [], cc: [] };
       var pk = key === 'daily' ? 'precipitation_sum' : 'precipitation';
       var avg = function (name, i, scale) {
         var sum = 0, m = 0;
@@ -86,6 +86,10 @@
         if (p == null) return;
         s.t.push(ts * 1000); s.p.push(Math.max(0, p));
         s.fz.push(avg('freezing_level_height', i, 3.28084)); s.temp.push(avg('temperature_2m', i));
+        // Weather code: the most significant of the points (WMO codes rise with severity).
+        var wc = null;
+        parts.forEach(function (x) { var c = x[key].weather_code && x[key].weather_code[i]; if (c != null && isFinite(c) && (wc == null || +c > wc)) wc = +c; });
+        s.wc.push(wc); s.day.push(parts[0][key].is_day ? parts[0][key].is_day[i] : null); s.cc.push(avg('cloud_cover', i));
       });
       out[c] = s;
     });
@@ -114,6 +118,7 @@
       past6: sumBetween(s, now - 6 * HOUR, now), past24: sumBetween(s, now - DAY, now), past72: sumBetween(s, now - 3 * DAY, now),
       next6: sumBetween(s, now, now + 6 * HOUR), next24: sumBetween(s, now, now + DAY), next72: sumBetween(s, now, now + 3 * DAY),
       rateNow: s.p[iNow], tNow: s.t[iNow], fzNow: s.fz[iNow], tempNow: s.temp[iNow],
+      wcNow: s.wc ? s.wc[iNow] : null, dayNow: s.day ? s.day[iNow] : null, ccNow: s.cc ? s.cc[iNow] : null,
       raining: s.p[iNow] >= WET || (iNow > 0 && s.p[iNow - 1] >= WET),
       event: null, nextStart: null, ends: null, horizon: s.t[s.t.length - 1]
     };
@@ -149,6 +154,24 @@
       r.volNext24cfs = r.volNext24 / CFS_DAY_ACFT;
     }
     return r;
+  }
+
+  /*
+   * Current condition for the icon: { key, label } from the WMO weather code of the latest hour
+   * (falling back to precipitation, temperature and cloud cover when there is no code).
+   * keys: clear, partly, cloudy, fog, drizzle, rain, freezing, snow, thunder.
+   */
+  function condition(w) {
+    if (!w) return null;
+    var c = w.wcNow, night = w.dayNow === 0;
+    var k = c == null ? null
+      : c >= 95 ? 'thunder' : c === 85 || c === 86 || (c >= 71 && c <= 77) ? 'snow' : c === 56 || c === 57 || c === 66 || c === 67 ? 'freezing'
+        : (c >= 61 && c <= 65) || (c >= 80 && c <= 82) ? 'rain' : c >= 51 && c <= 55 ? 'drizzle' : c === 45 || c === 48 ? 'fog'
+          : c === 3 ? 'cloudy' : c === 2 || c === 1 ? 'partly' : 'clear';
+    if (!k) k = w.rateNow >= WET ? (w.tempNow != null && w.tempNow <= 32 ? 'snow' : 'rain') : w.ccNow == null ? null : w.ccNow > 80 ? 'cloudy' : w.ccNow > 30 ? 'partly' : 'clear';
+    if (!k) return null;
+    var LABEL = { clear: night ? 'Clear' : 'Sunny', partly: 'Partly cloudy', cloudy: 'Cloudy', fog: 'Fog', drizzle: 'Drizzle', rain: 'Rain', freezing: 'Freezing rain', snow: 'Snow', thunder: 'Thunderstorms' };
+    return { key: k, label: LABEL[k], night: night, wet: /drizzle|rain|freezing|snow|thunder/.test(k) };
   }
 
   // ---- SNOTEL hourly accumulated precipitation (measured) --------------------------------------
@@ -249,7 +272,7 @@
 
   return {
     BASE: BASE, BASINS: BASINS, CODES: CODES, WET: WET, DRY_GAP: DRY_GAP, ACFT_PER_IN_SQMI: ACFT_PER_IN_SQMI,
-    url: url, archiveUrl: archiveUrl, parse: parse, summarize: summarize, sumBetween: sumBetween,
+    url: url, archiveUrl: archiveUrl, parse: parse, summarize: summarize, sumBetween: sumBetween, condition: condition,
     snotelUrl: snotelUrl, parseSnotel: parseSnotel, accumDiff: accumDiff, stationsFor: stationsFor, pstMs: pstMs,
     load: load, loadSnotel: loadSnotel, loadRange: loadRange, pageUrl: pageUrl, nwsUrl: nwsUrl,
     _clear: function () { cache = null; snoCache = null; }

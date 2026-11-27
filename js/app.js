@@ -719,7 +719,7 @@
       '<h2>' + esc(e.name) + '</h2><p class="ws-sub">' + esc(sub) + '</p></div>' + statusPill(st) + '</div>';
     if (isRes) {
       var w = wxSummary(e), rain = !H.weather || !H.weather.BASINS[e.code] ? '' :
-        kv('Basin rain 24 h <span class="hint">model</span>', !state.wx ? LOADING : w ? inch(w.past24) : NA, w ? 'in' : '', '', w ? 'next 24 h ' + inch(w.next24) + ' in' : '');
+        kv('Rain above dam, 24 h <span class="hint">model</span>', !state.wx ? LOADING : w ? inch(w.past24) : NA, w ? 'in' : '', '', w ? 'next 24 h ' + inch(w.next24) + ' in' : '');
       h += reservoirReadouts(e, false, rain);
       if (w) h += '<p class="ws-wx">' + wxState(w) + '</p>';
     } else {
@@ -920,13 +920,47 @@
     return s && b ? W.summarize(s, Date.now(), b.area) : null;
   }
 
-  // One-line state: raining since / dry since / next rain.
+  // Small line icons for the current condition (stroke = currentColor; coloured by CSS).
+  var WX_ICON = (function () {
+    var sun = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
+    var moon = '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>';
+    var cloud = '<path d="M7 17h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 10.2 3.5 3.5 0 0 0 7 17z"/>';
+    var cloudHi = '<path d="M7 14h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 7.2 3.5 3.5 0 0 0 7 14z"/>';
+    return {
+      clear: { d: sun, night: moon },
+      partly: { d: '<path d="M8 3v1.5M3.5 8H2M4.2 4.2l1 1M12.8 4.2l-1 1"/><path d="M5.6 10.3A3.5 3.5 0 1 1 11.6 6.6"/>' + '<path d="M9 19h9a3.5 3.5 0 0 0 .5-6.96A5 5 0 0 0 9 11.2 3 3 0 0 0 9 19z"/>',
+        night: '<path d="M11 6.5A4.5 4.5 0 0 1 5 2.6a4.5 4.5 0 1 0 6 3.9z"/><path d="M9 19h9a3.5 3.5 0 0 0 .5-6.96A5 5 0 0 0 9 11.2 3 3 0 0 0 9 19z"/>' },
+      cloudy: { d: cloud },
+      fog: { d: cloudHi + '<path d="M4 18h16M6 21h12"/>' },
+      drizzle: { d: cloudHi + '<path d="M9 18v1M13 18v1M17 18v1M11 21v1M15 21v1"/>' },
+      rain: { d: cloudHi + '<path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/>' },
+      freezing: { d: cloudHi + '<path d="M8 17l-1 3M16 17l-1 3"/><path d="M12 17.5v4M10.3 18.5l3.4 2M13.7 18.5l-3.4 2"/>' },
+      snow: { d: cloudHi + '<path d="M8 17.5v3M6.7 18.2l2.6 1.6M9.3 18.2l-2.6 1.6M16 17.5v3M14.7 18.2l2.6 1.6M17.3 18.2l-2.6 1.6M12 20v2"/>' },
+      thunder: { d: cloudHi + '<path d="M12.5 14l-2.5 4h3l-2 4"/>' }
+    };
+  })();
+  function wxIcon(c) {
+    if (!c || !WX_ICON[c.key]) return '';
+    var ic = WX_ICON[c.key], d = c.night && ic.night ? ic.night : ic.d;
+    return '<svg class="wx-ic wx-ic-' + c.key + (c.night ? ' night' : '') + '" viewBox="0 0 24 24" aria-hidden="true">' + d + '</svg>';
+  }
+
+  // One-line state with an icon for the current condition: what it is doing now, since when, and the forecast.
   function wxState(w) {
-    var ev = w.event;
-    if (ev && !ev.end) return '<b class="wx-wet">Raining' + (ev.openStart ? ' for 3 days+' : ' since ' + wxT(ev.start)) + '</b>' +
-      (w.ends ? ' · forecast to ease ~' + wxT(w.ends) : ' · still raining at the end of the forecast');
-    return '<b class="wx-dry">' + (ev ? 'Dry since ' + wxT(ev.end) : 'Dry for 3 days+') + '</b>' +
-      (w.nextStart ? ' · next rain ~' + wxT(w.nextStart) : ' · no rain in the 3-day forecast');
+    var ev = w.event, c = H.weather.condition ? H.weather.condition(w) : null;
+    var fc = function (t) { return '<span class="wx-fc">' + t + '</span>'; };
+    if (ev && !ev.end) {
+      var since = ev.openStart ? ' for 3 days+' : ' since ' + wxT(ev.start), ends = fc(w.ends ? 'forecast to ease ~' + wxT(w.ends) : 'still going at the end of the forecast');
+      var wetNow = c ? c.wet : w.raining;
+      if (wetNow) {
+        var WORD = { rain: 'Raining', drizzle: 'Drizzle', snow: 'Snowing', freezing: 'Freezing rain', thunder: 'Thunderstorms' };
+        return '<span class="wx-now">' + wxIcon(c || { key: 'rain' }) + '<b class="wx-wet">' + (WORD[c && c.key] || 'Raining') + since + '</b>' + ends + '</span>';
+      }
+      // A break between showers: show what it is doing now, and that the event is still on.
+      return '<span class="wx-now">' + wxIcon(c) + '<span class="wx-cond">' + esc(c ? c.label : '') + '</span><b class="wx-wet">Rain on and off' + since + '</b>' + ends + '</span>';
+    }
+    return '<span class="wx-now">' + wxIcon(c) + (c ? '<span class="wx-cond">' + esc(c.label) + '</span>' : '') + '<b class="wx-dry">' + (ev ? 'Dry since ' + wxT(ev.end) : 'Dry for 3 days+') + '</b>' +
+      fc(w.nextStart ? 'next rain ~' + wxT(w.nextStart) : 'no rain in the 3-day forecast') + '</span>';
   }
 
   function wxLine(p) {

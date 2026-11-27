@@ -110,7 +110,9 @@ Each reservoir card has a **BASIN RAIN** line (past 24 h, next 24 h, raining sin
 - an hourly bar chart, past 72 h (solid) and 72-h forecast (faded), with a NOW line;
 - measured precipitation from the NRCS SNOTEL gauges in the same basin (hourly accumulated PREC, 6 h and 24 h). None for Green Peter or Fern Ridge.
 
-Model data: Open-Meteo forecast API, hourly precipitation averaged over two hand-placed points per project (near the dam, upper basin). Past hours are the model's analysis, not rain gauges or radar. An hour counts as wet at ≥ 0.01 in; 6 dry hours in a row end an event. Drainage areas and points are approximate.
+The current-conditions line has an icon and label from the model's WMO weather code for the latest hour (the most significant of the project's two points): sunny / clear (moon at night), partly cloudy, cloudy, fog, drizzle, rain, freezing rain, snow, thunderstorms. While an event is on: "Raining / Snowing / Drizzle … since <time>" when it is wet now, "Rain on and off since <time>" during a break; otherwise "Dry since <time>". The forecast end or next rain follows.
+
+Each project has its own estimate (its own two points), so neighbouring basins can differ; it is not one shared gauge. Model data: Open-Meteo forecast API, hourly precipitation averaged over two hand-placed points per project (near the dam, upper basin). Past hours are the model's analysis, not rain gauges or radar. An hour counts as wet at ≥ 0.01 in; 6 dry hours in a row end an event. Drainage areas and points are approximate.
 
 The Trend Recorder has a **Basin precipitation** strip for reservoirs: hourly model data up to 92 days back, Open-Meteo archive (ERA5) daily sums beyond that.
 
