@@ -7,7 +7,7 @@
   <meta name="description" content="Willamette Valley Hydro Dispatch: a dashboard of South Willamette Valley reservoirs and rivers using live, provisional data from USGS and USACE. Not an official agency site.">
   <title>Willamette Valley Hydro Dispatch · Live USGS &amp; USACE data (provisional)</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111315'/%3E%3Cpath d='M2 11c2-2 4 2 6 0s4 2 6 0' stroke='%2339d0e0' stroke-width='2' fill='none'/%3E%3Ccircle cx='8' cy='5' r='2' fill='%23ffb000'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/style.css?v=7a1a960fc4">
+  <link rel="stylesheet" href="css/style.css?v=2f55ffd294">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -46,7 +46,6 @@
 
   <nav class="tabs routes" aria-label="Pages">
     <a href="#/overview" data-route="overview">Overview</a>
-    <a href="#/teacup" data-route="teacup">Teacup</a>
     <a href="#/tables" data-route="tables">Tables</a>
     <a href="#/calc" data-route="calc">Calculator</a>
     <a href="#/docs" data-route="docs">Docs</a>
@@ -66,16 +65,8 @@
     <!-- One workspace: pick a project or gauge on the left (list or map); everything about it is on the right. -->
     <section class="workspace" id="workspace">
       <aside class="panel ws-side" aria-label="Projects and gauges">
-        <div class="ws-group">
-          <div class="ws-group-head"><h2>Reservoirs</h2><span class="ws-cols mono" aria-hidden="true"><span>Pool ft</span><span>vs rule</span><span>Out cfs</span></span></div>
-          <ul class="ws-list" id="res-list" role="listbox" aria-label="Reservoirs"></ul>
-        </div>
-        <div class="ws-group">
-          <div class="ws-group-head"><h2>River gauges</h2><span class="ws-cols mono" aria-hidden="true"><span>Now</span><span>24 h</span><span></span></span></div>
-          <ul class="ws-list" id="riv-list" role="listbox" aria-label="River gauges"></ul>
-        </div>
-        <details class="ws-map" id="ws-map">
-          <summary>Basin map</summary>
+        <div class="ws-map" id="ws-map">
+          <div class="ws-group-head"><h2>Basin map</h2><span class="panel-tag mono">SCHEMATIC · NOT TO SCALE</span></div>
           <div class="map-wrap scan">
             <svg id="basin-map" role="group" aria-label="Schematic basin map. Select a dam or station."></svg>
           </div>
@@ -86,8 +77,15 @@
             <li><span class="light watch" aria-hidden="true"></span>Stale or off rule curve</li>
             <li><span class="light low" aria-hidden="true"></span>No data</li>
           </ul>
-          <p class="legend-note">Schematic, not to scale. Status lights are derived by this site from data age and the USACE rule curve, not an agency determination.</p>
-        </details>
+        </div>
+        <div class="ws-group">
+          <div class="ws-group-head"><h2>Reservoirs</h2><span class="ws-cols ws-cols-res mono" aria-hidden="true"><span>Pool ft</span><span>vs rule</span><span>In cfs</span><span>Out cfs</span></span></div>
+          <ul class="ws-list" id="res-list" role="listbox" aria-label="Reservoirs"></ul>
+        </div>
+        <div class="ws-group">
+          <div class="ws-group-head"><h2>River gauges</h2><span class="ws-cols ws-cols-riv mono" aria-hidden="true"><span>24 h</span><span>Now</span><span>Δ 24 h</span></span></div>
+          <ul class="ws-list" id="riv-list" role="listbox" aria-label="River gauges"></ul>
+        </div>
       </aside>
 
       <section class="panel ws-main" id="trends" aria-live="polite">
@@ -143,9 +141,6 @@
     </section>
     </div>
 
-    <section class="view view-teacup" data-view="teacup" hidden>
-      <div class="view-body"></div>
-    </section>
     <section class="view panel view-tables" data-view="tables" hidden>
       <div class="panel-head"><h2>Reports &amp; Tables</h2><span class="panel-tag mono">PUBLISHED RATINGS · NOT LIVE</span></div>
       <div class="view-body"></div>
@@ -169,25 +164,24 @@
     <p class="mono small">MIT License · static site · browser polls USGS/USACE every 5 min</p>
   </footer>
 
-  <script src="js/data.js?v=7a1a960fc4"></script>
-  <script src="js/history.js?v=7a1a960fc4"></script>
-  <script src="js/cwms-levels.js?v=7a1a960fc4"></script>
-  <script src="js/nwps.js?v=7a1a960fc4"></script>
-  <script src="js/tdg.js?v=7a1a960fc4"></script>
-  <script src="js/snotel.js?v=7a1a960fc4"></script>
-  <script src="js/weather.js?v=7a1a960fc4"></script>
-  <script src="js/teacup-core.js?v=7a1a960fc4"></script>
-  <script src="js/zoom.js?v=7a1a960fc4"></script>
-  <script src="js/layers.js?v=7a1a960fc4"></script>
-  <script src="js/pastyears.js?v=7a1a960fc4"></script>
-  <script src="js/ratings.js?v=7a1a960fc4"></script>
-  <script src="js/drawdown.js?v=7a1a960fc4"></script>
-  <script src="js/views/teacup.js?v=7a1a960fc4"></script>
-  <script src="js/views/tables.js?v=7a1a960fc4"></script>
-  <script src="js/views/calc.js?v=7a1a960fc4"></script>
-  <script src="js/views/docs.js?v=7a1a960fc4"></script>
-  <script src="js/router.js?v=7a1a960fc4"></script>
-  <script src="js/app.js?v=7a1a960fc4"></script>
-  <script src="js/update-check.js?v=7a1a960fc4"></script>
+  <script src="js/data.js?v=2f55ffd294"></script>
+  <script src="js/history.js?v=2f55ffd294"></script>
+  <script src="js/cwms-levels.js?v=2f55ffd294"></script>
+  <script src="js/nwps.js?v=2f55ffd294"></script>
+  <script src="js/tdg.js?v=2f55ffd294"></script>
+  <script src="js/snotel.js?v=2f55ffd294"></script>
+  <script src="js/weather.js?v=2f55ffd294"></script>
+  <script src="js/teacup-core.js?v=2f55ffd294"></script>
+  <script src="js/zoom.js?v=2f55ffd294"></script>
+  <script src="js/layers.js?v=2f55ffd294"></script>
+  <script src="js/pastyears.js?v=2f55ffd294"></script>
+  <script src="js/ratings.js?v=2f55ffd294"></script>
+  <script src="js/drawdown.js?v=2f55ffd294"></script>
+  <script src="js/views/tables.js?v=2f55ffd294"></script>
+  <script src="js/views/calc.js?v=2f55ffd294"></script>
+  <script src="js/views/docs.js?v=2f55ffd294"></script>
+  <script src="js/router.js?v=2f55ffd294"></script>
+  <script src="js/app.js?v=2f55ffd294"></script>
+  <script src="js/update-check.js?v=2f55ffd294"></script>
 </body>
 </html>

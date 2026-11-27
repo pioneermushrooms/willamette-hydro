@@ -449,9 +449,8 @@ console.log('snapshot / history');
   const html2 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   check(!html2.includes('id="snapshot"') && !html2.includes('js/snapshot.js'), 'Hourly Snapshot removed from the page (js/snapshot.js kept, unused)');
   check(['24h', '7d', '30d', '6m', '1y'].every((r) => html2.includes('data-range="' + r + '"')), 'trend: 24 H, 7 D, 30 D, 6 MO, 1 YR buttons');
-  check(html2.indexOf('js/history.js') > html2.indexOf('js/data.js') && html2.indexOf('js/history.js') < html2.indexOf('js/views/teacup.js'), 'script order: history after data, before views');
-  const tcs = fs.readFileSync(path.join(__dirname, 'js', 'views', 'teacup.js'), 'utf8');
-  check(/data-open-trend/.test(tcs) && !/renderAnnual/.test(tcs), 'teacup: lake chart moved to the Trend Recorder (Open in Trend Recorder button)');
+  check(html2.indexOf('js/history.js') > html2.indexOf('js/data.js') && html2.indexOf('js/history.js') < html2.indexOf('js/views/tables.js'), 'script order: history after data, before views');
+  check(!html2.includes('#/teacup') && !html2.includes('views/teacup.js') && html2.includes('id="res-list"') && html2.includes('id="basin-map"'), 'Teacup page folded into Overview (mini teacups in the list, levels in More)');
 }
 
 // ---- 2d. Storage / drawdown calculator (js/drawdown.js) ------------------------
@@ -683,14 +682,14 @@ check(!/illustrative/i.test(html), 'no "illustrative" wording left in page');
   const ref = m.replace(/^(?:src|href)="/, '').replace(/"$/, '').replace(/\?.*$/, '');
   check(fs.existsSync(path.join(__dirname, ref)), 'referenced file exists: ' + ref);
 });
-['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'scripts/stamp-version.js', 'js/router.js', 'js/teacup-core.js', 'js/ratings.js', 'scripts/check-links.js', 'js/tdg.js', 'js/snotel.js', 'js/views/teacup.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
-['overview', 'teacup', 'tables', 'calc', 'docs'].forEach((r) => {
+['README.md', 'LICENSE', '.nojekyll', 'data/bpa.json', '.github/workflows/update-bpa.yml', 'scripts/stamp-version.js', 'js/router.js', 'js/teacup-core.js', 'js/ratings.js', 'scripts/check-links.js', 'js/tdg.js', 'js/snotel.js', 'js/views/tables.js', 'js/views/docs.js'].forEach((f) => check(fs.existsSync(path.join(__dirname, f)), f + ' exists'));
+['overview', 'tables', 'calc', 'docs'].forEach((r) => {
   check(html.includes('href="#/' + r + '"') && html.includes('data-view="' + r + '"'), 'route + view exist: ' + r);
 });
-check(html.indexOf('js/teacup-core.js') > html.indexOf('js/cwms-levels.js') && html.indexOf('js/teacup-core.js') < html.indexOf('js/views/teacup.js'), 'script order: teacup-core after levels, before teacup view');
+check(html.indexOf('js/teacup-core.js') > html.indexOf('js/cwms-levels.js') && html.indexOf('js/teacup-core.js') < html.indexOf('js/app.js'), 'script order: teacup-core after levels, before app');
 check(!/biological-opinion-upper-willamette-valley/.test(fs.readFileSync(path.join(__dirname, 'js', 'views', 'docs.js'), 'utf8')), 'docs: 404 BiOp URL not linked');
 check((fs.readFileSync(path.join(__dirname, 'js', 'views', 'docs.js'), 'utf8').match(/target="_blank" rel="noopener"/g) || []).length >= 1, 'docs: external links open in new tab with rel=noopener');
-check(/Published target — not a statement of current operations\./.test(fs.readFileSync(path.join(__dirname, 'js', 'views', 'teacup.js'), 'utf8')), 'teacup view carries the mandatory target disclaimer');
+check(/Published targets, not a statement of current operations\./.test(fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8')), 'levels and targets carry the published-target disclaimer');
 check(html.indexOf('js/cwms-levels.js') < html.indexOf('js/router.js') && html.indexOf('js/router.js') < html.indexOf('js/app.js') &&
   html.indexOf('js/views/docs.js') < html.indexOf('js/router.js'), 'script order: modules, views, router, app');
 const app = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8') + fs.readFileSync(path.join(__dirname, 'js', 'data.js'), 'utf8');

@@ -93,7 +93,7 @@
       '</ul>' +
       '<p>Examples of the court-ordered 2021 injunction measures, as described on the USACE injunction page and later folded into the 2025 and 2026 RODs: Green Peter drawn down to 780 ft by Nov 15 and held to Dec 15; ' +
       'Cougar to 1,505 ft by Nov 15 until Dec 15, refilled to 1,532 ft, then drafted to 1,520 ft from Mar 1 to Apr 1; Lookout Point deep drawdown Nov 15–Dec 15, with spring spill once the pool reaches 890 ft, held at 890–893 ft.</p>' +
-      '<p class="hint">Sources: ' + a(EIS, 'WVS EIS page') + ' · ' + a(INJ, 'injunction page') + '. The <a href="#/teacup">Teacup</a> page shows the published CWMS target levels for LOP, GPR, CGR and HCR (published targets, not statements of current operations).</p></section>';
+      '<p class="hint">Sources: ' + a(EIS, 'WVS EIS page') + ' · ' + a(INJ, 'injunction page') + '. Overview → More about … → Levels and targets shows the published CWMS target levels for LOP, GPR, CGR and HCR (published targets, not statements of current operations).</p></section>';
 
     h += '<section class="panel doc-sec" id="docs-sources"><div class="panel-head"><h2>Data sources used on this site</h2></div>' +
       '<div class="table-scroll doc-table"><table><thead><tr><th>Source</th><th>What</th><th>Type</th><th>Link</th></tr></thead><tbody>' +

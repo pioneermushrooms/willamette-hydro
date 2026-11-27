@@ -83,7 +83,7 @@ Readings older than 3 hours get a STALE tag.
 
 Overview is: feed status → four totals tiles → **workspace** → Snowpack.
 
-- **Left column:** Reservoirs and River gauges as aligned list rows (status light, name, then fixed-width columns: pool ft · vs rule · outflow cfs for reservoirs; current flow or stage · 24 h change · NWS flood category for gauges), and a collapsible **Basin map**. It stays in view (sticky) on wide screens.
+- **Left column:** the **Basin map** on top (always open), then Reservoirs and River gauges as aligned list rows. Reservoirs: mini teacup, name, pool ft · vs rule · in cfs · out cfs. Gauges: status light, name (NWS flood category badge when there is one), 24 h sparkline, current flow or stage, 24 h change.
 - **Right column (the selected point):** a header with name, status and one row of key numbers (reservoirs: pool, vs rule, % full, outflow, inflow, basin rain 24 h, plus a raining/dry line; gauges: flow, stage, temperature, 24 h change, NWS flood), then the Trend Recorder (ranges, zoom, layers, chart, strips, stats, sources, data table), then **More about …** (collapsed, remembered): basin precipitation table, chart and SNOTEL gauges; TDG; storage, conservation pool, reading times and source links; NWS flood stages and forecast for gauges.
 - Selecting a row or a map dot drives all of it. There is no separate details panel, card grid or point dropdown any more. On phones the selected point comes first and the list follows; tapping a row scrolls back up to it.
 - Notes under the header numbers and "derived"/"model" hints appear on hover or focus.
@@ -172,62 +172,15 @@ Every local script and stylesheet in `index.html` is loaded as `?v=<hash of js/ 
 
 ## Pages (hash routes)
 
-`#/overview` is the live dashboard (default). `#/teacup` is the basin teacup and lake ruler. `#/tables` has the published rating tables, `#/calc` the storage / drawdown calculator and `#/docs` the documents and data sources.
+`#/overview` is the live dashboard (default; `#/teacup` also lands here). `#/tables` has the published rating tables, `#/calc` the storage / drawdown calculator and `#/docs` the documents and data sources.
 Plain anchors (`#workspace`, `#trends`, `#snow`) stay on Overview and scroll.
 
-## Teacup view (`#/teacup`)
+## Teacup (folded into Overview)
 
-**PAST YEARS** (Trend Recorder, reservoirs; `js/pastyears.js`) overlays up to six calendar years of pool elevation on one Jan–Dec axis, each with its own rule curve (dashed) and the 30-yr statistics bands for context. Pick years from the last 20; hover or tap for every year's value on that date; the year summary table gives the lowest and highest pool with dates and the Nov 15–Dec 15 mean. Pool comes from USGS daily lake elevation (62614, 24:00) at the lake gage, or CWMS 6-hour means where there is no gage. Each year keeps a fixed colour from a six-hue palette checked for colour-vision deficiency and contrast.
-
-**Grey band source (PAST YEARS):** *USACE 30-yr (published)* draws USACE's daily statistics thru 2023 as published. Each day is ranked on its own from ~30 values, so the p05/p95 edges follow the one or two most extreme years on that day (e.g. Cougar's very deep construction-era drawdowns) and can look jagged. *Lake record (derived)* computes p05/p25/mean/p75/p95 from the lake's own daily record for the years offered (this year −19 to last year), pooling ±7 days around each date, so it is smooth and matches the years you can select. In both cases the elevation axis follows the pool lines and the bands are clipped to the chart; the band check underneath uses the selected band.
-
-**Zoom:** the Trend Recorder uses `js/zoom.js`: drag across the chart to zoom, double-click to zoom out, or − / + / ◀ / ▶ / Reset above the chart. The axes re-fit to the visible window and ticks switch months → days → hours; zoom resets when the range or point changes.
-
-**Layers (`js/layers.js`), all toggleable; choices are remembered in the browser:**
-
-| Where | Layer | Source | Default |
-|---|---|---|---|
-| On chart (reservoirs) | Rule curve | CWMS `<P>.Elev-RuleCurve.Inst.~1Day.0.CENWP-CALC` | on |
-| | 30-yr bands (p05–p95, p25–p75, mean) | CWMS stats location levels thru 2023 | on |
-| | Published target | CWMS `Injunction-Target` (LOP, GPR, CGR) / `Interim Risk Reduction Measure` (HCR) | on |
-| | Level lines: top of dam, top of max flood, top of flood, top of conservation, spillway crest, top/bottom of power pool, bottom of conservation | CWMS location levels `<P>.Elev.Inst.0.<name>` (only those published) | off |
-| Below chart (reservoirs) | Inflow / outflow (cfs) | CWMS `Flow-In` / `Flow-Out` (live 7 days; history as reported ≤ 35 days, else 6-hour means) | on |
-| | Water temperature (°F), turbidity (FNU) below the dam | USGS 00010 / 63680 at 14145500 (HCR), 14150000 (DEX), 14159500 (CGR) | off |
-| | TDG (% saturation) with the 110% reference line | CWMS `DEXO` / `CGRO.%-Saturation-TDG` | off |
-| Below chart (rivers) | Discharge, gage height, water temperature, turbidity (whichever is not on the main chart) | USGS IV (≤ 120 days) or daily means | off |
-
-Layers a dam or gage does not publish are shown greyed out and struck through (hover for the reason) instead of being clickable: level lines, bands and targets once the dam's CWMS levels load; strips from what is configured or after a background check of the data. The published target is the known CWMS level for LOP/GPR/CGR/HCR, otherwise an injunction / interim / target elevation level found in the dam's levels (e.g. Fall Creek). Each strip is its own small chart (its own axis and units) on the main chart's time axis; hovering anywhere shows a cursor and the value at that time on every strip. A layer a site does not publish says "not reported". In PAST YEARS the level lines and 30-yr bands apply; the strips are hidden.
-
-**PAST YEARS zoom:** drag across the chart to zoom into that span (horizontal drags work on touch screens; vertical swipes still scroll), tap a month name to zoom to that month, double-click to zoom out, or use − / + / ◀ / ▶ and the presets (Full year, Fall drawdown Oct–Dec, Refill Jan–May, Summer Jun–Sep). The elevation axis re-fits to the visible window (grid down to 0.05 ft), dates switch to day ticks, and each daily reading is marked once the window is two months or less.
-
-- **Basin teacup:** 8 cups in 2 columns on mobile and 4 on desktop.
-  - Cup height is the conservation pool, from bottom to top elevation in CWMS levels. The water line is the **live** pool elevation and the dashed line is the **live** CWMS rule curve. The number is % full, **derived** from live storage: (storage − bottom of conservation) ÷ (top − bottom).
-  - Below the conservation pool, cups say so rather than showing 0 %.
-  - Colours: below rule curve (> 10 ft under), near, above (> 2 ft over). These are this site's thresholds, the same as Overview.
-  - Dexter is a forebay gauge in its 690–695 ft power-pool band, with no conservation pool and no percent.
-  - Live pool data is shared from the Overview loader (`HYDRO.live`) and is not refetched.
-  - Why the cups use elevation geometry: a storage rule curve (`<P>.Stor-RuleCurve.Inst.~1Day.0.CENWP-CALC`) is listed in the CWMS catalog but returns no public data. So the rule curve exists only in feet, and the cup is drawn in feet so the water line and rule marker share one scale.
-- **Elevation ruler:** one lake at a time, chosen with a chip row (default Lookout Point). It shows these published CWMS levels (m → ft): streambed, bottom/top of conservation, top of flood, top of max flood, spillway crest and top of dam (Dexter: power-pool band).
-  - It also shows the live pool with its timestamp, today's rule curve (CWMS daily), and today's 30-year stats band (p25–p75, p05–p95, mean, min/max), **derived** from the published `…CENWP-30year-thru2023-STATS` levels.
-  - Scale: the scale is linear above a marked ≈ break, and the span down to the streambed is compressed.
-- **Annual chart:** shows the 30-yr bands and mean (365 daily evaluations), the full-year rule curve, the published target line (with gaps), a today line, and the **last 7 days** of pool.
-  - The full-year rule curve comes from the CWMS daily `Elev-RuleCurve` series, which is published through Dec 31.
-  - Longer pool history is not shown. The daily and hourly elevation series are empty or restricted publicly, and 90 days of 5–15-min data is too heavy.
-- **Targets:** each is shown as **"Published target — not a statement of current operations."**, with links to Docs and the USACE injunction page. Each shows the value today and the next 3 changes.
-  - **LOP, GPR, CGR:** `Elev-Forebay.Inst.0.Injunction-Target` (seasonal, latest version ≤ today).
-  - **HCR:** the seasonal elevation `Elev.Inst.0.Interim Risk Reduction Measure` (2026-01-01 version: 1,511 ft mid-Mar → Oct 11). HCR's `Stor.Inst.0.Interim_Operations` and `Stor.Inst.0.Injunction-Target` are storage-only and listed in ac-ft. They are not converted to elevation.
-- **Loading:** levels load lazily on first visit, with the selected lake first and the rest 3 at a time. They are cached for 24 h. Failures show "Levels unavailable" with a Retry button.
-
-Level availability (live, 2026-10-30):
-
-| Project | Ruler levels (of 7) | 30-yr stats | Elevation target used |
-|---|---|---|---|
-| LOP | 7 | 7/7 | Injunction-Target (828.0 ft today) |
-| HCR | 7 | 7/7 | Interim Risk Reduction Measure (none today; storage targets listed) |
-| DEX | 3: no conservation/flood levels; power band 690–695 shown | 7/7 | none |
-| GPR | 7 | 7/7 | Injunction-Target (924.7 ft today) |
-| CGR | 7 | 7/7 | Injunction-Target (1,510.6 ft today) |
-| FRN, COT, DOR | 7 | 7/7 | none published |
+The separate Teacup page is gone (`#/teacup` now opens Overview). What it showed lives on Overview:
+- **Mini teacups** in the Reservoirs list: water level within the conservation pool by elevation, coloured by rule-curve status (amber below, green near, blue above), the rule curve as a dashed amber line, a small arrow when the pool is below the conservation pool. Dexter (no conservation pool) is a tube for its power-pool band. The status light sits at the cup's corner.
+- **More about … → Levels and targets:** the published injunction / interim elevation target today with its next changes and the pool's distance from it, Hills Creek's storage targets, today's 30-yr p05 / mean / p95, and the structural levels (top of dam, flood, conservation, spillway crest, …) with the pool's distance from each.
+- Level lines, targets and the 30-yr bands are on the Trend Recorder chart.
 
 ## TDG, ODEQ temperature targets and snowpack
 

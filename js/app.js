@@ -748,6 +748,7 @@
     if (isRes) {
       var d = projData(e);
       h += wxBlock(e);
+      h += levelsSection(e);
       var tdg = tdgChip(e);
       if (tdg) h += '<section class="ws-sec"><h3>Total dissolved gas below the dam</h3>' + tdg + '</section>';
       var stl = d && H.latest(d.stor), Ss = e.series.stor ? H.srcLink({ cwms: e.series.stor.name, unit: e.series.stor.unit }) : '';
@@ -780,6 +781,40 @@
     $('#ws-more-body').innerHTML = h;
   }
 
+  // "Levels and targets" (folded in from the old Teacup page): published elevation target today and its
+  // next changes, structural levels with the distance from the pool, and today's 30-yr statistics.
+  var STOR_TARGETS = {
+    HCR: [{ id: 'Stor.Inst.0.Interim_Operations', label: 'Interim operations (storage)' }, { id: 'Stor.Inst.0.Injunction-Target', label: 'Injunction target (storage)' }]
+  };
+  var fChg = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric' });
+  function levelsSection(e) {
+    var LVm = H.levels, T = H.teacupCore, lv = levelsFor(e), now = Date.now();
+    var head = '<section class="ws-sec"><h3>Levels and targets <span class="hint">published CWMS location levels</span></h3>';
+    if (!LVm || !L) return '';
+    if (!lv) return head + '<p class="na loading">Loading levels…</p></section>';
+    var d = projData(e), el = d && H.latest(d.elev), h = head;
+    var tgt = L.targetFor(e.code, lv), te = tgt && LVm.pick(lv, tgt.id, now), tv = te ? LVm.evalSeasonal(te, now) : null;
+    h += '<dl class="ws-facts">';
+    if (tgt && te) {
+      var ch = T.nextTargetChanges(te, now, 3);
+      h += '<div><dt>' + esc(tgt.label) + '</dt><dd>' + (tv == null ? '<span class="na">none today</span>' : '<b class="mono tgt-val">' + fmt(tv, 1) + ' ft</b> today' + (el ? ' · pool ' + signed(el.v - tv, 1) + ' ft' : '')) +
+        (ch.length ? ' · next: ' + ch.map(function (c) { return fChg.format(new Date(c.t)) + ' ' + (c.v == null ? 'ends' : fmt(c.v, 1) + ' ft'); }).join(', ') : '') + '</dd></div>';
+    } else h += '<div><dt>Published target</dt><dd><span class="na">no injunction or interim elevation target published</span></dd></div>';
+    (STOR_TARGETS[e.code] || []).forEach(function (o) {
+      var se = LVm.pick(lv, o.id, now); if (!se) return;
+      var sv = LVm.evalSeasonal(se, now);
+      h += '<div><dt>' + esc(o.label) + '</dt><dd>' + (sv == null ? '<span class="na">none today</span>' : '<span class="mono">' + fmt(sv) + ' ac-ft</span> today') + '</dd></div>';
+    });
+    var sp = function (k) { var x = LVm.pick(lv, LVm.IDS[k], now); return x ? LVm.evalSeasonal(x, now) : null; };
+    if (sp('statsAve') != null) h += '<div><dt>30-yr today</dt><dd class="mono">p05 ' + fmt(sp('statsP05'), 1) + ' · mean ' + fmt(sp('statsAve'), 1) + ' · p95 ' + fmt(sp('statsP95'), 1) + ' ft</dd></div>';
+    h += '</dl>';
+    var lvls = L.levelValues(lv, now);
+    if (lvls.length) h += '<table class="ws-table"><thead><tr><th>Level</th><th>Elev ft</th><th>Pool vs level</th></tr></thead><tbody>' + lvls.map(function (x) {
+      return '<tr><th>' + esc(x.label) + '</th><td class="mono">' + fmt(x.v, 1) + '</td><td class="mono">' + (el ? signed(el.v - x.v, 1) + ' ft' : '—') + '</td></tr>';
+    }).join('') + '</tbody></table>';
+    return h + '<p class="hint">Published targets, not a statement of current operations. <a href="#/docs">Docs ▸</a></p></section>';
+  }
+
   // ---- Project list (left column) ----------------------------------------------
 
   function cell(v, cls, title) { return '<span class="ws-v mono' + (cls ? ' ' + cls : '') + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + v + '</span>'; }
@@ -791,30 +826,61 @@
       .replace(/ (at|near) /, ' · ').replace(/ below /, ' · blw ');
   }
 
-  function listRow(e, cols) {
+  // icon: mini teacup (reservoirs) or null for the status light; tip: extra tooltip; tag: badge after the name.
+  function listRow(e, cols, icon, tip, tag) {
     var st = statusOf(e), sel = e.id === state.selectedId;
-    return '<li class="ws-row' + (sel ? ' selected' : '') + '" role="option" tabindex="0" aria-selected="' + sel + '" data-id="' + e.id + '" title="' + esc(e.name + ' · ' + st.label + (st.reason ? ' · ' + st.reason : '')) + '">' +
-      '<span class="light ' + st.level + '" aria-hidden="true"></span><span class="ws-name">' + esc(shortName(e)) + '</span>' + cols + '</li>';
+    return '<li class="ws-row ' + (e.kind === 'reservoir' ? 'ws-row-res' : 'ws-row-riv') + (sel ? ' selected' : '') + '" role="option" tabindex="0" aria-selected="' + sel + '" data-id="' + e.id + '" title="' + esc((tip || e.name) + ' · ' + st.label + (st.reason ? ' · ' + st.reason : '')) + '">' +
+      (icon ? '<span class="ws-icon">' + icon + '<span class="light ' + st.level + '" aria-hidden="true"></span></span>' : '<span class="ws-icon"><span class="light ' + st.level + '" aria-hidden="true"></span></span>') +
+      '<span class="ws-name">' + esc(shortName(e)) + (tag ? ' ' + tag : '') + '</span>' + cols + '</li>';
+  }
+
+  // Mini teacup for a list row: water level within the conservation pool (by elevation, like the old
+  // Teacup page), coloured by rule-curve status, with the rule curve as a dashed line. Dexter (no
+  // conservation pool) gets a tube for its power-pool band.
+  function miniCup(p, el, r) {
+    var T = H.teacupCore, rd = T.ruleDelta(el ? el.v : null, r ? r.v : null, H.SETTINGS.ruleBelowFt, H.SETTINGS.ruleAboveFt), cls = rd.status || 'none';
+    var lim = p.noStorage ? p.powerPool : p.cons, top = 3, bot = 19, f = el && lim ? T.elevFraction(el.v, lim.elevBottom, lim.elevTop) : null;
+    var y = function (fr) { return (bot - fr * (bot - top)).toFixed(1); };
+    var s = '<svg class="mini-cup" viewBox="0 0 24 22" aria-hidden="true">';
+    var shape = p.noStorage ? '<rect x="8" y="' + top + '" width="8" height="' + (bot - top) + '" rx="1.5"/>' : '<path d="M2 ' + top + ' L22 ' + top + ' L18.5 ' + bot + ' L5.5 ' + bot + ' Z"/>';
+    var id = 'mc-' + p.code;
+    s += '<defs><clipPath id="' + id + '">' + shape + '</clipPath></defs>';
+    if (f != null && f > 0) s += '<rect class="cup-water ' + cls + '" clip-path="url(#' + id + ')" x="0" y="' + y(f) + '" width="24" height="' + (bot - y(f) + 1) + '"/>';
+    s += shape.replace('<rect ', '<rect class="mini-cup-body" ').replace('<path ', '<path class="mini-cup-body" ');
+    if (r && lim) { var rf = T.elevFraction(r.v, lim.elevBottom, lim.elevTop); s += '<line class="mini-cup-rule" x1="0" x2="24" y1="' + y(rf) + '" y2="' + y(rf) + '"/>'; }
+    if (el && lim && el.v < lim.elevBottom) s += '<path class="mini-cup-below" d="M9 20 l3 2 l3 -2 z"/>';
+    return s + '</svg>';
+  }
+
+  // Last 24 h as a tiny line for river rows.
+  function miniSpark(s) {
+    var w = window24(s);
+    if (!w || w.v.length < 2) return '<span class="mini-spark na"></span>';
+    var lo = Math.min.apply(null, w.v), hi = Math.max.apply(null, w.v), span = hi - lo || 1, W = 48, Hh = 16;
+    var d = w.t.map(function (t, i) { return (i ? 'L' : 'M') + (((t - w.t0) / (w.t1 - w.t0)) * W).toFixed(1) + ' ' + (Hh - 2 - ((w.v[i] - lo) / span) * (Hh - 4)).toFixed(1); }).join('');
+    return '<svg class="mini-spark" viewBox="0 0 ' + W + ' ' + Hh + '" preserveAspectRatio="none" aria-hidden="true"><path d="' + d + '"/></svg>';
   }
 
   function renderList() {
     var none = '<span class="na">—</span>';
     $('#res-list').innerHTML = H.projects.map(function (p) {
-      var d = projData(p), el = d && H.latest(d.elev), r = d && H.ruleToday(d.rule), out = d && H.latest(d.out);
-      var dev = el && r ? el.v - r.v : null;
+      var d = projData(p), el = d && H.latest(d.elev), r = d && H.ruleToday(d.rule), out = d && H.latest(d.out), inn = d && H.latest(d.inflow);
+      var dev = el && r ? el.v - r.v : null, st = d && H.latest(d.stor), pf = p.cons && st ? H.percentFull(p, st.v) : null;
+      var tip = p.name + (el ? ' · pool ' + fmt(el.v, 1) + ' ft' : '') + (pf ? ' · ' + (pf.below ? 'below conservation pool' : fmt(pf.clamped, 1) + ' % full') : '') + (r ? ' · rule curve ' + fmt(r.v, 1) + ' ft' : '');
       return listRow(p,
         cell(el ? fmt(el.v, 1) : none, 'hl') +
         cell(dev == null ? none : signed(dev, 1), dev == null ? '' : dev < -H.SETTINGS.ruleBelowFt || dev > H.SETTINGS.ruleAboveFt ? 'off' : '', r ? 'Rule curve ' + fmt(r.v, 1) + ' ft today' : '') +
-        cell(out ? fmt(out.v, 0) : none));
+        cell(inn ? fmt(inn.v, 0) : none, inn && inn.v < 0 ? 'neg' : '', 'Inflow (computed by USACE)') +
+        cell(out ? fmt(out.v, 0) : none), miniCup(p, el, r), tip);
     }).join('');
     $('#riv-list').innerHTML = H.stations.map(function (s) {
       var d = stData(s), prim = d && H.stationPrimary(s, d), l = prim && H.latest(prim), w = window24(prim);
       var flow = s.primary === 'flow', ch = w && w.v.length > 1 ? w.v[w.v.length - 1] - w.v[0] : null;
       var g = nwpsGauge(s), cat = g && (g.observed.category || (N && N.categoryFor(l && !flow ? l.v : g.observed.stage, g.thresholds)));
       return listRow(s,
+        '<span class="ws-v">' + miniSpark(prim) + '</span>' +
         cell(l ? fmt(l.v, flow ? 0 : 2) + '<span class="unit">' + (flow ? 'cfs' : 'ft') + '</span>' : none, 'hl') +
-        cell(ch == null ? none : signed(ch, flow ? 0 : 2), '', '24 h change') +
-        cell(cat && cat !== 'none' ? fcatBadge(cat, '') : '', 'fl'));
+        cell(ch == null ? none : signed(ch, flow ? 0 : 2), '', '24 h change'), null, null, cat && cat !== 'none' ? fcatBadge(cat, '') : '');
     }).join('');
   }
 
@@ -1020,7 +1086,7 @@
     if (!c) {
       state.lv[e.code] = { loading: true };
       H.levels.fetchProjectLevels(e.code).then(function (lv) { state.lv[e.code] = { data: lv }; }, function () { state.lv[e.code] = { data: null }; })
-        .then(function () { if (state.chartId === e.id) renderChart(false); });
+        .then(function () { if (state.chartId === e.id) { renderChart(false); renderDetails(); } });
     }
     return null;
   }
@@ -1654,7 +1720,7 @@
     });
   }
 
-  // Lets other pages (Teacup) open a point in the Trend Recorder.
+  // Lets other pages open a point in the Trend Recorder.
   H.trend = {
     open: function (id, range) {
       if (!byId[id]) return;

@@ -1,13 +1,13 @@
 /*
- * Hash router: #/overview (default), #/teacup, #/tables, #/calc, #/docs.
+ * Hash router: #/overview (default), #/tables, #/calc, #/docs. The old #/teacup lands on Overview.
  * Plain in-page anchors (#trends, #reservoirs, ...) keep the Overview view and scroll as usual.
  * Views register in HYDRO.views[name] = { title, render(el) } and render once, lazily, on first visit.
  */
 (function (root) {
   'use strict';
   var H = root.HYDRO;
-  var ROUTES = ['overview', 'teacup', 'tables', 'calc', 'docs'];
-  var TITLES = { overview: 'Overview', teacup: 'Teacup', tables: 'Reports & Tables', calc: 'Storage / Drawdown Calculator', docs: 'Docs' };
+  var ROUTES = ['overview', 'tables', 'calc', 'docs'];   // #/teacup (retired) falls back to Overview
+  var TITLES = { overview: 'Overview', tables: 'Reports & Tables', calc: 'Storage / Drawdown Calculator', docs: 'Docs' };
   var BASE_TITLE = document.title;
   var rendered = {};
   var last = null;

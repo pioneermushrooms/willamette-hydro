@@ -1211,3 +1211,37 @@ i.dd-k-pubtgt { border-top: 2px dotted var(--tgt); }
   .snow-table th:nth-child(4), .snow-table td:nth-child(4) { display: none; }
   .snow-table td:nth-child(5) { font-size: 11px; color: var(--muted); white-space: nowrap; }
 }
+
+/* ==== Workspace v2: map on top, mini teacups, sparklines ==================================== */
+main, .site-footer { max-width: 1680px; }
+.workspace { grid-template-columns: minmax(340px, 470px) minmax(0, 1fr); }
+.ws-side { position: static; max-height: none; overflow: visible; }
+.ws-map .map-wrap { margin-top: 8px; }
+.ws-map .map-legend { margin-top: 6px; }
+.ws-icon { position: relative; display: inline-flex; width: 24px; height: 22px; align-items: center; justify-content: center; }
+.ws-row-res .ws-icon .light { position: absolute; right: -3px; top: -1px; width: 6px; height: 6px; }
+.mini-cup { width: 24px; height: 22px; display: block; }
+.mini-cup-body { fill: none; stroke: #8b939b; stroke-width: 1.2; }
+.mini-cup-rule { stroke: var(--amber); stroke-width: 1.2; stroke-dasharray: 2 1.5; }
+.mini-cup-below { fill: var(--st-below); }
+.mini-spark { display: block; width: 48px; height: 16px; margin-left: auto; }
+.mini-spark path { fill: none; stroke: var(--cyan); stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.ws-v.neg { color: #ff8a80; }
+/* reservoirs: icon | name | pool | vs rule | in | out ;  rivers: icon | name | 24 h line | now | change */
+.ws-row-res { grid-template-columns: 24px minmax(0, 1fr) 64px 44px 50px 50px; }
+.ws-row-riv { grid-template-columns: 24px minmax(0, 1fr) 50px 78px 50px; }
+.ws-cols-res { grid-template-columns: 64px 44px 50px 50px; }
+.ws-cols-riv { grid-template-columns: 50px 78px 50px; }
+.ws-name .fcat { font-size: 8.5px; padding: 0 4px; vertical-align: 1px; }
+@media (max-width: 960px) { .workspace { grid-template-columns: minmax(0, 1fr); } .ws-side { order: 2; } }
+@media (max-width: 420px) {
+  .ws-row-res { grid-template-columns: 22px minmax(0, 1fr) 58px 40px 44px 44px; gap: 4px; }
+  .ws-cols-res { grid-template-columns: 58px 40px 44px 44px; gap: 4px; }
+  .ws-row-riv { grid-template-columns: 22px minmax(0, 1fr) 40px 70px 46px; gap: 4px; }
+  .ws-cols-riv { grid-template-columns: 40px 70px 46px; gap: 4px; }
+  .mini-spark { width: 40px; }
+}
+.ws-cols span { white-space: nowrap; }
+.ws-head .kv { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+.ws-facts > div { grid-template-columns: 150px 1fr; }
+@media (max-width: 420px) { .ws-facts > div { grid-template-columns: 1fr; } }
