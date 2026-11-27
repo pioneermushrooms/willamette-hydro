@@ -79,6 +79,14 @@ The thresholds are this site's own choices, not an agency determination.
 Every card shows its own last-reading time in Pacific time with an age, for example "Oct 30, 4:45 PM PDT · 23 min ago".
 Readings older than 3 hours get a STALE tag.
 
+### Less at first glance
+
+Cards and the totals tiles show the label, value and unit. The notes under values, "derived" hints, last-reading lines, source lines, flood notes and the TDG chart appear while the pointer is over a card or tile (or after tapping it on a phone). The detail panel always shows everything.
+
+### Scroll position
+
+The page never moves the view on its own during a refresh. Across a reload (yours, or the quiet one after a deploy while the tab is hidden) it remembers the section at the top of the screen and returns to it once data is drawn, holding it there while content above settles (browser scroll restoration is turned off because it landed on the cards).
+
 ### Source links on every value
 
 Each displayed value has a small **↗** next to its label (cards, detail panel, Hourly Snapshot, Teacup, Calculator live line). It opens the exact series the value came from:
@@ -101,7 +109,9 @@ Model data: Open-Meteo forecast API, hourly precipitation averaged over two hand
 
 The Trend Recorder has a **Basin precipitation** strip for reservoirs: hourly model data up to 92 days back, Open-Meteo archive (ERA5) daily sums beyond that.
 
-## Hourly Snapshot (top of every page)
+## Hourly Snapshot (removed from the page)
+
+Removed from the top of the page at the user's request; `js/snapshot.js` and its tests are kept but the page no longer loads it. The notes below describe it as it was.
 
 A compact strip above the page tabs with the values recorded hourly:
 **Hills Creek** Elev · TW · HCRO, **Lookout Point** Elev, **Dexter** FB · TW · DEXO, **Cougar** FB · TW · CGRO. Code: `js/snapshot.js`.

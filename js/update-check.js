@@ -54,12 +54,56 @@
     fingerprint().then(function (fp) {
       busy = false;
       if (!fp || fp === base) return;
-      if (document.hidden && !/^#\/calc/.test(location.hash)) location.reload();
+      if (document.hidden && !/^#\/calc/.test(location.hash)) { saveScroll(); location.reload(); }
       else banner();
     });
   }
 
+  /*
+   * Scroll position across reloads. The browser's own restoration jumps to a pixel offset before the
+   * live data has filled the page, which can land on the reservoir or river cards. Instead remember
+   * the section at the top of the screen and the offset into it, and return there once data is drawn.
+   */
+  var ANCHORS = ['#totals', '#overview', '#trends', '#reservoirs', '#rivers', '#snow'];
+  var SKEY = 'wvhd:scroll';
+  function saveScroll() {
+    try {
+      var best = null;
+      ANCHORS.forEach(function (sel) {
+        var el = document.querySelector(sel);
+        if (el && el.offsetParent !== null && el.getBoundingClientRect().top <= 1) best = { sel: sel, off: Math.round(-el.getBoundingClientRect().top) };
+      });
+      sessionStorage.setItem(SKEY, JSON.stringify({ hash: location.hash, y: scrollY, a: best }));
+    } catch (e) { /* storage unavailable */ }
+  }
+  function restoreScroll() {
+    var saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(SKEY) || 'null'); sessionStorage.removeItem(SKEY); } catch (e) { return; }
+    if (!saved || saved.hash !== location.hash) return;
+    var go = function () {
+      var el = saved.a && document.querySelector(saved.a.sel);
+      window.scrollTo(0, el ? el.getBoundingClientRect().top + scrollY + saved.a.off : saved.y);
+    };
+    // After the first data render; then keep the section in place while late content above it
+    // (detail panel, weather, history) changes height, for up to 10 s or until the reader scrolls.
+    var once = function () {
+      document.removeEventListener('hydro:data', once);
+      go();
+      if (typeof ResizeObserver === 'undefined') return;
+      var ro = new ResizeObserver(function () { go(); });
+      var stop = function () { ro.disconnect(); ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(function (ev) { removeEventListener(ev, stop, true); }); };
+      ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach(function (ev) { addEventListener(ev, stop, true); });
+      ro.observe(document.body);
+      setTimeout(stop, 10000);
+    };
+    document.addEventListener('hydro:data', once);
+    setTimeout(function () { document.removeEventListener('hydro:data', once); }, 30000);
+  }
+
   function start() {
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    window.addEventListener('pagehide', saveScroll);
+    restoreScroll();
     fingerprint().then(function (fp) { base = fp; });
     setInterval(check, EVERY_MS);
     document.addEventListener('visibilitychange', function () {

@@ -447,9 +447,9 @@ console.log('snapshot / history');
   const al = HI.appendLive({ t: [1, 2], v: [1, 2] }, { t: [1, 2, 3600e3 * 5, 3600e3 * 5 + 10], v: [9, 9, 4, 6] });
   check(al.t.length === 3 && al.v[2] === 6 && al.t[2] === 3600e3 * 5 + 10, 'history: live points appended after the history, last reading per hour (real timestamps)');
   const html2 = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-  check(html2.indexOf('id="snapshot"') > html2.indexOf('</header>') && html2.indexOf('id="snapshot"') < html2.indexOf('class="tabs routes"'), 'snapshot: strip sits above the page tabs (every page)');
+  check(!html2.includes('id="snapshot"') && !html2.includes('js/snapshot.js'), 'Hourly Snapshot removed from the page (js/snapshot.js kept, unused)');
   check(['24h', '7d', '30d', '6m', '1y'].every((r) => html2.includes('data-range="' + r + '"')), 'trend: 24 H, 7 D, 30 D, 6 MO, 1 YR buttons');
-  check(html2.indexOf('js/snapshot.js') > html2.indexOf('js/data.js') && html2.indexOf('js/history.js') < html2.indexOf('js/views/teacup.js'), 'script order: snapshot/history after data, before views');
+  check(html2.indexOf('js/history.js') > html2.indexOf('js/data.js') && html2.indexOf('js/history.js') < html2.indexOf('js/views/teacup.js'), 'script order: history after data, before views');
   const tcs = fs.readFileSync(path.join(__dirname, 'js', 'views', 'teacup.js'), 'utf8');
   check(/data-open-trend/.test(tcs) && !/renderAnnual/.test(tcs), 'teacup: lake chart moved to the Trend Recorder (Open in Trend Recorder button)');
 }

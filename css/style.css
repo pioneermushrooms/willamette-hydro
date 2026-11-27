@@ -1096,3 +1096,22 @@ i.dd-k-pubtgt { border-top: 2px dotted var(--tgt); }
 .st-svg .st-xg { stroke: var(--grid); opacity: .5; }
 .st-last { font-size: 10.5px; color: var(--text-2); margin-left: 3px; }
 .st-lab-1 { color: var(--muted); font-size: 10.5px; }
+
+/* ---- Less at first glance: secondary details show on hover / focus / tap ----------------
+   Cards and the totals tiles keep the label, value and unit; the notes under them, "derived"
+   hints, reading times and source lines appear while the pointer is over the card (or a tap
+   gives it focus). The detail panel always shows everything. */
+.card:not(:hover):not(:focus-within) dd.sub,
+.card:not(:hover):not(:focus-within) dt .hint,
+.card:not(:hover):not(:focus-within) .reading,
+.card:not(:hover):not(:focus-within) p.src,
+.card:not(:hover):not(:focus-within) .flood-note,
+.card:not(:hover):not(:focus-within) .spark-cap,
+.card:not(:hover):not(:focus-within) .wx-line .hint,
+.card:not(:hover):not(:focus-within) .card-head p,
+.card:not(:hover):not(:focus-within) .tdg-chip svg,
+.card:not(:hover):not(:focus-within) .tdg-foot,
+.card:not(:hover):not(:focus-within) .tdg-ref-key,
+.tile:not(:hover):not(:focus-within) .tile-label .hint,
+.tile:not(:hover):not(:focus-within) .tile-sub { display: none; }
+.card-grid { align-items: start; }

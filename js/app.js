@@ -369,7 +369,7 @@
     });
 
     $('#totals').innerHTML = tiles.map(function (x) {
-      return '<div class="tile' + (x.cls ? ' ' + x.cls : '') + '">' +
+      return '<div class="tile' + (x.cls ? ' ' + x.cls : '') + '" tabindex="0">' +
         '<div class="tile-label">' + x.label + '</div>' +
         '<div class="tile-value"><span>' + x.value + '</span>' + (x.unit ? '<span class="unit">' + x.unit + '</span>' : '') + '</div>' +
         '<div class="tile-sub">' + (x.sub || '') + '</div>' + (x.extra || '') +
@@ -541,7 +541,7 @@
       s += '</g>';
     });
     $('#map-nodes').innerHTML = s;
-    if (focusId) { var n = document.querySelector('.node[data-id="' + focusId + '"]'); if (n) n.focus(); }
+    if (focusId) { var n = document.querySelector('.node[data-id="' + focusId + '"]'); if (n) n.focus({ preventScroll: true }); }
   }
 
   // ---- NWS flood categories + forecast (NOAA NWPS) --------------------------
@@ -659,7 +659,7 @@
       h += kv('% full', p.consFromLevels && p.consTried !== true ? LOADING : NA, '', 'na', 'needs CWMS conservation limits');
     }
     h += kvVal('Outflow' + S('out'), val(out, 0, 'cfs', '', p.cbt ? 'hourly average' : ''));
-    h += kvVal('Computed inflow' + S('inflow'), val(inn, 0, 'cfs', inn && inn.v < 0 ? 'neg' : '', inn ? (inn.v < 0 ? 'computed from storage change; negative as reported' : 'computed by USACE') : ''));
+    h += kvVal('Computed inflow' + S('inflow'), val(inn, 0, 'cfs', inn && inn.v < 0 ? 'neg' : '', inn && inn.v < 0 ? 'computed from storage change; negative as reported' : ''));
     if (full) {
       h += kvVal('Storage' + S('stor'), p.noStorage ? { html: 'n/a', unit: '', cls: 'na', sub: 'not published' } : val(st, 0, 'ac-ft'));
       if (p.cons) h += kv('Conservation pool', fmt(p.cons.elevBottom, 1) + '–' + fmt(p.cons.elevTop, 1), 'ft', '', 'CWMS bottom/top of conservation' + (p.consFromLevels ? ' (read at runtime)' : ''));
@@ -680,7 +680,7 @@
     var prim = d && H.stationPrimary(s, d), w = window24(prim);
     var ch = w && w.v.length > 1 ? w.v[w.v.length - 1] - w.v[0] : null;
     var unit = s.primary === 'flow' ? 'cfs' : 'ft';
-    h += kv('24 h change <span class="hint">derived</span>', !d ? LOADING : ch == null ? NA : signed(ch, s.primary === 'flow' ? 0 : 2), ch == null ? '' : unit, '', s.primary === 'stage' ? 'stage' : 'flow');
+    h += kv('24 h change <span class="hint">derived</span>', !d ? LOADING : ch == null ? NA : signed(ch, s.primary === 'flow' ? 0 : 2), ch == null ? '' : unit, '', '');
     if (full) {
       h += kv('USGS site' + U(''), s.site, '', '', esc(s.usgsName));
     }
