@@ -7,7 +7,7 @@
   <meta name="description" content="Willamette Valley Hydro Dispatch: a dashboard of South Willamette Valley reservoirs and rivers using live, provisional data from USGS and USACE. Not an official agency site.">
   <title>Willamette Valley Hydro Dispatch · Live USGS &amp; USACE data (provisional)</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111315'/%3E%3Cpath d='M2 11c2-2 4 2 6 0s4 2 6 0' stroke='%2339d0e0' stroke-width='2' fill='none'/%3E%3Ccircle cx='8' cy='5' r='2' fill='%23ffb000'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/style.css?v=379a81928e">
+  <link rel="stylesheet" href="css/style.css?v=7a1a960fc4">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -54,13 +54,6 @@
 
   <main id="main">
     <div class="view view-overview" data-view="overview">
-    <nav class="jump" aria-label="Jump to section">
-      <a href="#overview">Map</a>
-      <a href="#trends">Trends</a>
-      <a href="#reservoirs">Reservoirs</a>
-      <a href="#rivers">Rivers</a>
-      <a href="#snow">Snow</a>
-    </nav>
     <section class="feed" aria-label="Data feed status">
       <div class="feed-badges" id="feed-badges" aria-live="polite">
         <span class="badge pending">Loading USGS, USACE and BPA data…</span>
@@ -70,85 +63,74 @@
 
     <section class="totals" id="totals" aria-label="Basin totals"></section>
 
-    <section class="grid-overview" id="overview">
-      <div class="panel map-panel">
-        <div class="panel-head">
-          <h2>Basin Schematic</h2>
-          <span class="panel-tag mono">SCHEMATIC · NOT TO SCALE</span>
+    <!-- One workspace: pick a project or gauge on the left (list or map); everything about it is on the right. -->
+    <section class="workspace" id="workspace">
+      <aside class="panel ws-side" aria-label="Projects and gauges">
+        <div class="ws-group">
+          <div class="ws-group-head"><h2>Reservoirs</h2><span class="ws-cols mono" aria-hidden="true"><span>Pool ft</span><span>vs rule</span><span>Out cfs</span></span></div>
+          <ul class="ws-list" id="res-list" role="listbox" aria-label="Reservoirs"></ul>
         </div>
-        <div class="map-wrap scan">
-          <svg id="basin-map" role="group" aria-label="Schematic basin map. Select a dam or station for details."></svg>
+        <div class="ws-group">
+          <div class="ws-group-head"><h2>River gauges</h2><span class="ws-cols mono" aria-hidden="true"><span>Now</span><span>24 h</span><span></span></span></div>
+          <ul class="ws-list" id="riv-list" role="listbox" aria-label="River gauges"></ul>
         </div>
-        <ul class="map-legend">
-          <li><span class="lg-dam" aria-hidden="true"></span>Dam / reservoir</li>
-          <li><span class="lg-station" aria-hidden="true"></span>USGS river gauge</li>
-          <li><span class="light normal" aria-hidden="true"></span>Reporting / near rule curve</li>
-          <li><span class="light watch" aria-hidden="true"></span>Stale &gt;3 h or off rule curve</li>
-          <li><span class="light low" aria-hidden="true"></span>No data / &gt;12 h old</li>
-        </ul>
-        <p class="legend-note">Status lights are derived by this site from data age and the USACE rule curve. They are not an agency determination.</p>
-      </div>
-      <aside class="panel detail-panel" id="details" aria-live="polite"></aside>
-    </section>
+        <details class="ws-map" id="ws-map">
+          <summary>Basin map</summary>
+          <div class="map-wrap scan">
+            <svg id="basin-map" role="group" aria-label="Schematic basin map. Select a dam or station."></svg>
+          </div>
+          <ul class="map-legend">
+            <li><span class="lg-dam" aria-hidden="true"></span>Dam</li>
+            <li><span class="lg-station" aria-hidden="true"></span>USGS gauge</li>
+            <li><span class="light normal" aria-hidden="true"></span>OK</li>
+            <li><span class="light watch" aria-hidden="true"></span>Stale or off rule curve</li>
+            <li><span class="light low" aria-hidden="true"></span>No data</li>
+          </ul>
+          <p class="legend-note">Schematic, not to scale. Status lights are derived by this site from data age and the USACE rule curve, not an agency determination.</p>
+        </details>
+      </aside>
 
-    <section class="panel" id="trends">
-      <div class="panel-head">
-        <h2>Trend Recorder</h2>
-        <span class="panel-tag mono" id="trend-tag">LIVE SERIES</span>
-      </div>
-      <div class="trend-controls">
-        <label class="field">
-          <span class="field-label">Point</span>
-          <select id="trend-select"></select>
-        </label>
-        <div class="seg" id="param-seg" role="group" aria-label="River parameter" hidden>
-          <button type="button" data-param="flow" aria-pressed="true">FLOW</button>
-          <button type="button" data-param="stage" aria-pressed="false">STAGE</button>
-          <button type="button" data-param="temp" aria-pressed="false">TEMP</button>
+      <section class="panel ws-main" id="trends" aria-live="polite">
+        <div id="ws-head" class="ws-head"></div>
+        <div class="trend-controls">
+          <div class="seg" role="group" aria-label="Time range">
+            <button type="button" data-range="24h" aria-pressed="false">24 H</button>
+            <button type="button" data-range="7d" aria-pressed="true">7 D</button>
+            <button type="button" data-range="30d" aria-pressed="false">30 D</button>
+            <button type="button" data-range="6m" aria-pressed="false">6 MO</button>
+            <button type="button" data-range="1y" aria-pressed="false">1 YR</button>
+            <button type="button" data-range="year" aria-pressed="false" title="This calendar year, Jan–Dec">YEAR</button>
+            <button type="button" data-range="years" aria-pressed="false" title="Compare up to six past calendar years (reservoirs)">PAST YEARS</button>
+          </div>
+          <div class="seg" id="param-seg" role="group" aria-label="River parameter" hidden>
+            <button type="button" data-param="flow" aria-pressed="true">FLOW</button>
+            <button type="button" data-param="stage" aria-pressed="false">STAGE</button>
+            <button type="button" data-param="temp" aria-pressed="false">TEMP</button>
+          </div>
+          <span class="panel-tag mono" id="trend-tag">LIVE SERIES</span>
         </div>
-        <div class="seg" role="group" aria-label="Time range">
-          <button type="button" data-range="24h" aria-pressed="false">24 H</button>
-          <button type="button" data-range="7d" aria-pressed="true">7 D</button>
-          <button type="button" data-range="30d" aria-pressed="false">30 D</button>
-          <button type="button" data-range="6m" aria-pressed="false">6 MO</button>
-          <button type="button" data-range="1y" aria-pressed="false">1 YR</button>
-          <button type="button" data-range="year" aria-pressed="false" title="This calendar year, Jan–Dec">YEAR</button>
-          <button type="button" data-range="years" aria-pressed="false" title="Compare up to six past calendar years (reservoirs)">PAST YEARS</button>
+        <h3 class="chart-title" id="chart-title"></h3>
+        <div id="trend-zoom"></div>
+        <div id="trend-layers" class="tl-bar"></div>
+        <div id="years-box" class="years-box" hidden></div>
+        <div class="chart-wrap" id="chart-wrap">
+          <svg id="chart" aria-hidden="true"></svg>
+          <div class="chart-msg mono" id="chart-msg" hidden></div>
+          <div class="tooltip mono" id="tooltip" hidden></div>
         </div>
-      </div>
-      <h3 class="chart-title" id="chart-title"></h3>
-      <div id="trend-zoom"></div>
-      <div id="trend-layers" class="tl-bar"></div>
-      <div id="years-box" class="years-box" hidden></div>
-      <div class="chart-wrap" id="chart-wrap">
-        <svg id="chart" aria-hidden="true"></svg>
-        <div class="chart-msg mono" id="chart-msg" hidden></div>
-        <div class="tooltip mono" id="tooltip" hidden></div>
-      </div>
-      <div id="trend-strips" class="strips"></div>
-      <div class="chart-legend" id="chart-legend"></div>
-      <dl class="chart-stats mono" id="chart-stats"></dl>
-      <p class="chart-src" id="chart-src"></p>
-      <details class="table-view">
-        <summary>Show data table</summary>
-        <div class="table-scroll" id="chart-table"></div>
-      </details>
-    </section>
-
-    <section id="reservoirs">
-      <div class="section-head">
-        <h2>Reservoirs</h2>
-        <span class="panel-tag mono">USACE CWMS · POOL · RULE CURVE · FLOWS</span>
-      </div>
-      <div class="card-grid" id="reservoir-cards"></div>
-    </section>
-
-    <section id="rivers">
-      <div class="section-head">
-        <h2>River Stations</h2>
-        <span class="panel-tag mono">USGS NWIS · FLOW · STAGE · TEMP · NWS FLOOD</span>
-      </div>
-      <div class="card-grid" id="river-cards"></div>
+        <div id="trend-strips" class="strips"></div>
+        <div class="chart-legend" id="chart-legend"></div>
+        <dl class="chart-stats mono" id="chart-stats"></dl>
+        <p class="chart-src" id="chart-src"></p>
+        <details class="table-view">
+          <summary>Show data table</summary>
+          <div class="table-scroll" id="chart-table"></div>
+        </details>
+        <details class="ws-more" id="ws-more">
+          <summary id="ws-more-sum">More about this project</summary>
+          <div id="ws-more-body" class="ws-more-body"></div>
+        </details>
+      </section>
     </section>
 
     <section class="panel" id="snow">
@@ -187,25 +169,25 @@
     <p class="mono small">MIT License · static site · browser polls USGS/USACE every 5 min</p>
   </footer>
 
-  <script src="js/data.js?v=379a81928e"></script>
-  <script src="js/history.js?v=379a81928e"></script>
-  <script src="js/cwms-levels.js?v=379a81928e"></script>
-  <script src="js/nwps.js?v=379a81928e"></script>
-  <script src="js/tdg.js?v=379a81928e"></script>
-  <script src="js/snotel.js?v=379a81928e"></script>
-  <script src="js/weather.js?v=379a81928e"></script>
-  <script src="js/teacup-core.js?v=379a81928e"></script>
-  <script src="js/zoom.js?v=379a81928e"></script>
-  <script src="js/layers.js?v=379a81928e"></script>
-  <script src="js/pastyears.js?v=379a81928e"></script>
-  <script src="js/ratings.js?v=379a81928e"></script>
-  <script src="js/drawdown.js?v=379a81928e"></script>
-  <script src="js/views/teacup.js?v=379a81928e"></script>
-  <script src="js/views/tables.js?v=379a81928e"></script>
-  <script src="js/views/calc.js?v=379a81928e"></script>
-  <script src="js/views/docs.js?v=379a81928e"></script>
-  <script src="js/router.js?v=379a81928e"></script>
-  <script src="js/app.js?v=379a81928e"></script>
-  <script src="js/update-check.js?v=379a81928e"></script>
+  <script src="js/data.js?v=7a1a960fc4"></script>
+  <script src="js/history.js?v=7a1a960fc4"></script>
+  <script src="js/cwms-levels.js?v=7a1a960fc4"></script>
+  <script src="js/nwps.js?v=7a1a960fc4"></script>
+  <script src="js/tdg.js?v=7a1a960fc4"></script>
+  <script src="js/snotel.js?v=7a1a960fc4"></script>
+  <script src="js/weather.js?v=7a1a960fc4"></script>
+  <script src="js/teacup-core.js?v=7a1a960fc4"></script>
+  <script src="js/zoom.js?v=7a1a960fc4"></script>
+  <script src="js/layers.js?v=7a1a960fc4"></script>
+  <script src="js/pastyears.js?v=7a1a960fc4"></script>
+  <script src="js/ratings.js?v=7a1a960fc4"></script>
+  <script src="js/drawdown.js?v=7a1a960fc4"></script>
+  <script src="js/views/teacup.js?v=7a1a960fc4"></script>
+  <script src="js/views/tables.js?v=7a1a960fc4"></script>
+  <script src="js/views/calc.js?v=7a1a960fc4"></script>
+  <script src="js/views/docs.js?v=7a1a960fc4"></script>
+  <script src="js/router.js?v=7a1a960fc4"></script>
+  <script src="js/app.js?v=7a1a960fc4"></script>
+  <script src="js/update-check.js?v=7a1a960fc4"></script>
 </body>
 </html>

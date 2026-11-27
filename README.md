@@ -79,9 +79,14 @@ The thresholds are this site's own choices, not an agency determination.
 Every card shows its own last-reading time in Pacific time with an age, for example "Oct 30, 4:45 PM PDT · 23 min ago".
 Readings older than 3 hours get a STALE tag.
 
-### Less at first glance
+### Overview layout (one workspace)
 
-Cards and the totals tiles show the label, value and unit. The notes under values, "derived" hints, last-reading lines, source lines, flood notes and the TDG chart appear while the pointer is over a card or tile (or after tapping it on a phone). The detail panel always shows everything.
+Overview is: feed status → four totals tiles → **workspace** → Snowpack.
+
+- **Left column:** Reservoirs and River gauges as aligned list rows (status light, name, then fixed-width columns: pool ft · vs rule · outflow cfs for reservoirs; current flow or stage · 24 h change · NWS flood category for gauges), and a collapsible **Basin map**. It stays in view (sticky) on wide screens.
+- **Right column (the selected point):** a header with name, status and one row of key numbers (reservoirs: pool, vs rule, % full, outflow, inflow, basin rain 24 h, plus a raining/dry line; gauges: flow, stage, temperature, 24 h change, NWS flood), then the Trend Recorder (ranges, zoom, layers, chart, strips, stats, sources, data table), then **More about …** (collapsed, remembered): basin precipitation table, chart and SNOTEL gauges; TDG; storage, conservation pool, reading times and source links; NWS flood stages and forecast for gauges.
+- Selecting a row or a map dot drives all of it. There is no separate details panel, card grid or point dropdown any more. On phones the selected point comes first and the list follows; tapping a row scrolls back up to it.
+- Notes under the header numbers and "derived"/"model" hints appear on hover or focus.
 
 ### Scroll position
 
@@ -168,7 +173,7 @@ Every local script and stylesheet in `index.html` is loaded as `?v=<hash of js/ 
 ## Pages (hash routes)
 
 `#/overview` is the live dashboard (default). `#/teacup` is the basin teacup and lake ruler. `#/tables` has the published rating tables, `#/calc` the storage / drawdown calculator and `#/docs` the documents and data sources.
-Plain anchors (`#trends`, `#rivers`, …) stay on Overview and scroll.
+Plain anchors (`#workspace`, `#trends`, `#snow`) stay on Overview and scroll.
 
 ## Teacup view (`#/teacup`)
 

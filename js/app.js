@@ -642,7 +642,7 @@
 
   // ---- Readouts ------------------------------------------------------------
 
-  function reservoirReadouts(p, full) {
+  function reservoirReadouts(p, full, extra) {
     var d = projData(p), L = function (k) { return d && H.latest(d[k]); };
     var e = L('elev'), r = d && H.ruleToday(d.rule), st = L('stor'), out = L('out'), inn = L('inflow');
     var S = function (k) { return p.series[k] ? H.srcLink({ cwms: p.series[k].name, unit: p.series[k].unit }) : ''; };
@@ -659,15 +659,15 @@
       h += kv('% full', p.consFromLevels && p.consTried !== true ? LOADING : NA, '', 'na', 'needs CWMS conservation limits');
     }
     h += kvVal('Outflow' + S('out'), val(out, 0, 'cfs', '', p.cbt ? 'hourly average' : ''));
-    h += kvVal('Computed inflow' + S('inflow'), val(inn, 0, 'cfs', inn && inn.v < 0 ? 'neg' : '', inn && inn.v < 0 ? 'computed from storage change; negative as reported' : ''));
+    h += kvVal('<span title="Computed by USACE from outflow and the change in storage">Inflow</span>' + S('inflow'), val(inn, 0, 'cfs', inn && inn.v < 0 ? 'neg' : '', inn && inn.v < 0 ? 'computed from storage change; negative as reported' : ''));
     if (full) {
       h += kvVal('Storage' + S('stor'), p.noStorage ? { html: 'n/a', unit: '', cls: 'na', sub: 'not published' } : val(st, 0, 'ac-ft'));
       if (p.cons) h += kv('Conservation pool', fmt(p.cons.elevBottom, 1) + '–' + fmt(p.cons.elevTop, 1), 'ft', '', 'CWMS bottom/top of conservation' + (p.consFromLevels ? ' (read at runtime)' : ''));
     }
-    return '<dl class="kv">' + h + '</dl>';
+    return '<dl class="kv">' + h + (extra || '') + '</dl>';
   }
 
-  function stationReadouts(s, full) {
+  function stationReadouts(s, full, extra) {
     var d = stData(s), L = function (k) { return d && H.latest(d[k]); };
     var flow = L('flow'), stage = L('stage'), tc = L('tempC');
     var U = function (pc) { return H.srcLink({ usgs: s.site, param: pc }); };
@@ -684,7 +684,7 @@
     if (full) {
       h += kv('USGS site' + U(''), s.site, '', '', esc(s.usgsName));
     }
-    return '<dl class="kv">' + h + '</dl>';
+    return '<dl class="kv">' + h + (extra || '') + '</dl>';
   }
 
   // Per-series reading table for the details panel.
@@ -708,88 +708,137 @@
 
   // ---- Detail panel --------------------------------------------------------
 
+  // ---- Workspace: selected project header + "More" ----------------------------
+
+  // Header: name, status and the handful of numbers that matter, above the chart.
   function renderDetails() {
     var e = byId[state.selectedId], st = statusOf(e), h;
     var isRes = e.kind === 'reservoir';
     var sub = isRes ? e.river + ' · ' + e.purpose : e.river + ' · USGS ' + e.site;
-    h = '<div class="detail-head"><div><span class="panel-tag mono">' + (isRes ? 'USACE PROJECT ' + e.code : 'USGS RIVER GAUGE') + '</span>' +
-      '<h2>' + esc(e.name) + '</h2><p>' + esc(sub) + '</p></div>' + statusPill(st) + '</div>';
+    h = '<div class="ws-title"><div><span class="panel-tag mono">' + (isRes ? 'USACE PROJECT ' + e.code : 'USGS RIVER GAUGE') + '</span>' +
+      '<h2>' + esc(e.name) + '</h2><p class="ws-sub">' + esc(sub) + '</p></div>' + statusPill(st) + '</div>';
+    if (isRes) {
+      var w = wxSummary(e), rain = !H.weather || !H.weather.BASINS[e.code] ? '' :
+        kv('Basin rain 24 h <span class="hint">model</span>', !state.wx ? LOADING : w ? inch(w.past24) : NA, w ? 'in' : '', '', w ? 'next 24 h ' + inch(w.next24) + ' in' : '');
+      h += reservoirReadouts(e, false, rain);
+      if (w) h += '<p class="ws-wx">' + wxState(w) + '</p>';
+    } else {
+      h += stationReadouts(e, false, floodKv(e));
+    }
+    $('#ws-head').innerHTML = h;
+    renderMore(e);
+  }
+
+  // NWS flood category now (and forecast, if different) as one header cell for river gauges.
+  function floodKv(s) {
+    if (!N) return '';
+    var lid = N.LIDS[s.id];
+    if (lid === null) return kv('NWS flood', '<span class="na">none published</span>', '', '', '');
+    var o = state.nwps && state.nwps[s.id], g = o && o.gauge;
+    if (!g) return kv('NWS flood', state.nwps ? NA : LOADING, '', '', '');
+    var d = stData(s), us = d && H.latest(d.stage), stage = us ? us.v : g.observed.stage;
+    var nowCat = g.observed.category || N.categoryFor(stage, g.thresholds), fcCat = g.nwsForecastCategory || (g.peak && g.peak.category);
+    return kv('NWS flood', nowCat && nowCat !== 'none' ? fcatBadge(nowCat, '') : '<span class="na">below action</span>', '', '', fcCat && fcCat !== nowCat ? 'forecast: ' + esc(N.LABEL[fcCat] || fcCat) : '');
+  }
+
+  // "More about …": everything else for the selected point, collapsed by default (remembered).
+  function renderMore(e) {
+    var isRes = e.kind === 'reservoir', h = '';
+    $('#ws-more-sum').textContent = 'More about ' + e.name;
     if (isRes) {
       var d = projData(e);
-      h += '<div class="detail-gauge">' + reservoirGauge(e, 'detail') + reservoirReadouts(e, true) + '</div>';
-      h += tdgChip(e);
       h += wxBlock(e);
-      var w = d && window24(d.elev);
-      if (w && w.t.length > 1) h += '<div>' + sparkSVG(w.t, w.v, { t0: w.t0, t1: w.t1 }) + '<div class="spark-cap"><span>−24 H</span><span>POOL ELEV · ft</span><span>NOW</span></div></div>';
-      if (d) {
-        h += readingsTable([
+      var tdg = tdgChip(e);
+      if (tdg) h += '<section class="ws-sec"><h3>Total dissolved gas below the dam</h3>' + tdg + '</section>';
+      var stl = d && H.latest(d.stor), Ss = e.series.stor ? H.srcLink({ cwms: e.series.stor.name, unit: e.series.stor.unit }) : '';
+      h += '<section class="ws-sec"><h3>Storage and readings</h3><dl class="kv ws-kv-more">' +
+        kvVal('Storage' + Ss, e.noStorage ? { html: 'n/a', unit: '', cls: 'na', sub: 'not published' } : val(stl, 0, 'ac-ft')) +
+        (e.cons ? kv('Conservation pool', fmt(e.cons.elevBottom, 1) + '–' + fmt(e.cons.elevTop, 1), 'ft', '', 'CWMS bottom / top of conservation' + (e.consFromLevels ? ' (read at runtime)' : '')) : '') +
+        (e.powerPool ? kv('Power pool band', fmt(e.powerPool.elevBottom, 1) + '–' + fmt(e.powerPool.elevTop, 1), 'ft', '', 'run-of-river') : '') + '</dl>' +
+        (d ? readingsTable([
           { label: 'Pool elevation', t: (H.latest(d.elev) || {}).t },
           { label: 'Storage', t: e.noStorage ? null : (H.latest(d.stor) || {}).t },
           { label: 'Outflow', t: (H.latest(d.out) || {}).t },
           { label: 'Computed inflow', t: (H.latest(d.inflow) || {}).t },
           { label: 'Rule curve (daily)', t: (H.ruleToday(d.rule) || {}).t, daily: true }
-        ]);
-      }
+        ]) : '') + sourceLinks(e) + '</section>';
     } else {
       var sd = stData(e);
-      h += stationReadouts(e, true);
-      h += floodBlock(e, true);
+      h += '<section class="ws-sec"><h3>NWS flood stages and forecast</h3>' + floodBlock(e, true) + '</section>';
       var oq = ODEQ_AT[e.id] && H.levels && H.levels.peekProjectLevels(ODEQ_AT[e.id].code) ? odeqEntry(e.id) : null;
       if (oq && oq.entry) {
         var ov = H.levels.evalSeasonal(oq.entry, Date.now());
         h += '<p class="flood-note">ODEQ 2006 TMDL temperature target for DEX/LOP today: <b>' + (ov == null ? 'none published for today' : fmt(H.cToF(ov), 1) + ' °F (' + fmt(ov, 1) + ' °C)') +
           '</b> <span class="hint">published target at the dam tailwater; Jasper is the nearest gauge, shown for context.</span></p>';
       }
-      var pw = sd && window24(H.stationPrimary(e, sd));
-      if (pw && pw.t.length > 1) h += '<div>' + sparkSVG(pw.t, pw.v, { t0: pw.t0, t1: pw.t1 }) + '<div class="spark-cap"><span>−24 H</span><span>' + (e.primary === 'flow' ? 'FLOW · cfs' : 'STAGE · ft') + '</span><span>NOW</span></div></div>';
-      if (sd) {
-        h += readingsTable(e.params.map(function (k) {
-          return { label: { flow: 'Discharge (00060)', stage: 'Gage height (00065)', tempC: 'Water temp (00010)' }[k], t: (H.latest(sd[k]) || {}).t };
-        }));
-      }
+      h += '<section class="ws-sec"><h3>Readings</h3>' + (sd ? readingsTable(e.params.map(function (k) {
+        return { label: { flow: 'Discharge (00060)', stage: 'Gage height (00065)', tempC: 'Water temp (00010)' }[k], t: (H.latest(sd[k]) || {}).t };
+      })) : '') + '<p class="hint">USGS site ' + esc(e.site) + ' · ' + esc(e.usgsName) + '</p>' + sourceLinks(e) + '</section>';
     }
-    if (st.reason) h += '<p class="detail-note ' + st.level + '">' + esc(st.reason) + ' <span class="hint">Status derived by this site.</span></p>';
-    h += sourceLinks(e);
-    h += '<div><a class="btn" href="#trends" id="open-trend">Open trend ▸</a></div>';
-    var panel = $('#details');
-    panel.innerHTML = h;
-    sweepNeedles(panel);
-    $('#open-trend').addEventListener('click', function () { setChart(e.id); });
-  }
-
-  // ---- Cards ---------------------------------------------------------------
-
-  function cardShell(e, sub, body) {
     var st = statusOf(e);
-    return '<article class="card' + (e.id === state.selectedId ? ' selected' : '') + '" data-id="' + e.id + '">' +
-      '<div class="card-head"><div><h3><button type="button" class="card-select" aria-label="Show details for ' + esc(e.name) + '">' + esc(e.name) + '</button></h3><p>' + esc(sub) + '</p></div>' +
-      statusPill(st) + '</div>' + body + '</article>';
+    if (st.reason) h += '<p class="detail-note ' + st.level + '">' + esc(st.reason) + ' <span class="hint">Status derived by this site.</span></p>';
+    $('#ws-more-body').innerHTML = h;
   }
 
-  function renderCards() {
-    $('#reservoir-cards').innerHTML = H.projects.map(function (p) {
-      var d = projData(p), e = d && H.latest(d.elev);
-      return cardShell(p, p.river + (p.hydro ? ' · hydropower' : ' · flood control'),
-        '<div class="detail-gauge">' + reservoirGauge(p, 'card-' + p.id) + reservoirReadouts(p, false) + '</div>' + tdgChip(p) + wxLine(p) +
-        (d ? readingLine(e && e.t, 'Last pool reading') : '') + sourceLinks(p));
+  // ---- Project list (left column) ----------------------------------------------
+
+  function cell(v, cls, title) { return '<span class="ws-v mono' + (cls ? ' ' + cls : '') + '"' + (title ? ' title="' + esc(title) + '"' : '') + '>' + v + '</span>'; }
+
+  // "Middle Fork Willamette at Jasper" -> "MF Willamette · Jasper" (full name in the tooltip).
+  function shortName(e) {
+    if (e.kind === 'reservoir') return e.name;
+    return e.name.replace(/^Middle Fork /, 'MF ').replace(/^Coast Fork /, 'CF ').replace(/^South Fork /, 'SF ')
+      .replace(/ (at|near) /, ' · ').replace(/ below /, ' · blw ');
+  }
+
+  function listRow(e, cols) {
+    var st = statusOf(e), sel = e.id === state.selectedId;
+    return '<li class="ws-row' + (sel ? ' selected' : '') + '" role="option" tabindex="0" aria-selected="' + sel + '" data-id="' + e.id + '" title="' + esc(e.name + ' · ' + st.label + (st.reason ? ' · ' + st.reason : '')) + '">' +
+      '<span class="light ' + st.level + '" aria-hidden="true"></span><span class="ws-name">' + esc(shortName(e)) + '</span>' + cols + '</li>';
+  }
+
+  function renderList() {
+    var none = '<span class="na">—</span>';
+    $('#res-list').innerHTML = H.projects.map(function (p) {
+      var d = projData(p), el = d && H.latest(d.elev), r = d && H.ruleToday(d.rule), out = d && H.latest(d.out);
+      var dev = el && r ? el.v - r.v : null;
+      return listRow(p,
+        cell(el ? fmt(el.v, 1) : none, 'hl') +
+        cell(dev == null ? none : signed(dev, 1), dev == null ? '' : dev < -H.SETTINGS.ruleBelowFt || dev > H.SETTINGS.ruleAboveFt ? 'off' : '', r ? 'Rule curve ' + fmt(r.v, 1) + ' ft today' : '') +
+        cell(out ? fmt(out.v, 0) : none));
     }).join('');
-    $('#river-cards').innerHTML = H.stations.map(function (s) {
-      var d = stData(s), prim = d && H.stationPrimary(s, d), w = window24(prim);
-      return cardShell(s, s.river + ' · USGS ' + s.site, stationReadouts(s, false) + floodBlock(s, false) +
-        (w && w.t.length > 1 ? '<div>' + sparkSVG(w.t, w.v, { t0: w.t0, t1: w.t1 }) + '<div class="spark-cap"><span>−24 H</span><span>' + (s.primary === 'flow' ? 'FLOW' : 'STAGE') + '</span><span>NOW</span></div></div>' : '') +
-        (d ? readingLine(newestStation(s)) : '') + sourceLinks(s));
+    $('#riv-list').innerHTML = H.stations.map(function (s) {
+      var d = stData(s), prim = d && H.stationPrimary(s, d), l = prim && H.latest(prim), w = window24(prim);
+      var flow = s.primary === 'flow', ch = w && w.v.length > 1 ? w.v[w.v.length - 1] - w.v[0] : null;
+      var g = nwpsGauge(s), cat = g && (g.observed.category || (N && N.categoryFor(l && !flow ? l.v : g.observed.stage, g.thresholds)));
+      return listRow(s,
+        cell(l ? fmt(l.v, flow ? 0 : 2) + '<span class="unit">' + (flow ? 'cfs' : 'ft') + '</span>' : none, 'hl') +
+        cell(ch == null ? none : signed(ch, flow ? 0 : 2), '', '24 h change') +
+        cell(cat && cat !== 'none' ? fcatBadge(cat, '') : '', 'fl'));
     }).join('');
-    sweepNeedles($('#reservoir-cards'));
   }
 
   function bindCards() {
-    ['#reservoir-cards', '#river-cards'].forEach(function (sel) {
-      $(sel).addEventListener('click', function (ev) {
-        if (ev.target.closest('a')) return;
-        var c = ev.target.closest('.card');
-        if (c) select(c.getAttribute('data-id'), true);
+    ['#res-list', '#riv-list'].forEach(function (sel) {
+      var el = $(sel);
+      el.addEventListener('click', function (ev) {
+        var r = ev.target.closest('.ws-row');
+        if (r) select(r.getAttribute('data-id'), true, true);
+      });
+      el.addEventListener('keydown', function (ev) {
+        var r = ev.target.closest('.ws-row');
+        if (!r) return;
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); select(r.getAttribute('data-id'), true, true); }
+        else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+          ev.preventDefault();
+          var n = ev.key === 'ArrowDown' ? r.nextElementSibling : r.previousElementSibling;
+          if (n) n.focus();
+        }
       });
     });
+    var more = $('#ws-more');
+    try { more.open = localStorage.getItem('wvhd:more') === '1'; } catch (e) { /* default closed */ }
+    more.addEventListener('toggle', function () { try { localStorage.setItem('wvhd:more', more.open ? '1' : '0'); } catch (e) { /* ignore */ } });
   }
 
   // ---- Basin precipitation (js/weather.js) ---------------------------------------
@@ -851,41 +900,43 @@
   var fWxH = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric' });
   function fHM(t) { return fWxH.format(new Date(t)); }
 
+  // Basin precipitation section of "More": totals as one aligned table, then timing, chart, gauges.
   function wxBlock(p) {
     var W = H.weather, b = W && W.BASINS[p.code];
     if (!b) return '';
-    var head = '<h3 class="wx-title">Basin precipitation <span class="hint">≈ ' + fmt(b.area) + ' sq mi above the dam</span></h3>';
-    if (!state.wx) return '<div class="wx-box">' + head + '<p class="na loading">Loading weather…</p></div>';
+    var head = '<h3>Basin precipitation <span class="hint">≈ ' + fmt(b.area) + ' sq mi above the dam · model</span></h3>';
+    if (!state.wx) return '<section class="ws-sec wx-box">' + head + '<p class="na loading">Loading weather…</p></section>';
     var s = state.wx.basins[p.code], w = wxSummary(p);
-    if (!w) return '<div class="wx-box">' + head + '<p class="na">Weather model unavailable' + (state.wx.error ? ' (' + esc(state.wx.error) + ')' : '') + '.</p></div>';
-    var k = function (lab, v, sub) { return '<div><dt>' + lab + '</dt><dd>' + v + '</dd>' + (sub ? '<dd class="sub">' + sub + '</dd>' : '') + '</div>'; };
-    var h = '<div class="wx-box">' + head + '<p class="wx-now-line">' + wxState(w) + '</p><dl class="kv wx-kv">' +
-      k('Past 6 h', inch(w.past6) + '<span class="unit">in</span>') + k('Next 6 h', inch(w.next6) + '<span class="unit">in</span>', 'forecast') +
-      k('Past 24 h', inch(w.past24) + '<span class="unit">in</span>', '≈ ' + fmt(w.vol24) + ' ac-ft on the basin (' + fmt(w.vol24cfs) + ' cfs over a day)') +
-      k('Next 24 h', inch(w.next24) + '<span class="unit">in</span>', '≈ ' + fmt(w.volNext24) + ' ac-ft (' + fmt(w.volNext24cfs) + ' cfs over a day)') +
-      k('Past 72 h', inch(w.past72) + '<span class="unit">in</span>') + k('Next 72 h', inch(w.next72) + '<span class="unit">in</span>', 'forecast') +
-      (w.event ? k(w.event.end ? 'Last event' : 'This event so far', inch(w.event.total) + '<span class="unit">in</span>', (w.event.openStart ? 'began 3+ days ago' : 'from ' + wxT(w.event.start)) + (w.event.end ? ' to ' + wxT(w.event.end) : '')) : '') +
-      (w.fzNow != null ? k('Freezing level', fmt(Math.round(w.fzNow / 100) * 100) + '<span class="unit">ft</span>', (w.tempNow != null ? fmt(w.tempNow, 0) + ' °F basin mean · ' : '') + 'rain below, snow above') : '') +
+    if (!w) return '<section class="ws-sec wx-box">' + head + '<p class="na">Weather model unavailable' + (state.wx.error ? ' (' + esc(state.wx.error) + ')' : '') + '.</p></section>';
+    var td = function (v) { return '<td class="mono">' + inch(v) + '</td>'; };
+    var h = '<section class="ws-sec wx-box">' + head +
+      '<table class="ws-table wx-table"><thead><tr><th></th><th>6 h</th><th>24 h</th><th>72 h</th><th>Rain on basin, 24 h</th></tr></thead><tbody>' +
+      '<tr><th>Past</th>' + td(w.past6) + td(w.past24) + td(w.past72) + '<td class="mono">' + fmt(w.vol24) + ' ac-ft · ' + fmt(w.vol24cfs) + ' cfs-day</td></tr>' +
+      '<tr><th>Forecast</th>' + td(w.next6) + td(w.next24) + td(w.next72) + '<td class="mono">' + fmt(w.volNext24) + ' ac-ft · ' + fmt(w.volNext24cfs) + ' cfs-day</td></tr>' +
+      '</tbody></table><p class="wx-unit hint">inches, basin mean</p>' +
+      '<dl class="ws-facts">' +
+      '<div><dt>Now</dt><dd>' + wxState(w) + '</dd></div>' +
+      (w.event ? '<div><dt>' + (w.event.end ? 'Last event' : 'This event') + '</dt><dd><span class="mono">' + inch(w.event.total) + ' in</span> ' + (w.event.openStart ? 'over 3+ days' : 'from ' + wxT(w.event.start)) + (w.event.end ? ' to ' + wxT(w.event.end) : ' so far') + '</dd></div>' : '') +
+      (w.fzNow != null ? '<div><dt>Freezing level</dt><dd><span class="mono">' + fmt(Math.round(w.fzNow / 100) * 100) + ' ft</span>' + (w.tempNow != null ? ' · ' + fmt(w.tempNow, 0) + ' °F basin mean' : '') + ' · rain below, snow above</dd></div>' : '') +
       '</dl>' + wxChart(s, Date.now());
-    // Measured: SNOTEL stations in the same basin.
     var sts = W.stationsFor(p.code);
     if (sts.length) {
       var sn = state.wxSno;
-      h += '<p class="wx-meas"><b>Measured (NRCS SNOTEL, high-elevation gauges)</b><br>' + (!sn ? '<span class="na loading">loading…</span>' : sts.map(function (st) {
-        var a = sn.stations[st.triplet], d6 = W.accumDiff(a, Date.now(), 6), d24 = W.accumDiff(a, Date.now(), 24);
-        return esc(st.name) + ' (' + fmt(st.elevFt) + ' ft) <span class="mono">' + (d24 ? '24 h ' + fmt(d24.v, 1) + ' in · 6 h ' + (d6 ? fmt(d6.v, 1) : '—') + ' in' : 'no recent hourly data') + '</span>' +
-          ' <a class="src-link" href="https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=' + st.triplet.split(':')[0] + '" target="_blank" rel="noopener" title="NRCS SNOTEL ' + esc(st.name) + '">↗</a>';
-      }).join('<br>')) + '</p>';
-    } else h += '<p class="wx-meas hint">No SNOTEL gauge in this basin on this site; model only.</p>';
-    h += '<p class="hint wx-src">Basin mean of ' + b.pts.length + ' points from the Open-Meteo weather model (past hours are model analysis, not rain gauges; forecast to ' + wxT(w.horizon) + '). ' +
-      'Volume is rain on the basin, not runoff: soil, snow and travel time decide how much reaches the pool and when. Basin points and area are approximate. ' +
-      '<a href="' + esc(W.pageUrl(p.code)) + '" target="_blank" rel="noopener">Open-Meteo ↗</a> · <a href="' + esc(W.nwsUrl(p.code)) + '" target="_blank" rel="noopener">NWS forecast for the basin ↗</a></p></div>';
+      h += '<h4 class="ws-h4">Measured · NRCS SNOTEL (high-elevation gauges, same basin)</h4>' + (!sn ? '<p class="na loading">loading…</p>' :
+        '<table class="ws-table"><thead><tr><th>Station</th><th>Elev ft</th><th>6 h in</th><th>24 h in</th></tr></thead><tbody>' + sts.map(function (st) {
+          var a = sn.stations[st.triplet], d6 = W.accumDiff(a, Date.now(), 6), d24 = W.accumDiff(a, Date.now(), 24);
+          return '<tr><th>' + esc(st.name) + ' <a class="src-link" href="https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=' + st.triplet.split(':')[0] + '" target="_blank" rel="noopener" title="NRCS SNOTEL ' + esc(st.name) + '">↗</a></th>' +
+            '<td class="mono">' + fmt(st.elevFt) + '</td><td class="mono">' + (d6 ? fmt(d6.v, 1) : '—') + '</td><td class="mono">' + (d24 ? fmt(d24.v, 1) : '—') + '</td></tr>';
+        }).join('') + '</tbody></table>');
+    } else h += '<p class="hint">No SNOTEL gauge in this basin on this site; model only.</p>';
+    h += '<p class="hint wx-src">Open-Meteo weather model, mean of ' + b.pts.length + ' points (past hours are model analysis, not rain gauges; forecast to ' + wxT(w.horizon) + '). ' +
+      'Rain on the basin is not runoff: soil, snow and travel time decide how much reaches the pool and when. Basin points and area are approximate. ' +
+      '<a href="' + esc(W.pageUrl(p.code)) + '" target="_blank" rel="noopener">Open-Meteo ↗</a> · <a href="' + esc(W.nwsUrl(p.code)) + '" target="_blank" rel="noopener">NWS forecast for the basin ↗</a></p></section>';
     return h;
   }
 
   function renderWx() {
-    var r = $('#reservoir-cards');
-    if (r) { renderCards(); }
+    renderList();
     if (state.selectedId && byId[state.selectedId] && byId[state.selectedId].kind === 'reservoir') renderDetails();
   }
 
@@ -918,16 +969,22 @@
 
   // ---- Selection -----------------------------------------------------------
 
-  function select(id, withChart) {
+  // One selection drives the list, the map, the header, the chart and "More".
+  // fromList: on narrow screens (chart below the list) bring the chart into view.
+  function select(id, withChart, fromList) {
     if (!byId[id]) return;
     state.selectedId = id;
-    document.querySelectorAll('.node, .card').forEach(function (n) {
+    document.querySelectorAll('.node, .ws-row').forEach(function (n) {
       var on = n.getAttribute('data-id') === id;
       n.classList.toggle('selected', on);
       if (n.classList.contains('node')) n.setAttribute('aria-pressed', on ? 'true' : 'false');
+      else n.setAttribute('aria-selected', on ? 'true' : 'false');
     });
     renderDetails();
-    if (withChart) setChart(id);
+    setChart(id);
+    if (fromList && window.matchMedia && window.matchMedia('(max-width: 960px)').matches) {
+      var t = $('#trends'); if (t) t.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'start' });
+    }
   }
 
   // ---- Trend chart ---------------------------------------------------------
@@ -1410,7 +1467,6 @@
   function setChart(id) {
     if (state.chartId !== id) state.tzoom = [0, 1];
     state.chartId = id;
-    $('#trend-select').value = id;
     renderChart(true);
   }
 
@@ -1602,23 +1658,13 @@
   H.trend = {
     open: function (id, range) {
       if (!byId[id]) return;
-      if (state.chartId !== id) state.tzoom = [0, 1];
-      state.chartId = id;
-      $('#trend-select').value = id;
       if (range) setRange(range);
       location.hash = '#/overview';
-      setTimeout(function () { renderChart(true); var t = $('#trends'); if (t) t.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth' }); }, 60);
+      setTimeout(function () { select(id, true); var t = $('#trends'); if (t) t.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth' }); }, 60);
     }
   };
 
   function initTrends() {
-    var sel = $('#trend-select');
-    sel.innerHTML =
-      '<optgroup label="Reservoirs · pool elevation">' + H.projects.map(function (p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('') + '</optgroup>' +
-      '<optgroup label="Rivers · discharge or stage + NWS forecast">' + H.stations.map(function (s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('') + '</optgroup>';
-    sel.value = state.chartId;
-    sel.addEventListener('change', function () { select(sel.value, true); });
-
     document.querySelectorAll('[data-range]').forEach(function (b) {
       b.addEventListener('click', function () {
         if (b.disabled) return;
@@ -1688,7 +1734,7 @@
     renderFeed();
     renderTotals();
     renderMapNodes();
-    renderCards();
+    renderList();
     renderDetails();
     renderSnow();
     if (dataChanged) renderChart(true);

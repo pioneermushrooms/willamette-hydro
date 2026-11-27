@@ -64,7 +64,7 @@
    * live data has filled the page, which can land on the reservoir or river cards. Instead remember
    * the section at the top of the screen and the offset into it, and return there once data is drawn.
    */
-  var ANCHORS = ['#totals', '#overview', '#trends', '#reservoirs', '#rivers', '#snow'];
+  var ANCHORS = ['#totals', '#workspace', '#trends', '#ws-more', '#snow'];
   var SKEY = 'wvhd:scroll';
   function saveScroll() {
     try {

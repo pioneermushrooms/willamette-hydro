@@ -1115,3 +1115,99 @@ i.dd-k-pubtgt { border-top: 2px dotted var(--tgt); }
 .tile:not(:hover):not(:focus-within) .tile-label .hint,
 .tile:not(:hover):not(:focus-within) .tile-sub { display: none; }
 .card-grid { align-items: start; }
+
+/* ==== Overview workspace: list (left) + selected point (right) ============================ */
+.workspace { display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); gap: var(--gap); align-items: start; }
+.ws-side { display: grid; gap: 14px; position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow: auto; }
+.ws-group-head { display: grid; grid-template-columns: 1fr auto; align-items: baseline; padding: 0 6px 6px; border-bottom: 1px solid var(--line); }
+.ws-group-head h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.14em; }
+/* list columns: light | name | 3 numeric columns of fixed width, so every row lines up */
+.ws-cols, .ws-row { --c1: 62px; --c2: 52px; --c3: 58px; }
+.ws-cols { display: grid; grid-template-columns: var(--c1) var(--c2) var(--c3); gap: 6px; font-size: 9.5px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; text-align: right; }
+.ws-list { list-style: none; margin: 0; padding: 0; }
+.ws-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) var(--c1) var(--c2) var(--c3); gap: 6px; align-items: center;
+  padding: 7px 6px; border-bottom: 1px solid #1c2025; cursor: pointer; border-radius: 3px; }
+.ws-row .light { width: 8px; height: 8px; animation: none; }
+.ws-row:hover { background: #20252b; }
+.ws-row:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.ws-row.selected { background: #26292c; box-shadow: inset 3px 0 0 var(--amber); }
+.ws-row.selected .ws-name { color: var(--amber); }
+.ws-name { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-v { font-size: 12.5px; text-align: right; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ws-v.hl { color: var(--text); }
+.ws-v.off { color: var(--warn); }
+.ws-v .unit { font-size: 9.5px; color: var(--muted); margin-left: 2px; }
+.ws-v .fcat { font-size: 9px; padding: 1px 4px; }
+.ws-map summary, .ws-more > summary { cursor: pointer; font: 600 11px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-2); padding: 6px; }
+.ws-map .map-wrap { margin-top: 6px; }
+
+.ws-main { display: grid; gap: 10px; }
+.ws-head { display: grid; gap: 10px; }
+.ws-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 0 6px; }
+.ws-title h2 { font-size: 20px; color: var(--amber); text-transform: uppercase; letter-spacing: 0.06em; margin: 2px 0 0; }
+.ws-sub { margin: 2px 0 0; color: var(--text-2); font-size: 12.5px; }
+/* header numbers: one even row of cells */
+.ws-head .kv { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
+.ws-head .kv > div { min-height: 58px; }
+.ws-wx { margin: -2px 6px 0; font-size: 12.5px; color: var(--text-2); }
+.ws-main .trend-controls { align-items: center; padding: 0 6px; }
+.ws-main .trend-controls .panel-tag { margin-left: auto; }
+
+.ws-more { border-top: 1px solid var(--line); padding-top: 6px; }
+.ws-more-body { display: grid; gap: 16px; padding: 8px 6px 4px; }
+.ws-sec h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text); margin: 0 0 8px; }
+.ws-sec h3 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
+.ws-h4 { font-size: 11px; color: var(--text-2); letter-spacing: 0.06em; margin: 14px 0 6px; font-weight: 600; }
+.ws-kv-more { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 10px; }
+.ws-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ws-table th, .ws-table td { padding: 5px 8px; border-bottom: 1px solid #1e2226; text-align: right; }
+.ws-table thead th { font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+.ws-table th:first-child, .ws-table td:first-child { text-align: left; }
+.ws-table tbody th { font-weight: 600; color: var(--text-2); }
+.wx-table td:last-child, .wx-table th:last-child { color: var(--text-2); }
+.wx-unit { margin: 3px 0 8px; font-size: 10.5px; text-align: right; }
+.ws-facts { display: grid; gap: 4px; margin: 0 0 8px; }
+.ws-facts > div { display: grid; grid-template-columns: 110px 1fr; gap: 8px; font-size: 12.5px; }
+.ws-facts dt { color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; padding-top: 2px; }
+.ws-facts dd { margin: 0; }
+.ws-sec .flood { margin-top: 0; }
+/* header and list: secondary notes only on hover/focus, like the old cards */
+.ws-head:not(:hover):not(:focus-within) dd.sub,
+.ws-head:not(:hover):not(:focus-within) dt .hint { display: none; }
+
+@media (max-width: 960px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .ws-side { position: static; max-height: none; overflow: visible; order: 2; }
+  .ws-main { order: 1; }
+}
+@media (max-width: 420px) {
+  .ws-cols, .ws-row { --c1: 56px; --c2: 46px; --c3: 50px; }
+  .ws-head .kv { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ws-facts > div { grid-template-columns: 1fr; gap: 0; }
+}
+.workspace { grid-template-columns: minmax(320px, 400px) minmax(0, 1fr); }
+.ws-cols, .ws-row { --c1: 78px; --c2: 50px; --c3: 54px; }
+.ws-head dt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-main .tl-bar { gap: 4px; }
+.ws-main .tl-chip { padding: 3px 9px; font-size: 10px; min-height: 0; }
+.ws-main .tl-h { min-width: 84px; font-size: 9.5px; }
+.feed { flex-wrap: nowrap; }
+.feed .btn { flex: none; }
+@media (max-width: 640px) { .feed { flex-wrap: wrap; } }
+@media (max-width: 960px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 420px) {
+  .ws-cols, .ws-row { --c1: 70px; --c2: 44px; --c3: 46px; }
+  .ws-name { font-size: 12.5px; }
+}
+/* Snowpack: one aligned table everywhere (phones drop the 7-day sparkline column) */
+.snow-table td:nth-child(2), .snow-table td:nth-child(3), .snow-table th:nth-child(2), .snow-table th:nth-child(3) { text-align: right; white-space: nowrap; }
+@media (max-width: 640px) {
+  .snow-table thead { display: table-header-group; }
+  .snow-table tr { display: table-row; }
+  .snow-table td { display: table-cell; padding: 6px 4px; border-bottom: 1px solid #1e2226; }
+  .snow-table td::before { content: none !important; }
+  .snow-table th:nth-child(4), .snow-table td:nth-child(4) { display: none; }
+  .snow-table td:nth-child(5) { font-size: 11px; color: var(--muted); white-space: nowrap; }
+}
