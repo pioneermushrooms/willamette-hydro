@@ -1300,3 +1300,6 @@ main, .site-footer { max-width: 1680px; }
   .faq summary { grid-template-columns: minmax(0, 1fr) 18px; }
   .faq summary .faq-kind { grid-column: 1; grid-row: 2; }
 }
+.readout-live { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.readout-live .live-dot { width: 7px; height: 7px; margin-right: 2px; }
+@media (max-width: 760px) { .clocks { grid-template-columns: 1fr; } .readout-live { white-space: normal; flex-wrap: wrap; } }

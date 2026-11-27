@@ -178,7 +178,9 @@ A plain-language FAQ (`js/views/sources.js`): is anything made up, how to check 
 
 ## No flicker on refresh
 
-Background updates (every 5 min, and the 1-minute age refresh) redraw quietly: the chart's draw-in animation plays only when you pick a point or range; long-range history refreshes in the background every 30 min and keeps the old chart on screen until the new data lands; strips keep their lines while refreshing; and the list, header, "More", totals, feed badges and map are only rebuilt when their content actually changed (so animations such as the selected map ring do not restart).
+Background updates (every 5 min, and the 1-minute age refresh) redraw quietly: the chart's draw-in animation plays only when you pick a point or range; long-range history refreshes in the background every 30 min and keeps the old chart on screen until the new data lands; strips keep their lines while refreshing; and the list, header, "More", totals, feed badges, map, snowpack, strips, chart stats and the chart itself are updated **in place** (`setHTML` in `js/app.js` patches only the text and attributes that changed), so boxes are never rebuilt and animations never restart.
+
+The header has one time box: Pacific time, plus "● LIVE · data checked hh:mm · next m:ss" (the old second box showed the last fetch time, which looked like a second, wrong clock).
 
 ## Popovers instead of expanding cells
 

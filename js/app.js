@@ -46,9 +46,37 @@
   // ---- Helpers -------------------------------------------------------------
 
   function $(sel) { return document.querySelector(sel); }
-  // Replace an element's markup only when it changed, so periodic refreshes do not rebuild
-  // identical content (which restarts animations and flashes).
-  function setHTML(el, html) { if (el && el.__html !== html) { el.innerHTML = html; el.__html = html; } }
+  /*
+   * Update an element to new markup in place: unchanged nodes are left alone, changed text and
+   * attributes are patched, and only nodes whose type changed are replaced. Periodic refreshes then
+   * change just the numbers that moved, without rebuilding boxes, restarting animations or
+   * flashing. Works for HTML and SVG (the markup is parsed in a shallow clone of the element).
+   */
+  function setHTML(el, html) {
+    if (!el || el.__html === html) return;
+    el.__html = html;
+    if (!el.firstChild) { el.innerHTML = html; return; }
+    var tmp = el.cloneNode(false);
+    tmp.innerHTML = html;
+    morphChildren(el, tmp);
+  }
+  function morphChildren(from, to) {
+    var a = Array.prototype.slice.call(from.childNodes), b = Array.prototype.slice.call(to.childNodes);
+    for (var i = 0; i < b.length; i++) {
+      if (i < a.length) morphNode(a[i], b[i]);
+      else from.appendChild(b[i]);
+    }
+    for (var k = a.length - 1; k >= b.length; k--) from.removeChild(a[k]);
+  }
+  function morphNode(f, t) {
+    if (f.nodeType !== t.nodeType || f.nodeName !== t.nodeName) { f.parentNode.replaceChild(t, f); return; }
+    if (f.nodeType === 3 || f.nodeType === 8) { if (f.nodeValue !== t.nodeValue) f.nodeValue = t.nodeValue; return; }
+    if (f.nodeType !== 1) return;
+    var i, at;
+    for (i = f.attributes.length - 1; i >= 0; i--) { at = f.attributes[i].name; if (!t.hasAttribute(at) && at !== 'open') f.removeAttribute(at); }
+    for (i = 0; i < t.attributes.length; i++) { at = t.attributes[i]; if (f.getAttribute(at.name) !== at.value) f.setAttribute(at.name, at.value); }
+    morphChildren(f, t);
+  }
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -164,7 +192,7 @@
     if (state.fetching) np.textContent = 'fetching…';
     else if (state.nextPollAt) {
       var left = Math.max(0, Math.round((state.nextPollAt - now) / 1000));
-      np.textContent = 'next poll ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+      np.textContent = 'next ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
     }
   }
 
@@ -274,7 +302,7 @@
     var full = src.usgs.ok && cw.ok === cwTotal;
     dot.className = 'live-dot ' + (full ? 'normal' : okCount ? 'watch' : 'low');
     label.textContent = state.fetching ? 'UPDATING' : full ? 'LIVE' : okCount ? 'PARTIAL' : 'OFFLINE';
-    $('#last-fetch').textContent = fmtClock.format(s.fetchedAt).replace(/^24/, '00').slice(0, 5) + ' PT';
+    $('#last-fetch').textContent = fmtClock.format(s.fetchedAt).replace(/^24/, '00').slice(0, 5);
 
     var b = [];
     b.push(src.usgs.ok
@@ -1067,14 +1095,14 @@
     var sn = state.snow;
     if (!sn) { box.innerHTML = '<p class="na loading">Loading SNOTEL…</p>'; return; }
     if (sn.error && !Object.keys(sn.stations).length) { box.innerHTML = '<p class="warntext">SNOTEL data unavailable (' + esc(sn.error) + ').</p>'; return; }
-    box.innerHTML = '<table class="snow-table"><thead><tr><th>Station</th><th>SWE</th><th>Depth</th><th>SWE 7 d</th><th>Last report</th></tr></thead><tbody>' +
+    setHTML(box, '<table class="snow-table"><thead><tr><th>Station</th><th>SWE</th><th>Depth</th><th>SWE 7 d</th><th>Last report</th></tr></thead><tbody>' +
       H.snotel.STATIONS.map(function (st) {
         var o = sn.stations[st.triplet];
         var swe = o && o.swe.v.length ? o.swe.v[o.swe.v.length - 1] : null, dep = o && o.depth.v.length ? o.depth.v[o.depth.v.length - 1] : null;
         return '<tr><td><b>' + esc(st.name) + '</b><span class="snow-meta">' + fmt(st.elevFt) + ' ft · ' + esc(st.basin) + '</span></td>' +
           '<td class="mono">' + (swe == null ? NA : fmt(swe, 1) + ' in') + '</td><td class="mono">' + (dep == null ? NA : fmt(dep, 0) + ' in') + '</td>' +
           '<td>' + (o ? snowSpark(o) : '') + '</td><td class="mono">' + (o && o.last ? fSnowDay.format(new Date(o.last + 'T12:00:00Z')) : NA) + '</td></tr>';
-      }).join('') + '</tbody></table>';
+      }).join('') + '</tbody></table>');
   }
 
   // ---- Selection -----------------------------------------------------------
@@ -1320,18 +1348,18 @@
     $('#chart-title').textContent = M.title;
     $('#trend-tag').textContent = RANGE_TAG[state.range] + (M.long ? ' · HISTORY + LIVE' : ' · LIVE SERIES') +
       (state.snap && state.snap.fetchedAt ? ' · checked ' + fmtClock.format(state.snap.fetchedAt).replace(/^24/, '00').slice(0, 5) : '');
-    $('#chart-src').innerHTML = 'Source: ' + H.linkSources(M.src);
+    setHTML($('#chart-src'), 'Source: ' + H.linkSources(M.src));
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H2);
     svg.setAttribute('height', H2);
     state.geom = null;
 
     if (M.t.length < 2) {
-      svg.innerHTML = '';
+      setHTML(svg, '');
       msg.hidden = false;
       msg.textContent = M.loading ? (M.long ? 'Loading ' + RANGE_TAG[state.range].toLowerCase() + ' of history…' : 'Loading live data…')
         : M.histError ? 'History unavailable (' + M.histError + ').' : 'No data returned for this series in the selected window.';
       $('#chart-legend').innerHTML = '';
-      $('#chart-stats').innerHTML = '';
+      setHTML($('#chart-stats'), '');
       $('#chart-table').innerHTML = '';
       return;
     }
@@ -1460,7 +1488,7 @@
     s += '<circle class="now" cx="' + x(M.t[n - 1]).toFixed(1) + '" cy="' + y(M.v[n - 1]).toFixed(1) + '" r="4.5"/>';
     s += '<g id="cross" style="display:none"><line class="cross" id="cross-line" y1="' + mt + '" y2="' + (mt + ph) + '"/><circle class="cross-dot" id="cross-dot" r="5"/></g>';
     s += '<rect x="' + ml + '" y="0" width="' + pw + '" height="' + H2 + '" fill="transparent"/>';
-    svg.innerHTML = s;
+    if (animate) { svg.innerHTML = s; svg.__html = s; } else setHTML(svg, s);
     if (animate && !REDUCED) {
       var line = $('#chart-line');
       line.style.setProperty('--len', Math.ceil(line.getTotalLength()));
@@ -1500,7 +1528,7 @@
       stats += '<div><dt>Forecast peak (shown)</dt><dd>' + fmt(M.fc.v[pk], M.dec) + ' ' + M.unit + ' · ' + stamp(M.fc.t[pk]) + '</dd></div>';
     }
     stats += '<div><dt>Latest reading</dt><dd>' + stamp(M.t[n - 1]) + '</dd></div>';
-    $('#chart-stats').innerHTML = stats;
+    setHTML($('#chart-stats'), stats);
     renderTable(M);
   }
 
@@ -1590,7 +1618,7 @@
   function renderTrendZoom(M) {
     var el = $('#trend-zoom');
     if (!el || !H.zoom) return;
-    el.innerHTML = H.zoom.bar(state.tzoom, 'tzoom', state.tzoom[0] > 0 || state.tzoom[1] < 1 ? esc(stamp(M.start) + ' – ' + stamp(M.end)) : '');
+    setHTML(el, H.zoom.bar(state.tzoom, 'tzoom', state.tzoom[0] > 0 || state.tzoom[1] < 1 ? esc(stamp(M.start) + ' – ' + stamp(M.end)) : ''));
   }
 
   function setRange(r) {
@@ -1676,7 +1704,7 @@
       h += '<div class="tl-group" role="group" aria-label="Charts below"><span class="tl-h">Below chart</span>' +
         defs.map(function (d) { return chip(stripItem(e, d), d.label, M ? stripOff(stripData(e, d, M)) : L.unavailable(e, d.key)); }).join('') + '</div>';
     }
-    el.innerHTML = h;
+    setHTML(el, h);
   }
 
   // Strips: each enabled quantity as its own small chart on the main chart's time axis.
