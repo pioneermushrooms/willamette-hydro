@@ -69,7 +69,8 @@
       { key: 'flows', label: 'Inflow / outflow', unit: 'cfs', dec: 0, on: true },
       { key: 'temp', label: 'Water temp below dam', unit: '°F', dec: 1, on: false },
       { key: 'turb', label: 'Turbidity below dam', unit: 'FNU', dec: 1, on: false },
-      { key: 'tdg', label: 'TDG below dam', unit: '% sat', dec: 0, on: false, ref: 110, refLabel: '110% (Oregon/EPA standard, reference)' }
+      { key: 'tdg', label: 'TDG below dam', unit: '% sat', dec: 0, on: false, ref: 110, refLabel: '110% (Oregon/EPA standard, reference)' },
+      { key: 'precip', label: 'Basin precipitation', unit: 'in', dec: 2, on: true }
     ],
     river: [
       { key: 'flow', label: 'Discharge', unit: 'cfs', dec: 0, on: false },
@@ -164,6 +165,11 @@
     } else if (res && key === 'tdg') {
       p = TDG[e.code] ? cwms({ name: TDG[e.code], unit: '%' }, start, end).then(function (r) { return one(r, 'TDG', 'st-a', 'USACE CWMS ' + TDG[e.code]); })
         : Promise.resolve({ lines: [], src: 'No public TDG series below ' + e.name + ' (published for Dexter and Cougar only).' });
+    } else if (res && key === 'precip') {
+      p = H.weather.loadRange(e.code, start, end).then(function (r) {
+        var s = r.s;
+        return { lines: s && s.t.length ? [{ label: r.hourly ? 'Rain per hour (model)' : 'Rain per day (model)', t: s.t, v: s.p, cls: 'st-a' }] : [], src: r.src };
+      });
     } else if (!res && PCODE[key]) {
       var lbl = { flow: 'Discharge', stage: 'Gage height', temp: 'Water temp', turb: 'Turbidity' }[key];
       p = usgs(e.site, key, start, end).then(function (r) { return one(r, lbl, 'st-a', 'USGS ' + e.site + ', ' + PCODE[key]); });
@@ -176,6 +182,7 @@
   // Why a strip cannot have data for this entity (known without fetching), or null.
   function unavailable(e, key) {
     if (e.kind === 'reservoir') {
+      if (key === 'precip' && !(H.weather && H.weather.BASINS[e.code])) return 'No basin weather points configured for ' + e.name + '.';
       if ((key === 'temp' || key === 'turb') && !BELOW_DAM[e.code]) return 'No USGS gage below ' + e.name + ' is configured for water temperature or turbidity.';
       if (key === 'tdg' && !TDG[e.code]) return 'No public TDG series below ' + e.name + ' (published for Dexter and Cougar only).';
     }

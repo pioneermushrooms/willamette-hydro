@@ -56,6 +56,8 @@
     ['USACE CWMS — ratings', 'Elevation–storage, elevation–area, spillway and outlet ratings', 'PUBLISHED', 'https://cwms-data.usace.army.mil/cwms-data/ratings/LOP-Spillway.Elev-Forebay%3BFlow-Free.Standard.CENWP?office=NWDP'],
     ['NOAA National Water Prediction Service (NWPS)', 'Flood categories, NWS/NWRFC river forecasts, historic crests', 'LIVE', 'https://water.noaa.gov/'],
     ['NRCS AWDB / SNOTEL', 'Snowpack panel on Overview: SWE, snow depth, 7-day SWE (8 Willamette-basin stations)', 'LIVE (daily)', 'https://wcc.sc.egov.usda.gov/awdbRestApi/swagger-ui/index.html'],
+    ['NRCS AWDB / SNOTEL — hourly precipitation', 'Measured rain/snow water (accumulated precipitation) at the SNOTEL gauges in each project basin, on the reservoir detail panel', 'LIVE (hourly)', 'https://wcc.sc.egov.usda.gov/awdbRestApi/swagger-ui/index.html'],
+    ['Open-Meteo weather model', 'Basin precipitation per project: past 72 h (model analysis, not gauges), 3-day forecast, freezing level; Trend Recorder precipitation strip (archive/ERA5 daily beyond 92 days)', 'LIVE (model)', 'https://open-meteo.com/en/docs'],
     ['BPA balancing-authority totals', 'BPA-wide hydro generation (copied every 30 min by a GitHub Action)', 'LIVE (30 min)', 'https://transmission.bpa.gov/business/operations/Wind/baltwg.txt']
   ];
 

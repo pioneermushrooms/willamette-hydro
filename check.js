@@ -339,6 +339,37 @@ console.log('tdg / snotel / odeq');
   check(SN.STATIONS.length === 8 && SN.STATIONS.every((s) => /^\d+:OR:SNTL$/.test(s.triplet) && s.elevFt > 0), 'snotel: 8 Oregon SNOTEL stations configured');
   check(/stationTriplets=388:OR:SNTL,/.test(SN.url(9, Date.UTC(2026, 9, 30))) && /beginDate=2026-10-21&endDate=2026-10-30/.test(SN.url(9, Date.UTC(2026, 9, 30))) && /elements=WTEQ,SNWD/.test(SN.url()), 'snotel: request URL');
 
+  // Basin precipitation (js/weather.js)
+  {
+    const WX = require('./js/weather.js'), Hr = 3600e3, T0 = Date.UTC(2026, 10, 27, 0);
+    check(WX.CODES.length === 10 && WX.CODES.every((c) => WX.BASINS[c].area > 0 && WX.BASINS[c].pts.length === 2), 'weather: 10 projects with area and 2 points');
+    const u = WX.url(['BLU', 'CGR'], 3, 3);
+    check(/latitude=44\.17,44\.23,44\.13,43\.98&/.test(u) && /past_days=3&forecast_days=3/.test(u) && /precipitation_unit=inch/.test(u), 'weather: request URL lists both points per project');
+    // two points per project, averaged; negative values floored
+    const mk = (vals) => ({ hourly: { time: vals.map((_, i) => (T0 + i * Hr) / 1000), precipitation: vals, freezing_level_height: vals.map(() => 1000), temperature_2m: vals.map(() => 40) } });
+    const pj = WX.parse([mk([0.1, 0.2, -0.1]), mk([0.3, 0.0, 0.1])], ['BLU']);
+    check(Math.abs(pj.BLU.p[0] - 0.2) < 1e-9 && Math.abs(pj.BLU.p[1] - 0.1) < 1e-9 && pj.BLU.p[2] === 0 && Math.round(pj.BLU.fz[0]) === 3281 && pj.BLU.t[1] === T0 + Hr, 'weather: parse averages points, m to ft, floors at 0');
+    // Series: dry 10 h, wet 5 h (0.1/h), now, wet 3 more h, dry 10 h.
+    const ser = (arr) => ({ t: arr.map((_, i) => T0 + (i + 1) * Hr), p: arr, fz: arr.map(() => 4000), temp: arr.map(() => 38) });
+    const s1 = ser([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const now1 = T0 + 15 * Hr;
+    const w1 = WX.summarize(s1, now1, 88);
+    check(w1.raining && w1.event && w1.event.end === null && w1.event.start === T0 + 10 * Hr && Math.abs(w1.event.total - 0.5) < 1e-9, 'weather: ongoing event start and total so far');
+    check(w1.ends === T0 + 18 * Hr && Math.abs(w1.next6 - 0.3) < 1e-9 && Math.abs(w1.past6 - 0.5) < 1e-9, 'weather: forecast end and 6-h sums');
+    check(Math.abs(w1.vol24 - 0.5 * 88 * 53.33) < 1e-6 && Math.abs(w1.vol24cfs - w1.vol24 / 1.9835) < 1e-6, 'weather: rain volume on the basin (ac-ft and cfs-day)');
+    const w2 = WX.summarize(s1, T0 + 26 * Hr, 88);
+    check(!w2.raining && w2.event.end === T0 + 18 * Hr && w2.nextStart === null, 'weather: dry since the last wet hour, no rain ahead');
+    const w3 = WX.summarize(s1, T0 + 5 * Hr, 88);
+    check(w3.event === null && w3.nextStart === T0 + 10 * Hr, 'weather: no recent event, next rain start');
+    // SNOTEL hourly accumulation (PST stamps)
+    const sj2 = WX.parseSnotel([{ stationTriplet: '619:OR:SNTL', data: [{ stationElement: { elementCode: 'PREC' }, values: [{ date: '2026-11-26 16:00', value: 40.1 }, { date: '2026-11-27 10:00', value: 41.0 }, { date: '2026-11-27 16:00', value: 41.3 }, { date: '2026-11-27 17:00', value: null }] }] }]);
+    const a2 = sj2['619:OR:SNTL'];
+    check(a2.t.length === 3 && a2.t[2] === Date.UTC(2026, 10, 28, 0), 'weather: SNOTEL hourly parse (PST to UTC, nulls dropped)');
+    const d24 = WX.accumDiff(a2, Date.UTC(2026, 10, 28, 0, 30), 24), d6 = WX.accumDiff(a2, Date.UTC(2026, 10, 28, 0, 30), 6);
+    check(Math.abs(d24.v - 1.2) < 1e-9 && Math.abs(d6.v - 0.3) < 1e-9, 'weather: SNOTEL 24-h and 6-h measured precipitation');
+    check(WX.stationsFor('BLU').length >= 1 && WX.stationsFor('FRN').length === 0, 'weather: SNOTEL stations by basin');
+  }
+
   // ODEQ 2006 TMDL target: monthly steps (interpolate-string F), degC -> degF
   const odeq = LV.compact({ levels: [{ 'location-level-id': 'DEX.Temp-Water.Inst.0.ODEQ-2006TMDL-Target', 'level-units-id': 'C', 'level-date': '2012-01-01T08:00:00Z',
     'interval-origin': '2012-01-01T08:00:00Z', 'interval-months': 12, 'interpolate-string': 'F',
@@ -600,10 +631,10 @@ console.log('layers');
   check(LY.targetFor('CGR', null).id === H0.levels.IDS.injunctionTarget && LY.targetFor('DEX', { levels: {} }) === null, 'layers: known targets still used; none -> null');
   check(LY.TARGETS.CGR.idKey === 'injunctionTarget' && LY.TARGETS.HCR.idKey === 'interimRisk' && !LY.TARGETS.DEX, 'layers: published targets for LOP/GPR/CGR (injunction) and HCR (IRRM)');
   const res = H0.projects.find((p) => p.code === 'CGR'), riv = H0.stations.find((s) => s.id === 'middle-fork-jasper'), eug = H0.stations.find((s) => s.id === 'willamette-eugene');
-  check(LY.stripsFor(res).map((x) => x.key).join() === 'flows,temp,turb,tdg', 'layers: reservoir strips = inflow/outflow, temp, turbidity, TDG');
+  check(LY.stripsFor(res).map((x) => x.key).join() === 'flows,temp,turb,tdg,precip', 'layers: reservoir strips = inflow/outflow, temp, turbidity, TDG, basin precipitation');
   check(LY.stripsFor(riv, 'flow').map((x) => x.key).join() === 'stage,temp,turb' && LY.stripsFor(eug, 'stage').map((x) => x.key).join() === 'temp,turb', 'layers: river strips exclude the main parameter (and flow where none is published)');
   check(LY.PCODE.turb === '63680' && LY.PCODE.temp === '00010' && LY.TDG.DEX && LY.TDG.CGR && LY.BELOW_DAM.CGR.site === '14159500', 'layers: USGS turbidity 63680 / temp 00010; TDG for DEX, CGR; CGR downstream gage 14159500');
-  check(LY.CHART_TOGGLES.filter((t) => t.on).map((t) => t.key).join() === 'rule,stats,target' && LY.STRIPS.reservoir.filter((t) => t.on).map((t) => t.key).join() === 'flows', 'layers: defaults (rule curve, bands, target; inflow/outflow strip)');
+  check(LY.CHART_TOGGLES.filter((t) => t.on).map((t) => t.key).join() === 'rule,stats,target' && LY.STRIPS.reservoir.filter((t) => t.on).map((t) => t.key).join() === 'flows,precip', 'layers: defaults (rule curve, bands, target; inflow/outflow and precipitation strips)');
   const appS = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8'), idxL = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   check(idxL.includes('id="trend-layers"') && idxL.includes('id="trend-strips"') && idxL.includes('id="years-box"') && /H\.trend = \{/.test(appS) && /syncStrips\(t\)/.test(appS), 'layers: toggle bar, strips with synced cursor, PAST YEARS box and open() wired');
   check(idxL.indexOf('js/layers.js') > idxL.indexOf('js/cwms-levels.js') && idxL.indexOf('js/pastyears.js') < idxL.indexOf('js/app.js'), 'script order: layers and pastyears before app');

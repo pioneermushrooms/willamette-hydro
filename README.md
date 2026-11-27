@@ -88,6 +88,19 @@ Each displayed value has a small **↗** next to its label (cards, detail panel,
 
 The series names in the source notes under the Trend Recorder, its strips and the past-years table are links too (`H.srcLink`, `H.linkSources` in `js/data.js`).
 
+### Basin precipitation (`js/weather.js`)
+
+Each reservoir card has a **BASIN RAIN** line (past 24 h, next 24 h, raining since / dry since / next rain), and the reservoir detail panel has a full block:
+
+- past and next 6 / 24 / 72 h totals, the current event (start, total, forecast end), freezing level and basin-mean temperature;
+- rain volume on the basin: inches × drainage area × 53.33 ac-ft, also as a 24-h mean cfs. This is rain that fell, **not runoff**;
+- an hourly bar chart, past 72 h (solid) and 72-h forecast (faded), with a NOW line;
+- measured precipitation from the NRCS SNOTEL gauges in the same basin (hourly accumulated PREC, 6 h and 24 h). None for Green Peter or Fern Ridge.
+
+Model data: Open-Meteo forecast API, hourly precipitation averaged over two hand-placed points per project (near the dam, upper basin). Past hours are the model's analysis, not rain gauges or radar. An hour counts as wet at ≥ 0.01 in; 6 dry hours in a row end an event. Drainage areas and points are approximate.
+
+The Trend Recorder has a **Basin precipitation** strip for reservoirs: hourly model data up to 92 days back, Open-Meteo archive (ERA5) daily sums beyond that.
+
 ## Hourly Snapshot (top of every page)
 
 A compact strip above the page tabs with the values recorded hourly:

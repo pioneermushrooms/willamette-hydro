@@ -22,6 +22,8 @@
 
   var state = {
     snap: null,
+    wx: null,             // { fetchedAt, basins, error } from js/weather.js (model rain, past + forecast)
+    wxSno: null,          // { fetchedAt, stations, error } SNOTEL hourly accumulated precipitation
     fetching: false,
     nextPollAt: null,
     pollTimer: 0,
@@ -194,6 +196,11 @@
     var nwpsP = H.nwps ? H.nwps.loadAll().catch(function () { return null; }) : Promise.resolve(null);
     var tdgP = H.tdg ? H.tdg.loadAll().catch(function () { return null; }) : Promise.resolve(null);
     var snowP = H.snotel ? H.snotel.load().catch(function () { return null; }) : Promise.resolve(null);
+    // Weather loads on its own so a slow forecast service never holds up the agency data.
+    if (H.weather) {
+      H.weather.load().then(function (r) { if (r && (!r.error || !state.wx || state.wx.error)) state.wx = r; renderWx(); });
+      H.weather.loadSnotel().then(function (r) { if (r && (!r.error || !state.wxSno || state.wxSno.error)) state.wxSno = r; renderWx(); });
+    }
     Promise.all([H.loadAll({ bpaUrl: BPA_URL }), nwpsP, tdgP, snowP]).then(function (res) {
       if (res[2]) state.tdg = mergeTdg(state.tdg, res[2]);
       if (res[3]) state.snow = res[3].error && state.snow && !state.snow.error ? state.snow : res[3];
@@ -693,6 +700,7 @@
       var d = projData(e);
       h += '<div class="detail-gauge">' + reservoirGauge(e, 'detail') + reservoirReadouts(e, true) + '</div>';
       h += tdgChip(e);
+      h += wxBlock(e);
       var w = d && window24(d.elev);
       if (w && w.t.length > 1) h += '<div>' + sparkSVG(w.t, w.v, { t0: w.t0, t1: w.t1 }) + '<div class="spark-cap"><span>−24 H</span><span>POOL ELEV · ft</span><span>NOW</span></div></div>';
       if (d) {
@@ -744,7 +752,7 @@
     $('#reservoir-cards').innerHTML = H.projects.map(function (p) {
       var d = projData(p), e = d && H.latest(d.elev);
       return cardShell(p, p.river + (p.hydro ? ' · hydropower' : ' · flood control'),
-        '<div class="detail-gauge">' + reservoirGauge(p, 'card-' + p.id) + reservoirReadouts(p, false) + '</div>' + tdgChip(p) +
+        '<div class="detail-gauge">' + reservoirGauge(p, 'card-' + p.id) + reservoirReadouts(p, false) + '</div>' + tdgChip(p) + wxLine(p) +
         (d ? readingLine(e && e.t, 'Last pool reading') : '') + sourceLinks(p));
     }).join('');
     $('#river-cards').innerHTML = H.stations.map(function (s) {
@@ -764,6 +772,103 @@
         if (c) select(c.getAttribute('data-id'), true);
       });
     });
+  }
+
+  // ---- Basin precipitation (js/weather.js) ---------------------------------------
+
+  var fWx = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', hour: 'numeric' });
+  var fWxDay = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', month: 'numeric', day: 'numeric' });
+  var fH23 = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', hourCycle: 'h23' });
+  function wxT(t) { return fWx.format(new Date(t)); }
+  function inch(v) { return v == null ? '—' : v < 0.005 ? '0' : fmt(v, 2); }
+
+  function wxSummary(p) {
+    var W = H.weather, s = state.wx && state.wx.basins[p.code], b = W && W.BASINS[p.code];
+    return s && b ? W.summarize(s, Date.now(), b.area) : null;
+  }
+
+  // One-line state: raining since / dry since / next rain.
+  function wxState(w) {
+    var ev = w.event;
+    if (ev && !ev.end) return '<b class="wx-wet">Raining' + (ev.openStart ? ' for 3 days+' : ' since ' + wxT(ev.start)) + '</b>' +
+      (w.ends ? ' · forecast to ease ~' + wxT(w.ends) : ' · still raining at the end of the forecast');
+    return '<b class="wx-dry">' + (ev ? 'Dry since ' + wxT(ev.end) : 'Dry for 3 days+') + '</b>' +
+      (w.nextStart ? ' · next rain ~' + wxT(w.nextStart) : ' · no rain in the 3-day forecast');
+  }
+
+  function wxLine(p) {
+    if (!H.weather || !H.weather.BASINS[p.code]) return '';
+    if (!state.wx) return '<p class="wx-line"><span class="wx-h">BASIN RAIN</span> <span class="na loading">loading…</span></p>';
+    var w = wxSummary(p);
+    if (!w) return '<p class="wx-line"><span class="wx-h">BASIN RAIN</span> <span class="na">unavailable' + (state.wx.error ? ' (' + esc(state.wx.error) + ')' : '') + '</span></p>';
+    return '<p class="wx-line"><span class="wx-h">BASIN RAIN <span class="hint">model</span></span> past 24 h <b class="mono">' + inch(w.past24) + ' in</b> · next 24 h <b class="mono">' + inch(w.next24) + ' in</b><br>' + wxState(w) + '</p>';
+  }
+
+  // Hourly bars, past 72 h (solid) and forecast 72 h (faded), with a NOW line.
+  function wxChart(s, now) {
+    var t0 = now - 72 * HOUR, t1 = now + 72 * HOUR, W = window.innerWidth < 600 ? 380 : 600, Hh = 130, ml = 34, mr = 6, mt = 8, mb = 20, pw = W - ml - mr, ph = Hh - mt - mb;
+    var idx = []; s.t.forEach(function (t, i) { if (t > t0 && t <= t1 + HOUR) idx.push(i); });
+    if (!idx.length) return '';
+    var hi = Math.max(0.1, Math.max.apply(null, idx.map(function (i) { return s.p[i]; })));
+    var nt = niceTicks(0, hi, 3), top = Math.max(hi, nt.ticks[nt.ticks.length - 1]);
+    var x = function (t) { return ml + ((t - t0) / (t1 - t0)) * pw; }, y = function (v) { return mt + (1 - v / top) * ph; };
+    var bw = Math.max(1, pw / 144 - 1), g = '<g class="axis">';
+    nt.ticks.forEach(function (v) { if (v > top + 1e-9) return; g += '<line x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/><text x="' + (ml - 5) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, nt.step < 0.1 ? 2 : 1) + '</text>'; });
+    // Pacific midnights as day labels.
+    for (var d = Math.ceil(t0 / HOUR) * HOUR; d <= t1; d += HOUR) {
+      if (fH23.format(new Date(d)) !== '00' || x(d) > W - 60) continue;
+      g += '<line class="wx-day" x1="' + x(d).toFixed(1) + '" x2="' + x(d).toFixed(1) + '" y1="' + mt + '" y2="' + (mt + ph) + '"/><text x="' + (x(d) + 3).toFixed(1) + '" y="' + (Hh - 6) + '">' + esc(W < 600 ? fWxDay.format(new Date(d + 12 * HOUR)).split(',')[0] : fWxDay.format(new Date(d + 12 * HOUR))) + '</text>';
+    }
+    g += '</g><g>';
+    idx.forEach(function (i) {
+      var v = s.p[i]; if (v < 0.005) return;
+      var xe = x(s.t[i]), yy = y(v), fc = s.t[i] > now;
+      g += '<rect class="wx-bar' + (fc ? ' fc' : '') + '" x="' + (xe - bw - 0.5).toFixed(1) + '" y="' + yy.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (mt + ph - yy).toFixed(1) + '"><title>' +
+        esc(wxT(s.t[i] - HOUR) + '–' + fHM(s.t[i]) + ': ' + fmt(v, 2) + ' in' + (fc ? ' (forecast)' : ' (model)')) + '</title></rect>';
+    });
+    g += '</g><line class="wx-now" x1="' + x(now).toFixed(1) + '" x2="' + x(now).toFixed(1) + '" y1="' + (mt - 4) + '" y2="' + (mt + ph) + '"/><text class="wx-now-lab" x="' + (x(now) + 3).toFixed(1) + '" y="' + (mt + 4) + '">NOW</text>';
+    return '<svg class="wx-svg" viewBox="0 0 ' + W + ' ' + Hh + '" width="100%" role="img" aria-label="Hourly basin precipitation, past 72 hours and 72-hour forecast">' + g + '</svg>' +
+      '<div class="rt-legend"><span><i class="wx-k"></i>Past hours (model)</span><span><i class="wx-k fc"></i>Forecast</span><span class="hint">in per hour · hover a bar for its value</span></div>';
+  }
+  var fWxH = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric' });
+  function fHM(t) { return fWxH.format(new Date(t)); }
+
+  function wxBlock(p) {
+    var W = H.weather, b = W && W.BASINS[p.code];
+    if (!b) return '';
+    var head = '<h3 class="wx-title">Basin precipitation <span class="hint">≈ ' + fmt(b.area) + ' sq mi above the dam</span></h3>';
+    if (!state.wx) return '<div class="wx-box">' + head + '<p class="na loading">Loading weather…</p></div>';
+    var s = state.wx.basins[p.code], w = wxSummary(p);
+    if (!w) return '<div class="wx-box">' + head + '<p class="na">Weather model unavailable' + (state.wx.error ? ' (' + esc(state.wx.error) + ')' : '') + '.</p></div>';
+    var k = function (lab, v, sub) { return '<div><dt>' + lab + '</dt><dd>' + v + '</dd>' + (sub ? '<dd class="sub">' + sub + '</dd>' : '') + '</div>'; };
+    var h = '<div class="wx-box">' + head + '<p class="wx-now-line">' + wxState(w) + '</p><dl class="kv wx-kv">' +
+      k('Past 6 h', inch(w.past6) + '<span class="unit">in</span>') + k('Next 6 h', inch(w.next6) + '<span class="unit">in</span>', 'forecast') +
+      k('Past 24 h', inch(w.past24) + '<span class="unit">in</span>', '≈ ' + fmt(w.vol24) + ' ac-ft on the basin (' + fmt(w.vol24cfs) + ' cfs over a day)') +
+      k('Next 24 h', inch(w.next24) + '<span class="unit">in</span>', '≈ ' + fmt(w.volNext24) + ' ac-ft (' + fmt(w.volNext24cfs) + ' cfs over a day)') +
+      k('Past 72 h', inch(w.past72) + '<span class="unit">in</span>') + k('Next 72 h', inch(w.next72) + '<span class="unit">in</span>', 'forecast') +
+      (w.event ? k(w.event.end ? 'Last event' : 'This event so far', inch(w.event.total) + '<span class="unit">in</span>', (w.event.openStart ? 'began 3+ days ago' : 'from ' + wxT(w.event.start)) + (w.event.end ? ' to ' + wxT(w.event.end) : '')) : '') +
+      (w.fzNow != null ? k('Freezing level', fmt(Math.round(w.fzNow / 100) * 100) + '<span class="unit">ft</span>', (w.tempNow != null ? fmt(w.tempNow, 0) + ' °F basin mean · ' : '') + 'rain below, snow above') : '') +
+      '</dl>' + wxChart(s, Date.now());
+    // Measured: SNOTEL stations in the same basin.
+    var sts = W.stationsFor(p.code);
+    if (sts.length) {
+      var sn = state.wxSno;
+      h += '<p class="wx-meas"><b>Measured (NRCS SNOTEL, high-elevation gauges)</b><br>' + (!sn ? '<span class="na loading">loading…</span>' : sts.map(function (st) {
+        var a = sn.stations[st.triplet], d6 = W.accumDiff(a, Date.now(), 6), d24 = W.accumDiff(a, Date.now(), 24);
+        return esc(st.name) + ' (' + fmt(st.elevFt) + ' ft) <span class="mono">' + (d24 ? '24 h ' + fmt(d24.v, 1) + ' in · 6 h ' + (d6 ? fmt(d6.v, 1) : '—') + ' in' : 'no recent hourly data') + '</span>' +
+          ' <a class="src-link" href="https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=' + st.triplet.split(':')[0] + '" target="_blank" rel="noopener" title="NRCS SNOTEL ' + esc(st.name) + '">↗</a>';
+      }).join('<br>')) + '</p>';
+    } else h += '<p class="wx-meas hint">No SNOTEL gauge in this basin on this site; model only.</p>';
+    h += '<p class="hint wx-src">Basin mean of ' + b.pts.length + ' points from the Open-Meteo weather model (past hours are model analysis, not rain gauges; forecast to ' + wxT(w.horizon) + '). ' +
+      'Volume is rain on the basin, not runoff: soil, snow and travel time decide how much reaches the pool and when. Basin points and area are approximate. ' +
+      '<a href="' + esc(W.pageUrl(p.code)) + '" target="_blank" rel="noopener">Open-Meteo ↗</a> · <a href="' + esc(W.nwsUrl(p.code)) + '" target="_blank" rel="noopener">NWS forecast for the basin ↗</a></p></div>';
+    return h;
+  }
+
+  function renderWx() {
+    var r = $('#reservoir-cards');
+    if (r) { renderCards(); }
+    if (state.selectedId && byId[state.selectedId] && byId[state.selectedId].kind === 'reservoir') renderDetails();
   }
 
   // ---- Snowpack (NRCS SNOTEL) --------------------------------------------------
