@@ -6,8 +6,8 @@
 (function (root) {
   'use strict';
   var H = root.HYDRO;
-  var ROUTES = ['overview', 'tables', 'calc', 'docs'];   // #/teacup (retired) falls back to Overview
-  var TITLES = { overview: 'Overview', tables: 'Reports & Tables', calc: 'Storage / Drawdown Calculator', docs: 'Docs' };
+  var ROUTES = ['overview', 'tables', 'calc', 'sources', 'docs'];   // #/teacup (retired) falls back to Overview
+  var TITLES = { overview: 'Overview', tables: 'Reports & Tables', calc: 'Storage / Drawdown Calculator', sources: 'Derivation & Sources', docs: 'Docs' };
   var BASE_TITLE = document.title;
   var rendered = {};
   var last = null;

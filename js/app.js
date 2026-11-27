@@ -110,9 +110,14 @@
       ICON[st.level] + '</span>' + esc(st.label) + '</span>';
   }
 
+  // A label/value cell. Secondary text (sub, and a "derived"/"model" hint in the label) goes in a
+  // dd.sub; in the Overview header it floats as a popover on hover/focus instead of resizing the cell.
   function kv(label, value, unit, cls, sub) {
-    return '<div><dt>' + label + '</dt><dd' + (cls ? ' class="' + cls + '"' : '') + '>' + value +
-      (unit ? '<span class="unit">' + unit + '</span>' : '') + '</dd>' + (sub ? '<dd class="sub">' + sub + '</dd>' : '') + '</div>';
+    var m = /\s*<span class="hint">([^<]*)<\/span>/.exec(label), hint = m ? m[1] : '';
+    if (m) label = label.replace(m[0], '');
+    var note = (hint ? '<span class="sub-kind">' + hint + '</span>' : '') + (sub || '');
+    return '<div' + (note ? ' class="has-pop" tabindex="0"' : '') + '><dt>' + label + '</dt><dd' + (cls ? ' class="' + cls + '"' : '') + '>' + value +
+      (unit ? '<span class="unit">' + unit + '</span>' : '') + '</dd>' + (note ? '<dd class="sub">' + note + '</dd>' : '') + '</div>';
   }
 
   // Value cell: "loading…" before the first fetch, "no data" when the series is absent.
@@ -369,10 +374,12 @@
     });
 
     $('#totals').innerHTML = tiles.map(function (x) {
-      return '<div class="tile' + (x.cls ? ' ' + x.cls : '') + '" tabindex="0">' +
-        '<div class="tile-label">' + x.label + '</div>' +
+      var hm = /\s*<span class="hint">([^<]*)<\/span>/.exec(x.label), label = hm ? x.label.replace(hm[0], '') : x.label;
+      var note = (hm ? '<span class="sub-kind">' + hm[1] + '</span>' : '') + (x.sub || '');
+      return '<div class="tile' + (x.cls ? ' ' + x.cls : '') + (note ? ' has-pop' : '') + '" tabindex="0">' +
+        '<div class="tile-label">' + label + '</div>' +
         '<div class="tile-value"><span>' + x.value + '</span>' + (x.unit ? '<span class="unit">' + x.unit + '</span>' : '') + '</div>' +
-        '<div class="tile-sub">' + (x.sub || '') + '</div>' + (x.extra || '') +
+        (note ? '<div class="tile-sub">' + note + '</div>' : '') + (x.extra || '') +
         (x.bar != null ? '<div class="tile-bar"><span style="width:' + Math.max(0, Math.min(100, x.bar)).toFixed(1) + '%"></span></div>' : '') +
         '</div>';
     }).join('');
@@ -648,7 +655,7 @@
     var S = function (k) { return p.series[k] ? H.srcLink({ cwms: p.series[k].name, unit: p.series[k].unit }) : ''; };
     var h = kvVal('Pool elev' + S('elev'), val(e, 1, 'ft', 'hl', e ? staleTag(e.t).trim() : ''));
     var dev = e && r ? e.v - r.v : null;
-    h += kv('vs rule curve' + S('rule'), !d ? LOADING : dev == null ? NA : signed(dev, 1), dev == null ? '' : 'ft', '', r ? 'USACE rule ' + fmt(r.v, 1) + ' ft today' : '');
+    h += kv('vs rule' + S('rule'), !d ? LOADING : dev == null ? NA : signed(dev, 1), dev == null ? '' : 'ft', '', r ? 'Pool minus the USACE rule curve (' + fmt(r.v, 1) + ' ft today)' : '');
     if (p.cons) {
       var pf = st ? H.percentFull(p, st.v) : null;
       h += kv('% full <span class="hint">derived</span>', !d ? LOADING : !pf ? NA : pf.below ? 'Below cons. pool' : fmt(pf.clamped, 1),
@@ -719,7 +726,7 @@
       '<h2>' + esc(e.name) + '</h2><p class="ws-sub">' + esc(sub) + '</p></div>' + statusPill(st) + '</div>';
     if (isRes) {
       var w = wxSummary(e), rain = !H.weather || !H.weather.BASINS[e.code] ? '' :
-        kv('Rain above dam, 24 h <span class="hint">model</span>', !state.wx ? LOADING : w ? inch(w.past24) : NA, w ? 'in' : '', '', w ? 'next 24 h ' + inch(w.next24) + ' in' : '');
+        kv('Rain 24 h <span class="hint">model · basin above the dam</span>', !state.wx ? LOADING : w ? inch(w.past24) : NA, w ? 'in' : '', '', w ? 'Past 24 h, mean of two model points for this basin (not a gauge). Next 24 h: ' + inch(w.next24) + ' in.' : '');
       h += reservoirReadouts(e, false, rain);
       if (w) h += '<p class="ws-wx">' + wxState(w) + '</p>';
     } else {

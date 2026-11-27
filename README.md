@@ -172,9 +172,17 @@ Every local script and stylesheet in `index.html` is loaded as `?v=<hash of js/ 
 
 `js/update-check.js` fingerprints the deployed code (index.html plus every same-origin script and stylesheet, fetched uncached) when the page loads, then re-checks every 10 minutes and when the tab becomes visible. If the code changed while the tab is hidden, the page reloads itself quietly on the same route. While the page is on screen it never reloads by itself: it shows a "new version available · Reload" banner instead (the Calculator page always gets the banner, so inputs are not lost). Data files are not part of the fingerprint, so the BPA data commits do not trigger reloads.
 
+## Derivation & Sources (`#/sources`)
+
+A plain-language FAQ (`js/views/sources.js`): is anything made up, how to check a number (the ↗ links), how fresh data is, and one entry per value on the site (pool, inflow, outflow, storage, rule curve, vs rule and status lights, % full, totals, levels/targets/30-yr bands, TDG, river values, NWS flood, basin rain and the weather icon, SNOTEL, ratings, calculator, BPA). Each entry is tagged Reported, Agency-computed, Derived here, Weather model, Published reference or Site rule, with source links.
+
+## Popovers instead of expanding cells
+
+Secondary notes (formulas, "derived"/"model", reading counts) on the totals tiles and the Overview header numbers float as a small popover on hover, keyboard focus or tap; a small dot marks cells that have one. Nothing changes size.
+
 ## Pages (hash routes)
 
-`#/overview` is the live dashboard (default; `#/teacup` also lands here). `#/tables` has the published rating tables, `#/calc` the storage / drawdown calculator and `#/docs` the documents and data sources.
+`#/overview` is the live dashboard (default; `#/teacup` also lands here). `#/sources` is Derivation & Sources. `#/tables` has the published rating tables, `#/calc` the storage / drawdown calculator and `#/docs` the documents and data sources.
 Plain anchors (`#workspace`, `#trends`, `#snow`) stay on Overview and scroll.
 
 ## Teacup (folded into Overview)
