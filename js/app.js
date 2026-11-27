@@ -989,6 +989,16 @@
     return state.hist[key];
   }
 
+  // Long-range history is cached; add the live readings that arrived since it loaded (hourly),
+  // so 30 D … YEAR views keep moving with every poll.
+  function withLive(h, live) {
+    if (!h || !h.t || !h.t.length || !live || !H.history) return h;
+    var r = H.history.appendLive(h, live);
+    if (r.t.length === h.t.length) return h;
+    r.liveFrom = h.liveFrom || r.liveFrom;
+    return r;
+  }
+
   function chartModel() {
     var e = byId[state.chartId], res = e.kind === 'reservoir';
     var long = isLong(state.range), hist = long ? histFor(e) : null, hLoading = !!(hist && hist.loading);
@@ -997,7 +1007,7 @@
     var s, ref = null, unit, dec, title, src, param = null, g = null;
     if (res) {
       var d = projData(e);
-      s = long ? hist && hist.pool : d && d.elev; ref = long ? hist && hist.rule : d && d.rule; unit = 'ft'; dec = 2;
+      s = long ? withLive(hist && hist.pool, d && d.elev) : d && d.elev; ref = long ? hist && hist.rule : d && d.rule; unit = 'ft'; dec = 2;
       title = e.name + ' · pool elevation (ft)';
       src = long
         ? (hist && hist.src ? hist.src + (hist.pool && hist.pool.liveFrom ? stamp(hist.pool.liveFrom) + ' (hourly)' : '') : 'loading history…') +
@@ -1008,14 +1018,14 @@
       param = state.riverParam === 'temp' ? 'temp' : e.params.indexOf('flow') >= 0 && state.riverParam === 'flow' ? 'flow' : 'stage';
       if (param === 'temp') {
         // USGS reports °C; the site displays °F (°C kept in tooltips/details).
-        var tsrc = long ? hist && hist.tempC : sd && sd.tempC;
+        var tsrc = long ? (state.range === '30d' ? withLive(hist && hist.tempC, sd && sd.tempC) : hist && hist.tempC) : sd && sd.tempC;
         var tc = tsrc && tsrc.t.length ? tsrc : null;
         s = tc ? { t: tc.t, v: tc.v.map(H.cToF), q: tc.q } : null;
         unit = '°F'; dec = 1;
         title = e.name + ' · water temperature (°F)';
         src = 'USGS NWIS site ' + e.site + ', parameter 00010 water temperature (reported in °C, shown in °F)' + (long && hist && hist.src ? ', ' + hist.src : '') + '. Values flagged P are provisional.';
       } else {
-        var psrc = long ? hist && hist[param] : sd && sd[param];
+        var psrc = long ? (state.range === '30d' ? withLive(hist && hist[param], sd && sd[param]) : hist && hist[param]) : sd && sd[param];
         s = psrc && psrc.t.length ? psrc : null;
         unit = param === 'flow' ? 'cfs' : 'ft'; dec = param === 'flow' ? 0 : 2;
         title = e.name + (param === 'flow' ? ' · discharge (cfs)' : ' · gage height (ft)');
@@ -1137,7 +1147,8 @@
       ps.querySelector('[data-param="temp"]').disabled = M.e.params.indexOf('tempC') < 0;
     }
     $('#chart-title').textContent = M.title;
-    $('#trend-tag').textContent = RANGE_TAG[state.range] + (M.long ? ' · HISTORY + LIVE' : ' · LIVE SERIES');
+    $('#trend-tag').textContent = RANGE_TAG[state.range] + (M.long ? ' · HISTORY + LIVE' : ' · LIVE SERIES') +
+      (state.snap && state.snap.fetchedAt ? ' · checked ' + fmtClock.format(state.snap.fetchedAt).replace(/^24/, '00').slice(0, 5) : '');
     $('#chart-src').innerHTML = 'Source: ' + H.linkSources(M.src);
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H2);
     svg.setAttribute('height', H2);
@@ -1528,6 +1539,10 @@
 
   function stripHTML(def, sd, g) {
     var M = g.M, unit = esc(def.unit);
+    if (def.key === 'flows' && M.long && sd.lines && M.e.kind === 'reservoir') {
+      var dl = projData(M.e) || {};
+      sd = Object.assign({}, sd, { lines: sd.lines.map(function (l) { var lv = l.cls === 'st-out' ? dl.out : dl.inflow, r = withLive(l, lv); return r === l ? l : Object.assign({}, l, { t: r.t, v: r.v }); }) });
+    }
     // Each line's newest reading, so a series that reports later (hourly vs 15-min) is visible as such.
     var lastOf = function (l) { return l.t.length ? ' <span class="st-last mono" title="Newest reading of this series">' + esc(fmtClock.format(l.t[l.t.length - 1]).replace(/^24/, '00').slice(0, 5)) + '</span>' : ''; };
     var keys = sd.lines && sd.lines.length ? sd.lines.map(function (l) { return '<span class="st-key">' + (sd.lines.length > 1 ? '<i class="' + l.cls + '"></i>' + esc(l.label) : '<span class="st-lab-1">latest</span>') + lastOf(l) + '</span>'; }).join('') : '';
