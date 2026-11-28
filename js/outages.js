@@ -66,7 +66,10 @@
     var inc = ((j && j.features) || []).map(function (f) {
       var a = f.attributes || {}, ring = f.geometry && f.geometry.rings && f.geometry.rings[0], lat = null, lon = null;
       if (ring && ring.length) { var sx = 0, sy = 0; ring.forEach(function (p) { sx += p[0]; sy += p[1]; }); lon = sx / ring.length; lat = sy / ring.length; }
-      return { id: a.incidentid || a.OBJECTID, n: +a.custcnt || 0, start: toMs(a.ostart), etr: toMs(a.etor), etrText: a.etor || null, startText: a.ostart || null, planned: /plan/i.test(a.status || ''),
+      // ostart / etor are text fields in EWEB's layer (local time, format not documented): shown as published,
+      // only treated as times when they are epoch numbers.
+      var num = function (v) { return typeof v === 'number' || /^\d{11,13}$/.test(String(v || '')) ? +v : null; };
+      return { id: a.incidentid || a.OBJECTID, n: +a.custcnt || 0, start: num(a.ostart), etr: num(a.etor), etrText: a.etor || null, startText: a.ostart || null, planned: /plan/i.test(a.status || ''),
         cause: a.cause || null, comment: a.remarks || null, status: a.status || null, area: a.name || null, lat: lat, lon: lon };
     });
     return { key: 'eweb', name: 'EWEB', map: 'https://www.eweb.org/outages-and-safety/power-outages/power-outage-map', served: null, updated: Date.now(),

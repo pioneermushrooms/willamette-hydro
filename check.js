@@ -380,7 +380,7 @@ console.log('tdg / snotel / odeq');
       '<tr><td>11/26/2026&nbsp;11:27</td><td>11/26/2026&nbsp;11:32</td><td>Shelton-Fairmount No 3 230kV line</td><td>230.0</td><td>5</td><td>Auto</td><td>Unknown</td><td>BPA</td><td>&nbsp;</td><td>OLY</td><td>y</td><td>236002</td></tr></tbody></table>';
     const rows = FB.parse(dir);
     check(rows.length === 2 && rows[0].stillOut && rows[0].district === 'EUG' && rows[0].kv === 115 && rows[0].out === '2026-10-12T16:33:00.000Z' && !rows[1].stillOut && rows[1].in === '2026-11-26T19:32:00.000Z', 'bpa-outages: report table parsed (still out, Pacific times)');
-    check(FB.isLocal(rows[0]) && !FB.isLocal(rows[1]) && FB.isLocal({ district: 'TRI', name: 'Alvey-Dixonville No 1 230kV line' }), 'bpa-outages: Eugene district and Willamette names kept');
+    check(FB.isLocal(rows[0]) && !FB.isLocal(rows[1]) && FB.isLocal({ district: 'EUG', name: 'Alvey-Dixonville No 1 230kV line' }) && FB.isLocal({ district: 'SAL', name: 'Detroit-Santiam No 1 230kV line' }) && !FB.isLocal({ district: 'IDF', name: 'Swan Valley-Goshen No 1 161kV line' }), 'bpa-outages: Eugene district and Willamette powerhouses kept, same-named Idaho substations not');
   }
 
   // Incremental refresh: splice a short fresh fetch onto the stored series

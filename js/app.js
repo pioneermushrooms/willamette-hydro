@@ -25,7 +25,8 @@
     snap: null,
     wx: null,             // { fetchedAt, basins, error } from js/weather.js (model rain, past + forecast)
     wxSno: null,
-    hz: null,             // { fetchedAt, fires, alerts, … } from js/hazards.js          // { fetchedAt, stations, error } SNOTEL hourly accumulated precipitation
+    hz: null,             // { fetchedAt, fires, alerts, … } from js/hazards.js
+    pw: null,             // { fetchedAt, utilities, bpa } from js/outages.js          // { fetchedAt, stations, error } SNOTEL hourly accumulated precipitation
     fetching: false,
     nextPollAt: null,
     pollTimer: 0,
@@ -249,6 +250,7 @@
       H.weather.load().then(function (r) { if (r && (!r.error || !state.wx || state.wx.error)) state.wx = r; renderWx(); });
       H.weather.loadSnotel().then(function (r) { if (r && (!r.error || !state.wxSno || state.wxSno.error)) state.wxSno = r; renderWx(); });
     }
+    if (H.outages) H.outages.load().then(function (r) { state.pw = r; renderHazards(); });
     if (H.hazards) H.hazards.load().then(function (r) {
       // Keep the last good half when one source fails on a later poll.
       if (state.hz && r.firesError && !state.hz.firesError) { r.fires = state.hz.fires; r.firesError = null; r.firesStale = true; }
@@ -1112,7 +1114,8 @@
   var HZ_ICON = {
     fire: '<path d="M12 22c4 0 7-2.7 7-6.6 0-3.2-2-5.4-3.5-7-.3 1.8-1.2 3-2.4 3.6.4-3.4-1.2-6.6-4.1-9 .2 3.4-1.5 5.4-3 7.2C4.6 11.9 5 13.6 5 15.4 5 19.3 8 22 12 22z"/>',
     bell: '<path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4l2-2zM10 20a2 2 0 0 0 4 0"/>',
-    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>'
+    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>',
+    boltOff: '<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/><path d="M3 3l18 18"/>'
   };
   function hzIcon(k) { return '<svg class="sc-ic" viewBox="0 0 24 24" aria-hidden="true">' + HZ_ICON[k] + '</svg>'; }
   var fHz = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -1153,6 +1156,48 @@
       '<td>' + esc(f.cause || '—') + '</td><td class="mono">' + hzT(f.discovered) + '</td></tr>';
   }
 
+  // Power card: live utility outages (EWEB, Lane Electric, EPUD, Blachly-Lane) + BPA transmission (js/outages.js).
+  var fPw = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  function pwT(t) { return t == null ? '—' : fPw.format(new Date(t)); }
+  function powerCard() {
+    var O = H.outages, pw = state.pw;
+    if (!O) return '';
+    if (!pw) return card('power', 'pending', 'bolt', 'Power', '<span class="na loading">checking…</span>', '');
+    var ok = pw.utilities.filter(function (u) { return !u.error; }), bad = pw.utilities.filter(function (u) { return u.error; });
+    var bpa = pw.bpa ? pw.bpa.items.filter(function (b) { return b.stillOut || (Date.now() - Date.parse(b.out)) < 48 * 3600e3; }) : [];
+    var st = O.status(ok, bpa), w = st.worst;
+    var where = function (x) { return x.area || (x.comment && x.comment.length < 40 ? x.comment : '') || ''; };
+    var line = !ok.length ? '<span class="na">outage data unavailable</span>'
+      : st.level === 'ok' ? 'No outages detected' + (st.out ? ' <span class="hint">· ' + fmt(st.out) + ' customer' + (st.out > 1 ? 's' : '') + ' in small outages</span>' : '')
+        : '<b>' + fmt(st.out) + ' customers out</b>' + (w ? ' · largest ' + esc(w.utility) + ' ' + fmt(w.n) + (where(w) ? ' ' + esc(where(w)) : '') + (w.cause ? ' · ' + esc(w.cause) : '') : '');
+    if (st.bpaTrip) line += ' · <b class="sc-alert-txt">BPA line tripped</b>';
+    var body = '<div class="table-scroll"><table class="ws-table sc-table"><thead><tr><th>Utility</th><th>Customers out</th><th>Outages</th><th>Areas affected</th><th>Updated</th></tr></thead><tbody>' +
+      pw.utilities.map(function (u) {
+        return '<tr><th><a href="' + esc(u.map) + '" target="_blank" rel="noopener">' + esc(u.name) + ' ↗</a></th>' + (u.error ? '<td colspan="4" class="na">unavailable (' + esc(u.error) + ')</td>'
+          : '<td class="mono">' + fmt(u.out) + (u.served ? ' <span class="hint">of ' + fmt(u.served) + '</span>' : '') + '</td><td class="mono">' + u.incidents.length + '</td>' +
+            '<td>' + (u.regions.length ? u.regions.map(function (r) { return esc(r.name) + ' (' + r.out + ')'; }).join(', ') : u.incidents.filter(function (x) { return x.area; }).map(function (x) { return esc(x.area); }).join(', ') || '—') + '</td>' +
+            '<td class="mono">' + pwT(u.updated) + '</td>') + '</tr>';
+      }).join('') + '</tbody></table></div>';
+    var big = st.incidents.filter(function (x) { return x.n >= 2 || x.cause || x.comment; }).slice(0, 12);
+    if (big.length) body += '<h4 class="ws-h4">Outages</h4><div class="table-scroll"><table class="ws-table sc-table"><thead><tr><th>Utility</th><th>Customers</th><th>Area</th><th>Since</th><th>Cause / notes</th><th>Est. restore</th></tr></thead><tbody>' +
+      big.map(function (x) {
+        return '<tr><th>' + esc(x.utility) + (x.planned ? ' <span class="sc-tag">planned</span>' : '') + '</th><td class="mono">' + fmt(x.n) + '</td><td>' + esc(x.area || '—') + '</td>' +
+          '<td class="mono">' + (x.start ? pwT(x.start) : esc(x.startText || '—')) + '</td><td>' + esc([x.cause, x.comment, x.status].filter(Boolean).join(' · ') || '—') + '</td>' +
+          '<td class="mono">' + (x.etr ? pwT(x.etr) : esc(x.etrText || '—')) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    body += '<h4 class="ws-h4">BPA transmission near the projects (Eugene district and Willamette lines)</h4>' + (!pw.bpa ? '<p class="sc-none">BPA report not copied yet (' + esc(pw.bpaError || '') + ').</p>'
+      : !bpa.length ? '<p class="sc-none">No local BPA line, feeder or transformer outages in the last 48 h or still out. Report copied ' + pwT(Date.parse(pw.bpa.fetchedAt)) + '.</p>'
+        : '<div class="table-scroll"><table class="ws-table sc-table"><thead><tr><th>Line / equipment</th><th>kV</th><th>Type</th><th>Cause</th><th>Out</th><th>Back</th></tr></thead><tbody>' + bpa.map(function (b) {
+          return '<tr><th>' + esc(b.name) + '</th><td class="mono">' + (b.kv || '—') + '</td><td>' + esc(/auto/i.test(b.type) ? 'Unplanned (auto)' : /plan/i.test(b.type) ? 'Planned' : b.type) + '</td><td>' + esc(b.cause || '—') + '</td>' +
+            '<td class="mono">' + pwT(Date.parse(b.out)) + '</td><td class="mono">' + (b.stillOut ? '<b>still out</b>' : pwT(Date.parse(b.in))) + '</td></tr>';
+        }).join('') + '</tbody></table></div><p class="hint">BPA Daily Interruptions Report, copied ' + pwT(Date.parse(pw.bpa.fetchedAt)) + ' (BPA updates it daily).</p>');
+    body += '<p class="hint">Live from each utility’s public outage map, checked ' + pwT(pw.fetchedAt) + ' (every 2–5 min). Card turns amber when one outage affects ≥ ' + O.LEVEL.incidentWatch + ' customers or ≥ ' + O.LEVEL.totalWatch +
+      ' are out, red at ≥ ' + O.LEVEL.incidentAlert + ' in one outage, ≥ ' + O.LEVEL.totalAlert + ' total, or an unplanned BPA line trip still out. ' +
+      'Not covered: ' + O.UNAVAILABLE.map(function (u) { return '<a href="' + esc(u.map) + '" target="_blank" rel="noopener">' + esc(u.name) + ' ↗</a> (' + esc(u.why) + ')'; }).join(', ') +
+      (bad.length ? '. Unavailable right now: ' + esc(bad.map(function (u) { return u.name; }).join(', ')) : '') + '.</p>';
+    return card('power', ok.length ? st.level : 'unknown', st.level === 'ok' ? 'bolt' : 'boltOff', 'Power', line, body);
+  }
+
   function renderHazards() {
     var box = $('#status-cards');
     if (!box || !H.hazards) return;
@@ -1188,13 +1233,7 @@
         }).join('') + '</ul>' : '<p class="sc-none">No active NWS alerts name Lane, Linn or the Willamette/Cascade zones.</p>') +
         '<p class="hint">National Weather Service active alerts for Oregon, filtered to the basin’s counties and zones, checked ' + hzT(hz.fetchedAt) + '. <a href="https://www.weather.gov/pqr/" target="_blank" rel="noopener">NWS Portland ↗</a></p>');
     }
-    // Power: not monitored yet (no verified live feed); links to the utilities' own maps.
-    h += card('power', 'unknown', 'bolt', 'Power outages', '<span class="na">not monitored yet · utility maps</span>',
-      '<p class="sc-none">Live outage data is not connected yet: the utilities’ outage feeds still have to be verified. Their own live maps:</p><ul class="sc-links">' +
-      [['EWEB (Eugene)', 'https://www.eweb.org/outage'], ['Pacific Power', 'https://www.pacificpower.net/outages-safety.html'], ['Lane Electric Cooperative', 'https://www.laneelectric.com/outages/outage-map/'],
-        ['Emerald PUD', 'https://www.epud.org/'], ['Springfield Utility Board', 'https://www.subutil.com/'], ['Consumers Power Inc.', 'https://outage.cpi.coop/'],
-        ['Blachly-Lane Electric', 'https://www.blachlylane.coop/outages-safety/outage-center/outage-map/'], ['BPA transmission interruptions (7 days)', 'https://transmission.bpa.gov/Business/Operations/Outages/default.aspx']]
-        .map(function (u) { return '<li><a href="' + u[1] + '" target="_blank" rel="noopener">' + esc(u[0]) + ' ↗</a></li>'; }).join('') + '</ul>');
+    h += powerCard();
     setHTML(box, h);
   }
 

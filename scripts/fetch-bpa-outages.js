@@ -22,9 +22,10 @@ const path = require('path');
 const BASE = 'https://transmission.bpa.gov/Business/Operations/Outages/DIR/';
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const OUT = path.join(__dirname, '..', 'data', 'bpa-outages.json');
-// Eugene O&M district, or names of substations / lines serving the southern Willamette projects.
+// BPA's Eugene O&M district (EUG), plus anything naming a Willamette project powerhouse in any district.
+// (Plain place names are not used: BPA has same-named substations elsewhere, e.g. Goshen, Idaho.)
 const LOCAL_DISTRICT = /\bEUG\b/;
-const LOCAL_NAME = /Lookout Point|Dexter|Hills Creek|Cougar|Green Peter|Foster|Detroit|Big Cliff|Alvey|Lane\b|Eugene|Springfield|Thurston|Jasper|Goshen|Oakridge|Leaburg|Walterville|Blue River|McKenzie|Cal Young|Santa Clara|Marcola|Lowell|Fall Creek|Cottage Grove|Dorena|Fern Ridge|Veneta|Creswell|Junction City|Lebanon|Sweet Home|Santiam/i;
+const LOCAL_NAME = /Lookout Point|Dexter PH|Hills Creek|Cougar|Green Peter|Foster|Detroit|Big Cliff/i;
 
 function unescape(s) {
   return s.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
