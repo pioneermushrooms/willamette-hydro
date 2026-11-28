@@ -1,0 +1,32 @@
+{
+ "fetchedAt": "2026-11-28T01:31:48.616Z",
+ "source": "https://transmission.bpa.gov/Business/Operations/Outages/DIR/",
+ "rowsParsed": 222,
+ "errors": [],
+ "items": [
+  {
+   "table": "Transmission Line Interruptions",
+   "name": "Alvey-Dixonville No 1 230kV line",
+   "kv": 230,
+   "out": "2026-10-20T12:41:00.000Z",
+   "in": "2026-11-23T19:18:00.000Z",
+   "stillOut": false,
+   "type": "Plan",
+   "cause": "Maintenance",
+   "district": "EUG",
+   "id": "235893"
+  },
+  {
+   "table": "Transmission Line Interruptions",
+   "name": "Cal Young-Santa Clara 115kV line",
+   "kv": 115,
+   "out": "2026-10-12T16:33:00.000Z",
+   "in": null,
+   "stillOut": true,
+   "type": "Plan",
+   "cause": "Maintenance",
+   "district": "EUG",
+   "id": "235771"
+  }
+ ]
+}
