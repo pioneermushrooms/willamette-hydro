@@ -1,0 +1,50 @@
+name: Probe Cottage Grove outflow (temporary)
+
+# Diagnostic: what CWMS and USGS publish for Cottage Grove outflow and how often. Dev branch only.
+on:
+  push:
+    branches: [claude/hourly-pool-data-retrieval-1m4bt8]
+    paths: ['.github/workflows/probe-coto.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe
+        shell: bash
+        run: |
+          set +e +o pipefail
+          A='Accept: application/json;version=2'
+          B=$(date -u -d '-48 hours' +%Y-%m-%dT%H:%M:%SZ); E=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "now $E"
+          for n in COT.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV COT.Flow-In.Ave.15Minutes.6Hours.MIXED-COMPUTED-REV COT.Elev-Forebay.Inst.0.0.MIXED-REV DOR.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV; do
+            echo "=== $n"
+            curl -sS -m 30 -H "$A" "https://cwms-data.usace.army.mil/cwms-data/timeseries?office=NWDP&unit=EN&page-size=5000&begin=$B&end=$E&name=$n" | python3 -c "
+          import json,sys,datetime
+          d=json.load(sys.stdin); v=[x for x in d.get('values',[]) if x[1] is not None]
+          print('points',len(v))
+          for x in v[-12:]: print(' ', datetime.datetime.utcfromtimestamp(x[0]/1000).strftime('%m-%d %H:%M'),'UTC', x[1])
+          ch=[(v[i][0],v[i-1][1],v[i][1]) for i in range(1,len(v)) if abs(v[i][1]-v[i-1][1])>=5]
+          print('changes >=5 cfs:', [(datetime.datetime.utcfromtimestamp(t/1000).strftime('%m-%d %H:%M'),a,b) for t,a,b in ch[-10:]])"
+          done
+          echo "=== CWMS catalog: COT flow series"
+          curl -sS -m 30 -H "$A" "https://cwms-data.usace.army.mil/cwms-data/catalog/TIMESERIES?office=NWDP&page-size=200&like=COT.*Flow.*" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          for e in d.get('entries',[]): print(' ', e.get('name'), e.get('latest-time') or '', e.get('interval') or '')"
+          echo "=== catalog: COTO / COT* locations with Flow"
+          curl -sS -m 30 -H "$A" "https://cwms-data.usace.army.mil/cwms-data/catalog/TIMESERIES?office=NWDP&page-size=200&like=COT[^.]*\..*Flow.*" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          for e in d.get('entries',[]): print(' ', e.get('name'), e.get('latest-time') or '')"
+          echo "=== USGS 14153500 (site name + last 24 h discharge/stage)"
+          curl -sS -m 30 "https://waterservices.usgs.gov/nwis/iv/?format=json&sites=14153500&parameterCd=00060,00065&period=PT24H&siteStatus=all" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          for ts in d['value']['timeSeries']:
+            print(ts['sourceInfo']['siteName'], ts['variable']['variableCode'][0]['value'])
+            v=ts['values'][0]['value']; print('  points',len(v)); [print('  ',x['dateTime'],x['value']) for x in v[-8:]]"
