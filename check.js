@@ -355,6 +355,20 @@ console.log('tdg / snotel / odeq');
     check(al.length === 2 && al[0].fire && !al[1].fire, 'hazards: NWS alerts kept only for the basin; fire weather flagged');
     check(HZ.fireStatus([], []).level === 'ok' && HZ.fireStatus(fires, []).level === 'alert' && HZ.fireStatus([], [al[0]]).level === 'alert' && HZ.fireStatus([Object.assign({}, fires[0], { near: { mi: 40 } })], []).level === 'watch', 'hazards: fire card level');
     check(/WFIGS_Incident_Locations_Current\/FeatureServer\/0\/query\?/.test(HZ.fireUrl()) && /geometry=-124\.1%2C43%2C-121\.4%2C44\.9/.test(HZ.fireUrl()), 'hazards: WFIGS query URL with the basin box');
+    // Lat/lon -> Basin Schematic: least-squares affine fit through the 10 dams (+ local correction near them)
+    const WX = require('./js/weather.js'), F = HZ.schematicFit();
+    const damPt = (code) => WX.BASINS[code].pts[0], node = (code) => H.projects.find((p) => p.code === code).map;
+    check(F && F.residuals.length === 10 && F.rms < 40 && F.residuals.every((r) => r.d < 60), 'hazards: schematic affine fit through all 10 dams, RMS residual ' + (F ? F.rms.toFixed(1) : '?') + ' (schematic is not to scale)');
+    check(H.projects.filter((p) => p.code !== 'LOP' && p.code !== 'DEX').every((p) => { const q = HZ.toSchematic(damPt(p.code)[0], damPt(p.code)[1]); return Math.hypot(q.x - p.map.x, q.y - p.map.y) < 3; }), 'hazards: toSchematic puts each dam on its node (corrected)');
+    const ld = HZ.toSchematic(damPt('LOP')[0], damPt('LOP')[1]), lop2 = node('LOP'), dex2 = node('DEX');
+    check(Math.hypot(ld.x - (lop2.x + dex2.x) / 2, ld.y - (lop2.y + dex2.y) / 2) < 3, 'hazards: shared LOP/DEX lat/lon lands between their two nodes');
+    const between = (a, b, aff) => { const pa = damPt(a), pb = damPt(b), m = HZ.toSchematic((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, aff ? { affine: true } : null), na = node(a), nb = node(b);
+      // Along the segment between the nodes (not at either end), and close to it.
+      const ex = nb.x - na.x, ey = nb.y - na.y, L2 = ex * ex + ey * ey, t = ((m.x - na.x) * ex + (m.y - na.y) * ey) / L2, off = Math.abs((m.x - na.x) * ey - (m.y - na.y) * ex) / Math.sqrt(L2);
+      return t > 0.2 && t < 0.8 && off < 0.15 * Math.sqrt(L2); };
+    check(between('FRN', 'CGR') && between('GPR', 'HCR') && between('COT', 'DOR') && between('FRN', 'CGR', true), 'hazards: a point midway between two dams lands between their nodes');
+    const far = HZ.toSchematic(44.9, -121.4), sw = HZ.toSchematic(43.0, -124.1);
+    check(far.x > 440 && far.y < 0 && sw.x < 0 && sw.y > 500 && HZ.toSchematic(null, 1) === null, 'hazards: points beyond the schematic map outside its viewBox (clamped by the UI); bad input -> null');
   }
 
   // Incremental refresh: splice a short fresh fetch onto the stored series

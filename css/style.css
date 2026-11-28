@@ -1027,7 +1027,7 @@ i.yr-key-rule { display: inline-block; width: 18px; height: 0; border-top: 2px d
 .st-key i { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--st); }
 .st-read { margin-left: auto; color: var(--text); font-size: 12px; }
 .st-svg { display: block; touch-action: pan-y; }
-.st-svg .axis line { stroke: var(--grid); } .st-svg .axis text { fill: var(--muted); font: 10px var(--mono); }
+.st-svg .axis line { stroke: var(--grid); } .st-svg .axis text { fill: var(--muted); font: 10.5px var(--mono); }
 .st-out { --st: #3987e5; } .st-in { --st: #d95926; } .st-a { --st: #3987e5; }
 .st-line { fill: none; stroke: var(--st); stroke-width: 1.75; stroke-linejoin: round; }
 .st-ref { stroke: var(--crit); stroke-width: 1; stroke-dasharray: 4 3; }
@@ -1341,20 +1341,40 @@ main, .site-footer { max-width: 1680px; }
 .sc-links a, .sc-body .hint a { color: var(--cyan); }
 .sc-tag { font: 600 9px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn); border: 1px solid currentColor; border-radius: 999px; padding: 0 5px; margin-left: 4px; }
 .sc-table td, .sc-table th { white-space: nowrap; }
-.fire-map { width: 100%; max-width: 520px; height: auto; background: #0e1215; border: 1px solid #1e2226; border-radius: 4px; }
-.fm-ring { fill: none; stroke: #23303a; stroke-dasharray: 3 3; }
-.fm-dam { fill: #8b939b; }
-.fm-lab { font: 9px var(--mono); fill: var(--text-2); }
-.fm-city { fill: #4a525a; } .fm-city-lab { font: 9px var(--sans); fill: var(--muted); }
-.fm-fire.wildfire { fill: rgba(255,82,82,0.55); stroke: #ff8a80; }
-.fm-fire.prescribed { fill: rgba(255,176,0,0.45); stroke: var(--warn); }
-.fm-fire-lab { font: 600 10px var(--sans); fill: #ffb3ad; }
-.fm-key { margin: 4px 0 0; }
-.fm-k { display: inline-block; width: 9px; height: 9px; margin: 0 4px 0 8px; vertical-align: -1px; }
-.fm-k.dam { background: #8b939b; } .fm-k.fire { background: #ff5252; border-radius: 50%; } .fm-k.rx { background: var(--warn); border-radius: 50%; }
 @media (max-width: 640px) { .sc-body { padding-left: 14px; } .sc-links { columns: 1; } }
-.fire-map { max-width: 440px; }
-.fm-lab { font: 10px var(--mono); }
-.fm-fire-lab { font-size: 11px; }
-.fm-city-lab { font-size: 10px; }
 .sc-table tbody th { background: transparent; }
+.sc-map-note { margin: 0; }
+
+/* ==== Hazard markers on the Basin map (fires; power outages later) ========================= */
+.hz-mk { outline: none; pointer-events: none; }   /* hit-tested in JS so nodes keep their clicks */
+.hz-mk .hz-glow { opacity: 0.22; }
+.hz-mk .hz-glyph { stroke-width: 1.2; stroke-linejoin: round; }
+.hz-fire.wildfire .hz-glow { fill: var(--crit); }
+.hz-fire.wildfire .hz-glyph { fill: #ff5a4f; stroke: #ffd2cc; }
+.hz-fire.prescribed .hz-glow { fill: var(--warn); }
+.hz-fire.prescribed .hz-glyph { fill: #e89a00; stroke: #ffe2a3; }
+.hz-outage .hz-glow { fill: #b48cff; }
+.hz-outage .hz-glyph { fill: #c9b0ff; stroke: #0a0d0f; }
+.hz-outage .hz-slash-bg { stroke: #0a0d0f; stroke-width: 3.6; stroke-linecap: round; }
+.hz-outage .hz-slash { stroke: #c9b0ff; stroke-width: 1.4; stroke-linecap: round; }
+.hz-chev { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.hz-fire.wildfire { color: #ff8a80; } .hz-fire.prescribed { color: var(--warn); } .hz-outage { color: #c9b0ff; }
+.hz-mk.hz-active .hz-glow, .hz-mk:focus-visible .hz-glow { opacity: 0.5; }
+.hz-mk:focus-visible .hz-glyph { stroke: var(--amber); stroke-width: 2; }
+#basin-map.hz-hover { cursor: help; }
+.map-tip { z-index: 2; white-space: normal; width: max-content; max-width: min(300px, calc(100% - 8px)); }
+.map-tip b { color: var(--text); }
+.lg-hz-ic { width: 13px; height: 13px; flex: none; }
+.lg-hz-ic .hz-glow { display: none; }
+
+/* Trend Recorder: strip time axis + synced cursor time labels (main chart and strips) */
+.st-svg .axis line.st-xaxis, .st-svg .axis line.st-xt { stroke: #3a4249; }
+.cur-t-bg { fill: #1a1f24; stroke: var(--bezel-hi); stroke-width: 1; }
+.cur-t-txt { fill: var(--text); font: 600 10.5px var(--mono); }
+.st-rt { color: var(--amber); }
+/* The readout floats over the top of the plot, so hovering never changes the strip's height. */
+.strip { position: relative; }
+.strip .st-read { position: absolute; right: 8px; top: 24px; z-index: 1; margin: 0; width: auto; max-width: calc(100% - 16px); pointer-events: none;
+  padding: 2px 7px; background: rgba(10,11,13,0.92); border: 1px solid var(--bezel-hi); border-radius: 3px; font-size: 11.5px; line-height: 1.35; }
+.strip .st-read:empty { display: none; }
+.st-svg .axis text.st-yin { text-anchor: start; paint-order: stroke; stroke: #0a0c0e; stroke-width: 3px; }
