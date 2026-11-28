@@ -930,6 +930,25 @@
 
   // ---- Workspace: selected project header + "More" ----------------------------
 
+  // Folder tabs across the top of the project panel: one per reservoir (a selected river gauge gets
+  // its own tab at the end). Active tab is bright and joins the panel; the others sit behind it.
+  function renderTabs() {
+    var box = $('#ws-tabs');
+    if (!box) return;
+    var sel = byId[state.selectedId], list = H.projects.slice();
+    if (sel && sel.kind !== 'reservoir') list.push(sel);
+    setHTML(box, list.map(function (e) {
+      var on = e.id === state.selectedId, st = statusOf(e);
+      return '<button type="button" class="ws-tab' + (on ? ' on' : '') + (e.kind !== 'reservoir' ? ' river' : '') + '" role="tab" aria-selected="' + on + '" tabindex="' + (on ? 0 : -1) + '" data-id="' + e.id + '" title="' + esc(e.name + ' · ' + st.label) + '">' +
+        '<span class="light ' + st.level + '" aria-hidden="true"></span>' + esc(e.kind === 'reservoir' ? e.name : shortName(e)) + '</button>';
+    }).join(''));
+    var a = box.querySelector('.ws-tab.on');
+    if (a && a.scrollIntoView && box.scrollWidth > box.clientWidth) {
+      var l = a.offsetLeft - box.offsetLeft, r = l + a.offsetWidth;
+      if (l < box.scrollLeft || r > box.scrollLeft + box.clientWidth) box.scrollLeft = l - 24;
+    }
+  }
+
   // Header: name, status and the handful of numbers that matter, above the chart.
   function renderDetails() {
     var e = byId[state.selectedId], st = statusOf(e), h;
@@ -949,6 +968,7 @@
       h += stationReadouts(e, false, floodKv(e));
     }
     setHTML($('#ws-head'), h);
+    renderTabs();
     renderMore(e);
   }
 
@@ -1125,6 +1145,19 @@
         }
       });
     });
+    var tabs = $('#ws-tabs');
+    if (tabs) {
+      tabs.addEventListener('click', function (ev) { var t = ev.target.closest('.ws-tab'); if (t) select(t.getAttribute('data-id'), true); });
+      tabs.addEventListener('keydown', function (ev) {
+        var t = ev.target.closest('.ws-tab');
+        if (!t || (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft' && ev.key !== 'Home' && ev.key !== 'End')) return;
+        ev.preventDefault();
+        var all = Array.prototype.slice.call(tabs.querySelectorAll('.ws-tab')), i = all.indexOf(t);
+        var n = ev.key === 'Home' ? all[0] : ev.key === 'End' ? all[all.length - 1] : all[(i + (ev.key === 'ArrowRight' ? 1 : all.length - 1)) % all.length];
+        select(n.getAttribute('data-id'), true);
+        var f = tabs.querySelector('.ws-tab[data-id="' + n.getAttribute('data-id') + '"]'); if (f) f.focus();
+      });
+    }
     var more = $('#ws-more');
     try { more.open = localStorage.getItem('wvhd:more') === '1'; } catch (e) { /* default closed */ }
     more.addEventListener('toggle', function () { try { localStorage.setItem('wvhd:more', more.open ? '1' : '0'); } catch (e) { /* ignore */ } });

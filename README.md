@@ -96,6 +96,13 @@ The page never moves the view on its own during a refresh. Across a reload (your
 
 `scripts/fetch-inflow-fcst.js` copies the NW River Forecast Center's reservoir inflow forecast (text summary page `textPlot.cgi?id=<LID>&pe=QI`: observed inflow plus the ~6-hourly forecast for ~10 days, with its issue time, PST) into `data/inflow-fcst.json` every 30 minutes from `update-bpa.yml` (nwrfc.noaa.gov sends no CORS). The CWMS forecast series (`<P>.Flow-In.Inst.~6Hours.0.RFC-FCST`) are catalogued but publicly empty (checked 2026-11-28).
 
+### Top bar, project tabs, notifications
+
+- The page tabs, the clock / data-status readout and the live-feed bell sit in one sticky top bar (`#topbar`) that stays at the top while scrolling.
+- The project panel has folder tabs (`#ws-tabs`) for the ten reservoirs (a selected river gauge gets its own tab); the active tab is bright and joins the panel. Arrow keys move between tabs.
+- Toasts stack at the bottom-left (newest at the bottom, at most 5) and fade away on their own (12 s, alerts 25 s; hover pauses). Clicking one opens its project without clearing anything. Opening the bell acknowledges everything: toasts and desktop notifications close and all events are marked read.
+- Desktop notifications (opt-in in the bell panel) show whenever the page is open, with a test notification when turned on; at most 5 per batch and 5 open at once. Some browsers (e.g. Android Chrome without an installed app) do not allow page notifications; the panel says so.
+
 ### Gage below the dam
 
 Each project with a USGS gage directly below it (`BELOW_GAGE` in `js/data.js`: HCRO 14145500, DEXO 14150000, FALO 14151000, COTO 14153500, DORO 14155500, CGRO 14159500, BLUO 14162200, Fern Ridge: Long Tom nr Alvadore 14169000; names verified against USGS 2026-11-28; over 24 h every one matched the USACE outflow reading for reading, median difference ≤ 0.2 %, with USACE posting ~15 min later) shows that gage's discharge as a header cell ("COTO gage 148 cfs"), and the inflow/outflow strip draws it as a dashed green line. It is fetched in the same USGS request as the river gauges. Reason: USACE's computed outflow follows the gage but is posted 15–35 min after each reading (vs 5–15 for USGS), so a release change shows on the gage first. Not listed: LOP (flows into Dexter; its USACE outflow is an hourly average about 40 min old), GPR (nearest gage is below Foster and does not match).

@@ -1509,3 +1509,59 @@ main, .site-footer { max-width: 1680px; }
 /* Phones: under the strip (overlaying what follows), so the selected bars stay visible. */
 .pr-sum.pr-full { width: auto; max-width: none; top: calc(100% - 6px); }
 @media (max-width: 640px) { .pr-dl { font-size: 11.5px; } }
+
+/* ==== Sticky top bar: pages + clock/status + bell stay in view while scrolling ============== */
+.site-header { grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+.site-header > .notice { grid-column: auto; grid-row: auto; }
+.topbar { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 12px; padding: 6px 20px;
+  background: rgba(14,16,18,0.94); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+.topbar > .tabs { position: static; flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: none; backdrop-filter: none; }
+.topbar > .clocks { flex: none; margin-left: auto; display: flex; gap: 8px; align-items: stretch; }
+.topbar .readout { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 0; padding: 4px 12px; min-width: 0; max-width: 430px; }
+.topbar .readout-label { display: none; }
+.topbar .readout-value { font-size: 18px; line-height: 1.2; }
+.topbar .readout-live { flex-basis: 100%; }
+.topbar .bell-btn { width: 44px; min-height: 0; }
+.topbar > .ev-panel { position: absolute; top: calc(100% + 4px); right: 20px; }
+@media (max-width: 960px) { .site-header { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) {
+  .topbar { flex-wrap: wrap; padding: 6px 10px; gap: 6px; }
+  .topbar > .clocks { order: -1; width: 100%; margin: 0; }
+  .topbar .readout { flex: 1 1 auto; max-width: none; }
+  .topbar #clock-date { display: none; }
+  .topbar .readout-value { font-size: 16px; }
+  .topbar > .tabs { width: 100%; }
+  .topbar > .ev-panel { right: 10px; left: 10px; width: auto; }
+}
+/* Toasts: bottom-left stack (newest at the bottom), up to 5, each fades on its own */
+.toasts { left: 16px; right: auto; bottom: 16px; top: auto; flex-direction: column; }
+.toast.out { opacity: 0; transform: translateX(-16px); transition: opacity .5s ease, transform .5s ease; }
+@media (max-width: 640px) {
+  .toasts { top: auto; bottom: 10px; left: 10px; right: 10px; width: auto; flex-direction: column; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+}
+/* Sections scrolled into view land below the sticky top bar */
+#workspace, #trends, #ws-more, #snow, #status-cards { scroll-margin-top: 84px; }
+@media (max-width: 760px) { #workspace, #trends, #ws-more, #snow, #status-cards { scroll-margin-top: 150px; } }
+
+/* ==== Project tabs (folder tabs) across the top of the project panel ====================== */
+.ws-main { padding-top: 0; }
+.ws-tabs { display: flex; align-items: flex-end; gap: 2px; margin: 0 -14px 4px; padding: 8px 10px 0; overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin; border-bottom: 1px solid var(--bezel-hi); background: linear-gradient(#0c0e10, #121417); border-radius: var(--radius) var(--radius) 0 0; }
+.ws-tab { position: relative; flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px 6px; margin-bottom: -1px;
+  font: 600 11.5px var(--sans); letter-spacing: 0.02em; color: var(--muted); cursor: pointer;
+  background: #15181c; border: 1px solid #262b31; border-bottom-color: var(--bezel-hi); border-radius: 7px 7px 0 0;
+  box-shadow: inset 0 -6px 10px rgba(0,0,0,0.35); transform: translateY(2px); transition: color .12s, background .12s, transform .12s; }
+.ws-tab:hover { color: var(--text-2); background: #1a1e23; transform: translateY(1px); }
+.ws-tab:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.ws-tab .light { width: 7px; height: 7px; animation: none; box-shadow: none; }
+.ws-tab.on { z-index: 1; color: var(--amber); background: var(--panel); border-color: var(--bezel-hi); border-bottom-color: var(--panel);
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.35); transform: none; padding-top: 9px; }
+.ws-tab.river { font-style: italic; }
+.ws-main > .ws-head { padding-top: 6px; }
+@media (max-width: 640px) { .ws-tab { padding: 7px 10px 6px; font-size: 11px; } }
+.ws-main::before, .ws-main::after { display: none; }
+.ws-tab { padding: 7px 9px 6px; gap: 5px; font-size: 11px; }
+.ws-tab.on { padding-top: 9px; }
+.ws-tabs { gap: 1px; padding-left: 8px; padding-right: 8px; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%); }
+@media (min-width: 1500px) { .ws-tab { padding: 7px 12px 6px; font-size: 11.5px; } }
