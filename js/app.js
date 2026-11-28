@@ -250,7 +250,7 @@
       H.weather.load().then(function (r) { if (r && (!r.error || !state.wx || state.wx.error)) state.wx = r; renderWx(); });
       H.weather.loadSnotel().then(function (r) { if (r && (!r.error || !state.wxSno || state.wxSno.error)) state.wxSno = r; renderWx(); });
     }
-    if (H.outages) H.outages.load().then(function (r) { state.pw = r; renderHazards(); });
+    if (H.outages) H.outages.load().then(function (r) { state.pw = r; renderHazards(); renderMapHazards(); });
     if (H.hazards) H.hazards.load().then(function (r) {
       // Keep the last good half when one source fails on a later poll.
       if (state.hz && r.firesError && !state.hz.firesError) { r.fires = state.hz.fires; r.firesError = null; r.firesStale = true; }
@@ -547,11 +547,14 @@
     m.places.forEach(function (p) {
       s += '<text class="place-label" x="' + p.x + '" y="' + p.y + '" text-anchor="' + p.anchor + '">' + esc(p.label) + '</text>';
     });
-    s += '<g id="map-nodes"></g>';
+    // Hazard markers (fires; later power outages) sit above the rivers and below the nodes.
+    s += '<g id="map-hazards"></g><g id="map-nodes"></g>';
     svg.innerHTML = s;
+    initMapHazards(svg);
 
     // Tap selects the nearest node within a generous radius, so small nodes stay easy to hit on phones.
     svg.addEventListener('click', function (ev) {
+      if (hzPick(ev, true)) return;   // a tap on a hazard marker shows its details instead
       var g = ev.target.closest('.node'), best = g ? g.getAttribute('data-id') : null;
       var ctm = svg.getScreenCTM();
       if (ctm) {
@@ -589,6 +592,169 @@
     });
     setHTML($('#map-nodes'), s);
     if (focusId) { var n = document.querySelector('.node[data-id="' + focusId + '"]'); if (n) n.focus({ preventScroll: true }); }
+  }
+
+  // ---- Hazard markers on the Basin map (js/hazards.js) ----------------------
+  /*
+   * The schematic is not geographic: H.hazards.toSchematic() places a lat/lon by a least-squares
+   * fit through the dams. Each layer is a kind plus a list of { lat, lon, title, lines[], cls, r }:
+   *   drawHazardMarkers('fire', items)     flame, red (wildfire) or amber (cls 'prescribed')
+   *   drawHazardMarkers('outage', items)   lightning bolt with a slash (power outage; not fed yet)
+   * renderMapHazards() draws every layer in state.mapLayers (set state.mapLayers.outage to a list
+   * and call it to add outages). Points beyond the schematic are clamped to its edge with a
+   * chevron pointing outward. Hover, keyboard focus or a tap shows a tooltip (#map-tip); the
+   * markers never take clicks from the nodes.
+   */
+  var HZ_INSET = 18, HZ_NODE_GAP = 15, HZ_ORDER = ['outage', 'fire'];
+  var hzItems = {};          // kind -> items drawn, with their schematic x/y (for hit-testing and the tooltip)
+  var hzTip = { key: null, pinned: false };
+
+  function hzGlyph(kind, r) {
+    var k = (r / 9).toFixed(3);
+    if (kind === 'outage') {
+      return '<circle class="hz-glow" r="' + (r * 1.15).toFixed(1) + '"/>' +
+        '<path class="hz-glyph" vector-effect="non-scaling-stroke" transform="scale(' + k + ') translate(-11.5 -12)" d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>' +
+        ['hz-slash-bg', 'hz-slash'].map(function (c) { return '<line class="' + c + '" x1="' + (-r).toFixed(1) + '" y1="' + (-r).toFixed(1) + '" x2="' + r.toFixed(1) + '" y2="' + r.toFixed(1) + '"/>'; }).join('');
+    }
+    return '<circle class="hz-glow" r="' + (r * 1.2).toFixed(1) + '"/>' +
+      '<path class="hz-glyph" vector-effect="non-scaling-stroke" transform="scale(' + k + ') translate(-12 -13)" d="M12 22c4 0 7-2.7 7-6.6 0-3.2-2-5.4-3.5-7-.3 1.8-1.2 3-2.4 3.6.4-3.4-1.2-6.6-4.1-9 .2 3.4-1.5 5.4-3 7.2C4.6 11.9 5 13.6 5 15.4 5 19.3 8 22 12 22z"/>';
+  }
+
+  // Schematic position, clamped inside the viewBox (out = the direction it lies in, degrees, when
+  // clamped) and nudged off any node it would sit under.
+  function hzPlace(lat, lon) {
+    var p = H.hazards && H.hazards.toSchematic(lat, lon);
+    if (!p) return null;
+    var vb = H.basinMap.viewBox;
+    var x = Math.max(vb[0] + HZ_INSET, Math.min(vb[0] + vb[2] - HZ_INSET, p.x)), y = Math.max(vb[1] + HZ_INSET, Math.min(vb[1] + vb[3] - HZ_INSET, p.y));
+    var out = x !== p.x || y !== p.y ? Math.atan2(p.y - y, p.x - x) * 180 / Math.PI : null;
+    if (out == null) all.forEach(function (e) {
+      var dx = x - e.map.x, dy = y - e.map.y, d = Math.hypot(dx, dy);
+      if (d >= HZ_NODE_GAP) return;
+      if (d < 0.01) { dx = 1; dy = -1; d = Math.SQRT2; }
+      x = e.map.x + dx / d * HZ_NODE_GAP; y = e.map.y + dy / d * HZ_NODE_GAP;
+    });
+    return { x: x, y: y, out: out };
+  }
+
+  // items: [{ lat, lon, title, lines: [..], cls, r }] -> SVG markup for one layer.
+  function drawHazardMarkers(kind, items) {
+    var s = '', drawn = [];
+    (items || []).forEach(function (it) {
+      var p = hzPlace(it.lat, it.lon);
+      if (!p) return;
+      var r = Math.max(4, Math.min(11, it.r || 6));
+      if (p.out != null) r = Math.min(r, 6.5);
+      var key = kind + ':' + drawn.length;
+      drawn.push(Object.assign({}, it, { x: p.x, y: p.y, rr: r }));
+      s += '<g class="hz-mk hz-' + kind + (it.cls ? ' ' + it.cls : '') + (p.out != null ? ' hz-off' : '') + '" data-hz="' + key + '" tabindex="0" role="img" aria-label="' +
+        esc(it.title + '. ' + it.lines.join('. ') + (p.out != null ? '. Beyond the edge of the map.' : '')) + '" transform="translate(' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + ')">';
+      if (p.out != null) s += '<path class="hz-chev" transform="rotate(' + p.out.toFixed(0) + ') translate(' + (r + 7).toFixed(1) + ' 0)" d="M-2.5 -4L2 0L-2.5 4"/>';
+      s += hzGlyph(kind, r) + '</g>';
+    });
+    hzItems[kind] = drawn;
+    return s;
+  }
+
+  // Fires from js/hazards.js as marker items; sized by acres (log scale, clamped).
+  function fireItems(fires) {
+    return (fires || []).slice().sort(function (a, b) { return (+b.acres || 0) - (+a.acres || 0); }).map(function (f) {
+      var ac = +f.acres || 0, rx = f.type === 'prescribed';
+      var l1 = (rx ? 'Prescribed burn' : 'Wildfire') + ' · ' + (f.acres != null ? fmt(ac, 0) + ' ac' : 'size n/a') + (f.contained != null ? ' · ' + fmt(f.contained, 0) + '% contained' : '');
+      var l2 = [f.cause ? 'Cause: ' + f.cause : null, f.discovered != null ? 'discovered ' + hzT(f.discovered) : null].filter(Boolean).join(' · ');
+      return { lat: f.lat, lon: f.lon, title: f.name, cls: rx ? 'prescribed' : 'wildfire', r: 4.5 + 1.6 * Math.log10(Math.max(1, ac)),
+        lines: [l1, l2, fmt(f.near.mi, 0) + ' mi ' + f.near.dir + ' of ' + f.near.name].filter(Boolean) };
+    });
+  }
+
+  function renderMapHazards() {
+    var el = $('#map-hazards');
+    if (!el) return;
+    var hz = state.hz, ly = state.mapLayers || (state.mapLayers = {});
+    if (hz && (!hz.firesError || hz.firesStale)) ly.fire = fireItems(hz.fires);
+    // Power outages: one crossed-bolt marker per outage of ≥ 2 customers (or with a cause), plus any reported
+    // by a utility with a location; single-customer outages are left off the map to keep it readable.
+    var pw = state.pw;
+    if (pw) ly.outage = [].concat.apply([], pw.utilities.filter(function (u) { return !u.error; }).map(function (u) {
+      return u.incidents.filter(function (x) { return x.lat != null && (x.n >= 2 || x.cause || x.comment); }).map(function (x) {
+        return { lat: x.lat, lon: x.lon, r: 5 + 1.5 * Math.log10(Math.max(1, x.n)), title: u.name + ' outage · ' + fmt(x.n) + ' customer' + (x.n > 1 ? 's' : ''),
+          lines: [x.area ? 'Area: ' + x.area : null, x.cause ? 'Cause: ' + x.cause : null, x.comment ? x.comment : null, x.start ? 'Since ' + pwT(x.start) : x.startText ? 'Since ' + x.startText : null,
+            x.etr ? 'Est. restore ' + pwT(x.etr) : x.etrText ? 'Est. restore ' + x.etrText : null, x.planned ? 'Planned' : null].filter(Boolean) };
+      });
+    }));
+    // Outages under fires; within a layer the biggest first, so small ones stay visible on top.
+    setHTML(el, HZ_ORDER.map(function (k) { hzItems[k] = []; return ly[k] && ly[k].length ? drawHazardMarkers(k, ly[k]) : ''; }).join(''));
+    if (hzTip.key) showHzTip(hzTip.key, hzTip.pinned);
+  }
+
+  function hzByKey(key) { var a = String(key).split(':'), list = hzItems[a[0]]; return list ? list[+a[1]] : null; }
+
+  function showHzTip(key, pinned) {
+    var it = hzByKey(key), tip = $('#map-tip'), svg = $('#basin-map');
+    if (!it || !tip) { hideHzTip(true); return; }
+    hzTip.key = key; hzTip.pinned = !!pinned;
+    var html = '<b>' + esc(it.title) + '</b>' + it.lines.map(function (l) { return '<br>' + esc(l); }).join('');
+    if (tip.__html !== html) { tip.innerHTML = html; tip.__html = html; }
+    tip.hidden = false;
+    var ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    var wrap = svg.parentNode.getBoundingClientRect(), pt = svg.createSVGPoint();
+    pt.x = it.x; pt.y = it.y;
+    var c = pt.matrixTransform(ctm), cx = c.x - wrap.left, cy = c.y - wrap.top, off = it.rr * ctm.a + 8;
+    var tw = tip.offsetWidth, th = tip.offsetHeight, left = cx + off, top = cy - th / 2;
+    if (left + tw > wrap.width - 4) left = cx - off - tw;
+    if (left < 4) { left = cx - tw / 2; top = cy + off; if (top + th > wrap.height - 4) top = cy - off - th; }   // narrow map: above/below
+    tip.style.left = Math.max(4, Math.min(wrap.width - tw - 4, left)) + 'px';
+    tip.style.top = Math.max(4, Math.min(wrap.height - th - 4, top)) + 'px';
+    svg.querySelectorAll('.hz-mk').forEach(function (g) { g.classList.toggle('hz-active', g.getAttribute('data-hz') === key); });
+  }
+  function hideHzTip(force) {
+    if (hzTip.pinned && !force) return;
+    hzTip.key = null; hzTip.pinned = false;
+    var tip = $('#map-tip');
+    if (tip) tip.hidden = true;
+    document.querySelectorAll('#basin-map .hz-active').forEach(function (g) { g.classList.remove('hz-active'); });
+  }
+
+  // Hover / tap on a marker (hit-tested by distance: the nodes' larger hit areas lie above the
+  // markers, and a node nearer the pointer than the marker keeps the click). True if a marker was hit.
+  function hzPick(ev, isClick) {
+    var svg = $('#basin-map'), ctm = svg.getScreenCTM();
+    if (!ctm) return false;
+    var pt = svg.createSVGPoint();
+    pt.x = ev.clientX; pt.y = ev.clientY;
+    var p = pt.matrixTransform(ctm.inverse()), best = null, bestD = Infinity, slack = isClick ? 6 : 3;
+    Object.keys(hzItems).forEach(function (k) {
+      hzItems[k].forEach(function (it, i) { var d = Math.hypot(it.x - p.x, it.y - p.y); if (d < Math.max(it.rr + slack, 8) && d < bestD) { bestD = d; best = k + ':' + i; } });
+    });
+    var nodeD = Infinity;
+    all.forEach(function (e) { nodeD = Math.min(nodeD, Math.hypot(e.map.x - p.x, e.map.y - p.y)); });
+    var hit = best && bestD < nodeD;
+    svg.classList.toggle('hz-hover', !!hit);
+    if (!hit) { hideHzTip(isClick); return false; }
+    if (isClick) { if (hzTip.pinned && hzTip.key === best) hideHzTip(true); else showHzTip(best, true); }
+    else if (!hzTip.pinned || hzTip.key !== best) showHzTip(best, false);
+    return true;
+  }
+
+  function initMapHazards(svg) {
+    if (!$('#map-tip')) {
+      var tip = document.createElement('div');
+      tip.className = 'tooltip map-tip'; tip.id = 'map-tip'; tip.hidden = true; tip.setAttribute('role', 'tooltip');
+      svg.parentNode.appendChild(tip);
+    }
+    svg.addEventListener('pointermove', function (ev) { if (ev.pointerType !== 'touch') hzPick(ev, false); });
+    svg.addEventListener('pointerleave', function () { svg.classList.remove('hz-hover'); hideHzTip(false); });
+    svg.addEventListener('focusin', function (ev) { var g = ev.target.closest && ev.target.closest('.hz-mk'); if (g) showHzTip(g.getAttribute('data-hz'), false); });
+    svg.addEventListener('focusout', function (ev) { if (ev.target.closest && ev.target.closest('.hz-mk')) hideHzTip(true); });
+    svg.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') hideHzTip(true); });
+    document.addEventListener('pointerdown', function (ev) { if (hzTip.pinned && !svg.contains(ev.target)) hideHzTip(true); });
+    // Legend entries for the fire markers (an outage entry belongs with that layer).
+    var lg = document.querySelector('#ws-map .map-legend');
+    if (lg && !lg.querySelector('.lg-hz')) {
+      var ic = function (cls) { return '<svg class="lg-hz-ic hz-fire ' + cls + '" viewBox="-8 -8 16 16" aria-hidden="true">' + hzGlyph('fire', 6) + '</svg>'; };
+      lg.insertAdjacentHTML('beforeend', '<li class="lg-hz">' + ic('wildfire') + 'Wildfire</li><li class="lg-hz">' + ic('prescribed') + 'Prescribed burn</li>');
+    }
   }
 
   // ---- NWS flood categories + forecast (NOAA NWPS) --------------------------
@@ -1127,27 +1293,6 @@
       '<div class="sc-body">' + body + '</div></details>';
   }
 
-  // Geographic mini map: projects (squares) and fires (dots sized by acres) in the query box.
-  function fireMap(fires) {
-    var Z = H.hazards, B = Z.BOX, k = Math.cos(44 * Math.PI / 180), sc = 160, pad = 6;
-    var w = Math.round((B.xmax - B.xmin) * k * sc), h = Math.round((B.ymax - B.ymin) * sc);
-    var x = function (lon) { return +((lon - B.xmin) * k * sc).toFixed(1); }, y = function (lat) { return +((B.ymax - lat) * sc).toFixed(1); };
-    // Labels to the right, or to the left near the right edge, so nothing is clipped.
-    var lab = function (cls, px, py, dx, txt) { var left = px > w * 0.72; return '<text class="' + cls + '" x="' + (left ? px - dx : px + dx) + '" y="' + (py + 3.5) + '" text-anchor="' + (left ? 'end' : 'start') + '">' + esc(txt) + '</text>'; };
-    var s = '<svg class="fire-map" viewBox="' + (-pad) + ' ' + (-pad) + ' ' + (w + 2 * pad) + ' ' + (h + 2 * pad) + '" role="img" aria-label="Map of active fires near the projects">';
-    // Projects sharing a point (Lookout Point / Dexter) get one marker and a joint label.
-    var pts = [], seen = {};
-    Z.projectPoints().forEach(function (p) { var key = p.lat + ',' + p.lon; if (seen[key]) seen[key].code += '/' + p.code; else { seen[key] = { code: p.code, lat: p.lat, lon: p.lon }; pts.push(seen[key]); } });
-    pts.forEach(function (p) { s += '<circle class="fm-ring" cx="' + x(p.lon) + '" cy="' + y(p.lat) + '" r="' + (25 / 69 * sc).toFixed(1) + '"/>'; });
-    s += '<circle class="fm-city" cx="' + x(-123.09) + '" cy="' + y(44.05) + '" r="2.5"/><text class="fm-city-lab" x="' + x(-123.09) + '" y="' + (y(44.05) + 13) + '" text-anchor="middle">Eugene</text>';
-    pts.forEach(function (p) { s += '<rect class="fm-dam" x="' + (x(p.lon) - 3) + '" y="' + (y(p.lat) - 3) + '" width="6" height="6"/>' + lab('fm-lab', x(p.lon), y(p.lat), 6, p.code); });
-    fires.forEach(function (f) {
-      var r = Math.max(4, Math.min(14, 3 + Math.sqrt(+f.acres || 1) / 6)), fx = x(f.lon), fy = y(f.lat);
-      s += '<circle class="fm-fire ' + f.type + '" cx="' + fx + '" cy="' + fy + '" r="' + r.toFixed(1) + '"><title>' + esc(f.name + (f.acres != null ? ' · ' + fmt(f.acres, 0) + ' ac' : '')) + '</title></circle>' + lab('fm-fire-lab', fx, fy, r + 3, f.name);
-    });
-    return s + '</svg><p class="hint fm-key"><span class="fm-k dam"></span>USACE project (ring = 25 mi) <span class="fm-k fire"></span>wildfire <span class="fm-k rx"></span>prescribed burn · geographic, north up</p>';
-  }
-
   function fireRow(f) {
     return '<tr><th>' + esc(f.name) + (f.type === 'prescribed' ? ' <span class="sc-tag">prescribed</span>' : '') + '</th>' +
       '<td class="mono">' + (f.acres != null ? fmt(f.acres, 0) + ' ac' : '—') + '</td>' +
@@ -1215,7 +1360,7 @@
       var all = wf.concat(fs.rx);
       body += all.length ? '<div class="table-scroll"><table class="ws-table sc-table"><thead><tr><th>Fire</th><th>Size</th><th>Contained</th><th>Where</th><th>Cause</th><th>Discovered</th></tr></thead><tbody>' + all.map(fireRow).join('') + '</tbody></table></div>'
         : '<p class="sc-none">No active fire incidents reported within ' + H.hazards.NEAR_MI + ' miles of any project.</p>';
-      body += fireMap(all);
+      if (all.length) body += '<p class="hint sc-map-note">Fires are marked on the Basin map below (hover for details).</p>';
       body += '<p class="hint">NIFC WFIGS current incidents' + (hz.firesStale ? ' (last good update; latest request failed)' : '') + ' and NWS alerts, checked ' + hzT(hz.fetchedAt) + '. Incidents can lag the first reports by hours. ' +
         '<a href="https://app.watchduty.org/" target="_blank" rel="noopener">Watch Duty map ↗</a> · <a href="https://inciweb.wildfire.gov/state/oregon" target="_blank" rel="noopener">InciWeb Oregon ↗</a> · ' +
         '<a href="' + esc(H.hazards.fireUrl()) + '" target="_blank" rel="noopener">raw WFIGS data ↗</a></p>';
@@ -1235,6 +1380,7 @@
     }
     h += powerCard();
     setHTML(box, h);
+    renderMapHazards();
   }
 
   // ---- Snowpack (NRCS SNOTEL) --------------------------------------------------
@@ -1645,14 +1791,15 @@
       s += '<text class="now-label" x="' + (+xnow + 4) + '" y="' + (mt + ph - 6) + '">' + (M.fc.t.length > 1 ? 'NOW · NWS FORECAST →' : 'TODAY') + '</text>';
     }
     s += '<circle class="now" cx="' + x(M.t[n - 1]).toFixed(1) + '" cy="' + y(M.v[n - 1]).toFixed(1) + '" r="4.5"/>';
-    s += '<g id="cross" style="display:none"><line class="cross" id="cross-line" y1="' + mt + '" y2="' + (mt + ph) + '"/><circle class="cross-dot" id="cross-dot" r="5"/></g>';
+    s += '<g id="cross" style="display:none"><line class="cross" id="cross-line" y1="' + mt + '" y2="' + (mt + ph) + '"/><circle class="cross-dot" id="cross-dot" r="5"/>' +
+      curTSVG('cross-t', H2 - 9) + '</g>';
     s += '<rect x="' + ml + '" y="0" width="' + pw + '" height="' + H2 + '" fill="transparent"/>';
     if (animate) { svg.innerHTML = s; svg.__html = s; } else setHTML(svg, s);
     if (animate && !REDUCED) {
       var line = $('#chart-line');
       line.style.setProperty('--len', Math.ceil(line.getTotalLength()));
     }
-    state.geom = { M: M, x: x, y: y, ml: ml, pw: pw, W: W, mt: mt, ph: ph, xl: xl };
+    state.geom = { M: M, x: x, y: y, ml: ml, pw: pw, W: W, H: H2, mt: mt, ph: ph, xl: xl };
     renderTrendZoom(M);
     renderLayerBar(M);
     renderStrips();
@@ -1706,53 +1853,89 @@
       rows.join('') + '</tbody></table>';
   }
 
+  // Synced crosshair: hovering the main chart or any strip puts the cursor (and a time label on
+  // the x-axis) at the same moment in all of them. The time snaps to the main series' nearest
+  // reading when there is one close by, so every cursor sits on the same instant.
   function onPointer(ev) {
     var g = state.geom;
     if (!g) return;
-    var rect = $('#chart').getBoundingClientRect(), scale = g.W / rect.width;
-    var px = (ev.clientX - rect.left) * scale;
+    var rect = $('#chart').getBoundingClientRect(), px = (ev.clientX - rect.left) * (g.W / rect.width);
     if (px < g.ml || px > g.ml + g.pw) { hideCross(); return; }
-    var t = g.M.start + ((px - g.ml) / g.pw) * (g.M.end - g.M.start);
-    var tip = $('#tooltip'), extra = '';
-    var lastObs = g.M.t[g.M.t.length - 1];
+    crossAt(g.M.start + ((px - g.ml) / g.pw) * (g.M.end - g.M.start));
+  }
+
+  // Cursor time label, e.g. "Fri 27 03:00" (short: "Fri 03:00" on spans up to 3 days; months: "Fri 11/27").
+  function curLabel(t, short) {
+    var g = state.geom, span = g ? g.M.end - g.M.start : 7 * DAY, p = parts(t);
+    var hm = String(p.h).padStart(2, '0') + ':' + String(p.m).padStart(2, '0');
+    if (span > 75 * DAY) return p.weekday + ' ' + p.month + '/' + p.day;
+    return p.weekday + (short && span <= 3 * DAY ? '' : ' ' + p.day) + ' ' + hm;
+  }
+  // A time label on an x-axis (boxed, so it reads over the tick labels); placed by placeCurT().
+  function curTSVG(id, baseline) {
+    return '<g class="cur-t"' + (id ? ' id="' + id + '"' : '') + ' style="display:none"><rect class="cur-t-bg" y="' + (baseline - 11) + '" height="15" rx="2"/>' +
+      '<text class="cur-t-txt" y="' + baseline + '" text-anchor="middle"></text></g>';
+  }
+  function placeCurT(el, x, t) {
+    var g = state.geom;
+    if (!el || !g) return;
+    if (t == null) { el.style.display = 'none'; return; }
+    var lab = curLabel(t), w = lab.length * 6.4 + 10, cx = Math.max(g.ml + w / 2 - 6, Math.min(g.ml + g.pw - w / 2 + 6, x));
+    var tx = el.querySelector('text'), bg = el.querySelector('rect');
+    if (tx.textContent !== lab) tx.textContent = lab;
+    tx.setAttribute('x', cx.toFixed(1));
+    bg.setAttribute('x', (cx - w / 2).toFixed(1)); bg.setAttribute('width', w.toFixed(1));
+    el.style.display = '';
+  }
+
+  function crossAt(t) {
+    var g = state.geom;
+    if (!g) return;
+    var rect = $('#chart').getBoundingClientRect(), scale = g.W / rect.width;
+    var tip = $('#tooltip'), extra = '', cx, cy = null, tc = t, html;
+    var lastObs = g.M.t[g.M.t.length - 1], fi = -1;
     if (g.M.fc.t.length > 1 && t > lastObs) {
-      var fi = lastIndexBefore(t, g.M.fc.t);
+      fi = lastIndexBefore(t, g.M.fc.t);
       if (fi < g.M.fc.t.length - 1 && Math.abs(g.M.fc.t[fi + 1] - t) < Math.abs(g.M.fc.t[fi] - t)) fi++;
-      if (fi > 0) {
-        var fx = g.x(g.M.fc.t[fi]), fy = g.y(g.M.fc.v[fi]);
-        $('#cross').style.display = '';
-        $('#cross-line').setAttribute('x1', fx); $('#cross-line').setAttribute('x2', fx);
-        $('#cross-dot').setAttribute('cx', fx); $('#cross-dot').setAttribute('cy', fy);
-        tip.hidden = false;
-        tip.innerHTML = stamp(g.M.fc.t[fi]) + '<br><b>' + fmt(g.M.fc.v[fi], g.M.dec) + ' ' + g.M.unit + '</b><br>NWS forecast';
-        var fl = fx / scale + 14;
-        if (fl + tip.offsetWidth > rect.width - 4) fl = fx / scale - tip.offsetWidth - 14;
-        tip.style.left = Math.max(4, fl) + 'px';
-        return;
+    }
+    if (fi > 0) {
+      tc = g.M.fc.t[fi]; cy = g.y(g.M.fc.v[fi]);
+      html = stamp(tc) + '<br><b>' + fmt(g.M.fc.v[fi], g.M.dec) + ' ' + g.M.unit + '</b><br>NWS forecast';
+    } else {
+      var i = lastIndexBefore(t, g.M.t);
+      if (i < 0) i = 0;
+      if (i < g.M.t.length - 1 && Math.abs(g.M.t[i + 1] - t) < Math.abs(g.M.t[i] - t)) i++;
+      var span = g.M.end - g.M.start;
+      if (Math.abs(g.M.t[i] - t) > Math.max(3 * HOUR, span / 60)) {
+        // No reading near the cursor (e.g. in the future part of the window): cursor only.
+        html = stamp(t) + '<br><span class="na">no reading</span>';
+      } else {
+        tc = g.M.t[i]; cy = g.y(g.M.v[i]);
+        if (g.M.res && g.M.rt.length) {
+          var r = H.interpolate({ t: g.M.rt, v: g.M.rv }, g.M.t[i]);
+          if (r != null) extra = '<br>rule curve ' + fmt(r, 1) + ' ft';
+        } else if (g.M.q[i]) extra = '<br>' + esc(qualText(g.M.q[i]));
+        if (g.M.param === 'temp') {
+          extra = '<br>' + fmt((g.M.v[i] - 32) * 5 / 9, 1) + ' °C' + extra;
+          if (g.M.tt.length) {
+            var tvv = null;
+            for (var q2 = 0; q2 < g.M.tt.length; q2++) if (g.M.tt[q2] <= g.M.t[i]) tvv = g.M.tv[q2];
+            if (tvv != null) extra += '<br>ODEQ target ' + fmt(tvv, 1) + ' °F';
+          }
+        }
+        html = stamp(g.M.t[i]) + '<br><b>' + fmt(g.M.v[i], g.M.dec) + ' ' + g.M.unit + '</b>' + extra;
       }
     }
-    var i = lastIndexBefore(t, g.M.t);
-    if (i < 0) i = 0;
-    if (i < g.M.t.length - 1 && Math.abs(g.M.t[i + 1] - t) < Math.abs(g.M.t[i] - t)) i++;
-    var cx = g.x(g.M.t[i]), cy = g.y(g.M.v[i]);
-    syncStrips(t);
+    cx = g.x(tc);
+    syncStrips(tc);
     $('#cross').style.display = '';
     $('#cross-line').setAttribute('x1', cx); $('#cross-line').setAttribute('x2', cx);
-    $('#cross-dot').setAttribute('cx', cx); $('#cross-dot').setAttribute('cy', cy);
-    if (g.M.res && g.M.rt.length) {
-      var r = H.interpolate({ t: g.M.rt, v: g.M.rv }, g.M.t[i]);
-      if (r != null) extra = '<br>rule curve ' + fmt(r, 1) + ' ft';
-    } else if (g.M.q[i]) extra = '<br>' + esc(qualText(g.M.q[i]));
-    if (g.M.param === 'temp') {
-      extra = '<br>' + fmt((g.M.v[i] - 32) * 5 / 9, 1) + ' °C' + extra;
-      if (g.M.tt.length) {
-        var tvv = null;
-        for (var q2 = 0; q2 < g.M.tt.length; q2++) if (g.M.tt[q2] <= g.M.t[i]) tvv = g.M.tv[q2];
-        if (tvv != null) extra += '<br>ODEQ target ' + fmt(tvv, 1) + ' °F';
-      }
-    }
+    var dot = $('#cross-dot');
+    if (cy == null) dot.style.display = 'none';
+    else { dot.style.display = ''; dot.setAttribute('cx', cx); dot.setAttribute('cy', cy); }
+    placeCurT($('#cross-t'), cx, tc);
     tip.hidden = false;
-    tip.innerHTML = stamp(g.M.t[i]) + '<br><b>' + fmt(g.M.v[i], g.M.dec) + ' ' + g.M.unit + '</b>' + extra;
+    if (tip.__html !== html) { tip.innerHTML = html; tip.__html = html; }
     var left = cx / scale + 14, tw = tip.offsetWidth;
     if (left + tw > rect.width - 4) left = cx / scale - tw - 14;
     tip.style.left = Math.max(4, left) + 'px';
@@ -1914,15 +2097,24 @@
     if (def.ref) vals.push(def.ref);
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo || Math.abs(hi) * 0.05 || 1) * 0.12;
     var nt = niceTicks(lo - pad, hi + pad, 3), yMin = Math.min(nt.ticks[0], lo - pad), yMax = Math.max(nt.ticks[nt.ticks.length - 1], hi + pad);
-    var Hs = 100, mt = 6, mb = 20, ph = Hs - mt - mb, W = g.W, ml = g.ml, pw = g.pw;
+    var Hs = 104, mt = 6, mb = 24, ph = Hs - mt - mb, W = g.W, ml = g.ml, pw = g.pw;
     var x = function (t) { return ml + ((t - M.start) / (M.end - M.start)) * pw; }, y = function (v) { return mt + (1 - (v - yMin) / (yMax - yMin)) * ph; };
     var dec = nt.step < 1 ? (nt.step < 0.1 ? 2 : 1) : 0;
     var svg = '<svg class="st-svg" viewBox="0 0 ' + W + ' ' + Hs + '" width="100%" height="' + Hs + '" aria-hidden="true"><defs><clipPath id="st-clip-' + def.key + '"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath></defs><g class="axis">';
-    nt.ticks.forEach(function (v) { if (v < yMin || v > yMax) return; svg += '<line x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/><text x="' + (ml - 8) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, dec) + '</text>'; });
+    // The strip shares the main chart's left margin; labels too wide for it go just inside the plot.
+    var inside = nt.ticks.some(function (v) { return 6.6 * fmt(v, dec).length + 12 > ml; });
+    nt.ticks.forEach(function (v) {
+      if (v < yMin || v > yMax) return;
+      svg += '<line x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>' + (inside
+        ? (y(v) - mt < 11 ? '' : '<text class="st-yin" x="' + (ml + 4) + '" y="' + (y(v) - 3).toFixed(1) + '">' + fmt(v, dec) + '</text>')   // above its line; none at the very top
+        : '<text x="' + (ml - 8) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, dec) + '</text>');
+    });
     (g.xl || []).forEach(function (o) {
       if (o.x < ml || o.x > ml + pw) return;
-      svg += '<line class="st-xg" x1="' + o.x + '" x2="' + o.x + '" y1="' + mt + '" y2="' + (mt + ph) + '"/><text x="' + o.x + '" y="' + (Hs - 5) + '" text-anchor="middle">' + o.lab + '</text>';
+      svg += '<line class="st-xg" x1="' + o.x + '" x2="' + o.x + '" y1="' + mt + '" y2="' + (mt + ph) + '"/><line class="st-xt" x1="' + o.x + '" x2="' + o.x + '" y1="' + (mt + ph) + '" y2="' + (mt + ph + 3) + '"/>' +
+        '<text class="st-xl" x="' + o.x + '" y="' + (Hs - 7) + '" text-anchor="middle">' + o.lab + '</text>';
     });
+    svg += '<line class="st-xaxis" x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + (mt + ph) + '" y2="' + (mt + ph) + '"/>';
     svg += '</g><g clip-path="url(#st-clip-' + def.key + ')">';
     if (def.ref) svg += '<line class="st-ref" x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(def.ref).toFixed(1) + '" y2="' + y(def.ref).toFixed(1) + '"/><text class="st-ref-lab" x="' + (ml + pw - 4) + '" y="' + (y(def.ref) - mt < 12 ? y(def.ref) + 11 : y(def.ref) - 3).toFixed(1) + '" text-anchor="end">' + esc(def.refLabel) + '</text>';
     sd.lines.forEach(function (l) {
@@ -1930,7 +2122,7 @@
       for (var i = i0; i <= i1; i += step) d += (d ? 'L' : 'M') + x(l.t[i]).toFixed(1) + ' ' + y(l.v[i]).toFixed(1);
       svg += '<path class="st-line ' + l.cls + '" d="' + d + '"/>';
     });
-    svg += '</g><line class="st-cursor" y1="' + mt + '" y2="' + (mt + ph) + '" style="display:none"/></svg>';
+    svg += '</g><line class="st-cursor" y1="' + mt + '" y2="' + (mt + ph) + '" style="display:none"/>' + curTSVG(null, Hs - 7) + '</svg>';
     state.stripView.push({ def: def, sd: sd });
     return wrap(svg, sd.src);
   }
@@ -1943,16 +2135,22 @@
     box.querySelectorAll('.strip').forEach(function (el) {
       var view = state.stripView.filter(function (v) { return v.def.key === el.getAttribute('data-strip'); })[0], cur = el.querySelector('.st-cursor'), rd = el.querySelector('.st-read');
       if (!view || !cur || !rd) return;
+      placeCurT(el.querySelector('.cur-t'), x, t);
       if (t == null) { cur.style.display = 'none'; rd.textContent = ''; return; }
       cur.setAttribute('x1', x.toFixed(1)); cur.setAttribute('x2', x.toFixed(1)); cur.style.display = '';
       var tol = Math.max(2 * HOUR, (g.M.end - g.M.start) / 150);
-      rd.textContent = view.sd.lines.map(function (l) {
+      var vals = view.sd.lines.map(function (l) {
         var i = lastIndexBefore(t, l.t);
         if (i < 0) i = 0;
         if (i < l.t.length - 1 && Math.abs(l.t[i + 1] - t) < Math.abs(l.t[i] - t)) i++;
         var ok = Math.abs(l.t[i] - t) <= Math.max(tol, 36 * HOUR * (l.t.length > 1 && l.t[1] - l.t[0] >= 20 * HOUR ? 1 : 0));
         return (view.sd.lines.length > 1 ? l.label + ' ' : '') + (ok ? fmt(l.v[i], view.def.dec) + ' ' + view.def.unit : '—');
-      }).join(' · ');
+      });
+      // "Fri 03:00 · Outflow 900 cfs · Computed inflow 640 cfs"
+      var html = '<span class="st-rt">' + esc(curLabel(t, true)) + '</span> · ' + esc(vals.join(' · '));
+      rd.innerHTML = html;
+      var sv = el.querySelector('.st-svg');   // float the readout at the top of the plot, below the (wrapping) header
+      if (sv) rd.style.top = Math.round(sv.getBoundingClientRect().top - el.getBoundingClientRect().top + 2) + 'px';
     });
   }
 
@@ -1995,9 +2193,11 @@
       var r = sv.getBoundingClientRect(), px = (ev.clientX - r.left) * (g.W / r.width);
       return px < g.ml || px > g.ml + g.pw ? null : g.M.start + ((px - g.ml) / g.pw) * (g.M.end - g.M.start);
     };
-    $('#trend-strips').addEventListener('pointermove', function (ev) { syncStrips(stripT(ev)); });
-    $('#trend-strips').addEventListener('pointerdown', function (ev) { syncStrips(stripT(ev)); });
-    $('#trend-strips').addEventListener('pointerleave', function () { syncStrips(null); });
+    // Hovering a strip moves the cursor on the main chart and every other strip too.
+    var onStrip = function (ev) { var t = stripT(ev); if (t == null) hideCross(); else crossAt(t); };
+    $('#trend-strips').addEventListener('pointermove', onStrip);
+    $('#trend-strips').addEventListener('pointerdown', onStrip);
+    $('#trend-strips').addEventListener('pointerleave', hideCross);
     var svg = $('#chart');
     if (H.zoom) {
       // Drag across the chart to zoom into that span; double-click to zoom out; toolbar above the chart.
