@@ -397,6 +397,15 @@ console.log('tdg / snotel / odeq');
     check(FB.isLocal(rows[0]) && !FB.isLocal(rows[1]) && FB.isLocal({ district: 'EUG', name: 'Alvey-Dixonville No 1 230kV line' }) && FB.isLocal({ district: 'SAL', name: 'Detroit-Santiam No 1 230kV line' }) && !FB.isLocal({ district: 'IDF', name: 'Swan Valley-Goshen No 1 161kV line' }), 'bpa-outages: Eugene district and Willamette powerhouses kept, same-named Idaho substations not');
   }
 
+  // NWRFC inflow forecast page parser (rows as seen live 2026-11-28)
+  {
+    const FI = require('./scripts/fetch-inflow-fcst.js');
+    const html = '<title>COAST FORK WILLAMETTE--COTTAGE GROVE DAM (COTO3) -- Text Summary Page</title><table><tr><td>Observed</td><td>Forecast/Trend&nbsp;Issued:&nbsp;2026-11-27 13:50 PST</td></tr><tr><td>Date/Time (PST)</td><td>Inflow</td><td>Date/Time (PST)</td><td>Inflow</td></tr>' +
+      '<tr><td>2026-11-27 19:15</td><td>220</td><td>2026-11-27 22:00</td><td>428.46</td></tr><tr><td>2026-11-27 19:00</td><td>210</td><td>2026-11-28 04:00</td><td>412.04</td></tr><tr><td>&nbsp;</td><td>&nbsp;</td><td>2026-11-28 10:00</td><td>307.95</td></tr></table>';
+    const p = FI.parse(html);
+    check(p.name === 'COAST FORK WILLAMETTE--COTTAGE GROVE DAM (COTO3)' && p.issued === Date.UTC(2026, 10, 27, 21, 50) && p.obs.length === 2 && p.fcst.length === 3 && p.fcst[0][0] === Date.UTC(2026, 10, 28, 6, 0) && p.fcst[2][1] === 307.95 && p.obs[1][1] === 220, 'inflow forecast: NWRFC text page parsed (issued, observed, forecast; PST)');
+  }
+
   // Incremental refresh: splice a short fresh fetch onto the stored series
   {
     const D = require('./js/data.js');

@@ -34,15 +34,19 @@ jobs:
       - name: Fetch BPA transmission interruptions
         run: node scripts/fetch-bpa-outages.js || echo "bpa-outages fetch failed (kept previous file)"
 
+      # NWRFC reservoir inflow forecasts (no CORS on nwrfc.noaa.gov). Failure must not block the rest.
+      - name: Fetch NWRFC reservoir inflow forecasts
+        run: node scripts/fetch-inflow-fcst.js || echo "inflow forecast fetch failed (kept previous file)"
+
       - name: Commit and push if changed
         run: |
-          if git diff --quiet -- data/bpa.json data/bpa-outages.json && [ -z "$(git ls-files --others --exclude-standard data/bpa.json data/bpa-outages.json)" ]; then
+          if git diff --quiet -- data/bpa.json data/bpa-outages.json data/inflow-fcst.json && [ -z "$(git ls-files --others --exclude-standard data/bpa.json data/bpa-outages.json data/inflow-fcst.json)" ]; then
             echo "data unchanged"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/bpa.json data/bpa-outages.json 2>/dev/null || git add data/bpa.json
+          for f in data/bpa.json data/bpa-outages.json data/inflow-fcst.json; do [ -f "$f" ] && git add "$f"; done
           git commit -m "Update BPA hydro data"
           for i in 1 2 3; do
             git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
