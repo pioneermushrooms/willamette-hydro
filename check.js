@@ -409,7 +409,7 @@ console.log('tdg / snotel / odeq');
     check(/period=PT3H$/.test(D.usgsUrl(null, 3)) && /period=P7D$/.test(D.usgsUrl()), 'usgs: incremental URL asks for the last N hours');
     check(D.SETTINGS.pollMinutes === 3, 'poll every 3 minutes');
     const cot = D.projects.filter((p) => p.code === 'COT')[0], gpr = D.projects.filter((p) => p.code === 'GPR')[0];
-    check(cot.gage && cot.gage.site === '14153500' && cot.gage.short === 'COTO' && !gpr.gage && /14153500/.test(D.usgsUrl()) && /14162200/.test(D.usgsUrl(null, 3)), 'below-dam gages: COTO on Cottage Grove, none for Green Peter, included in the USGS request');
+    check(cot.gage && cot.gage.site === '14153500' && cot.gage.short === 'COTO' && D.projects.filter((p) => p.code === 'FRN')[0].gage.site === '14169000' && D.projects.filter((p) => p.gage).length === 8 && !gpr.gage && /14153500/.test(D.usgsUrl()) && /14162200/.test(D.usgsUrl(null, 3)), 'below-dam gages: COTO on Cottage Grove, none for Green Peter, included in the USGS request');
   }
 
   // Basin precipitation (js/weather.js)

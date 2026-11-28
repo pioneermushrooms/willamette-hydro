@@ -94,7 +94,7 @@ The page never moves the view on its own during a refresh. Across a reload (your
 
 ### Gage below the dam
 
-Each project with a USGS gage directly below it (`BELOW_GAGE` in `js/data.js`: HCRO 14145500, DEXO 14150000, FALO 14151000, COTO 14153500, DORO 14155500, CGRO 14159500, BLUO 14162200; names verified against USGS 2026-11-28) shows that gage's discharge as a header cell ("COTO gage 148 cfs"), and the inflow/outflow strip draws it as a dashed green line. It is fetched in the same USGS request as the river gauges. Reason: USACE's computed outflow follows the gage but is posted 15–35 min after each reading (vs 5–15 for USGS), so a release change shows on the gage first. Not listed: LOP (flows into Dexter), GPR (nearest gage is below Foster), FRN.
+Each project with a USGS gage directly below it (`BELOW_GAGE` in `js/data.js`: HCRO 14145500, DEXO 14150000, FALO 14151000, COTO 14153500, DORO 14155500, CGRO 14159500, BLUO 14162200, Fern Ridge: Long Tom nr Alvadore 14169000; names verified against USGS 2026-11-28; over 24 h every one matched the USACE outflow reading for reading, median difference ≤ 0.2 %, with USACE posting ~15 min later) shows that gage's discharge as a header cell ("COTO gage 148 cfs"), and the inflow/outflow strip draws it as a dashed green line. It is fetched in the same USGS request as the river gauges. Reason: USACE's computed outflow follows the gage but is posted 15–35 min after each reading (vs 5–15 for USGS), so a release change shows on the gage first. Not listed: LOP (flows into Dexter; its USACE outflow is an hourly average about 40 min old), GPR (nearest gage is below Foster and does not match).
 
 ### Source links on every value
 

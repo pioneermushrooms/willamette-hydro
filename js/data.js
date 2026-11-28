@@ -132,18 +132,20 @@
       map: { x: 352, y: 176, lx: -12, ly: 4, anchor: 'end' } }
   ];
 
-  // USGS gage directly below each dam (measured flow; USGS usually posts it sooner than the CWMS
-  // outflow, which USACE computes from it at these projects). Site names verified against USGS
-  // 2026-11-28. HCRO and FALO include tributary inflow below the dam (Salt Creek area, Winberry Creek).
-  // Not listed: LOP (flows into Dexter), GPR (the nearest gage is below Foster), FRN (no gage at the dam).
+  // USGS gage directly below each dam. Checked 2026-11-28 over 24 h: at every project listed, the USACE
+  // CWMS outflow equals this gage's discharge reading for reading (median difference ≤ 0.2 %), but CWMS
+  // posts each value ~15 min later than USGS. Site names verified against USGS. HCRO and FALO sit a
+  // little downstream (Salt Creek area, Winberry Creek) but USACE reports them as the outflow.
+  // Not listed: LOP (flows into Dexter; hourly CBT average), GPR (the nearest gage is below Foster).
   var BELOW_GAGE = {
-    HCR: { site: '14145500', short: 'HCRO', name: 'MF Willamette abv Salt Crk nr Oakridge', note: 'includes some tributary inflow below the dam' },
+    HCR: { site: '14145500', short: 'HCRO', name: 'MF Willamette abv Salt Crk nr Oakridge' },
     DEX: { site: '14150000', short: 'DEXO', name: 'Middle Fork Willamette nr Dexter' },
-    FAL: { site: '14151000', short: 'FALO', name: 'Fall Creek blw Winberry Creek', note: 'includes Winberry Creek' },
+    FAL: { site: '14151000', short: 'FALO', name: 'Fall Creek blw Winberry Creek' },
     COT: { site: '14153500', short: 'COTO', name: 'Coast Fork Willamette blw Cottage Grove Dam' },
     DOR: { site: '14155500', short: 'DORO', name: 'Row River nr Cottage Grove' },
     CGR: { site: '14159500', short: 'CGRO', name: 'South Fork McKenzie nr Rainbow' },
-    BLU: { site: '14162200', short: 'BLUO', name: 'Blue River at Blue River' }
+    BLU: { site: '14162200', short: 'BLUO', name: 'Blue River at Blue River' },
+    FRN: { site: '14169000', short: 'Long Tom', name: 'Long Tom River nr Alvadore' }
   };
 
   projects.forEach(function (p) {
