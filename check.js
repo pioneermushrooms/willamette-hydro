@@ -357,6 +357,32 @@ console.log('tdg / snotel / odeq');
     check(/WFIGS_Incident_Locations_Current\/FeatureServer\/0\/query\?/.test(HZ.fireUrl()) && /geometry=-124\.1%2C43%2C-121\.4%2C44\.9/.test(HZ.fireUrl()), 'hazards: WFIGS query URL with the basin box');
   }
 
+  // Power outages (js/outages.js, scripts/fetch-bpa-outages.js), fixtures in the formats seen live on 2026-11-28
+  {
+    const OU = require('./js/outages.js');
+    const ll = OU.mercToLonLat(-13753468 + 118205, 5395310 + 31122);   // Lane Electric outage, Oakridge township
+    check(Math.abs(ll.lat - 43.75) < 0.02 && Math.abs(ll.lon - (-122.48)) < 0.02, 'outages: NISC x/y offset from boundaryExtent -> Oakridge (43.75, -122.48)');
+    const m = OU.lonLatToMerc(ll.lon, ll.lat);
+    check(Math.abs(m.x - (-13753468 + 118205)) < 0.5 && Math.abs(m.y - (5395310 + 31122)) < 0.5, 'outages: Web Mercator round trip');
+    const lane = OU.parseNisc(OU.COOPS[0], { totalServed: 16760, lastUpdate: 1795828948581, outages: [{ id: '282854', nbrOut: 1, planned: false, x: 118205, y: 31122 }],
+      regionDataSets: [{ id: 'zipCode', description: 'Zip Code', regions: [{ id: '97463', numberOut: 1, numberServed: 2266 }] }, { id: 'Township', description: 'Township', regions: [{ id: 'OAKRIDGE', numberOut: 1, numberServed: 2219 }, { id: 'BLUE RIVER', numberOut: 0, numberServed: 627 }] }] },
+      [-13753468.0, 5395310.0, -13555154.0, 5524844.0]);
+    check(lane.out === 1 && lane.served === 16760 && lane.incidents[0].n === 1 && lane.regions.length === 1 && lane.regions[0].out === 1, 'outages: NISC summary parsed (customers out, regions with outages)');
+    check(OU.titleCase('BLUE RIVER') === 'Blue River' && OU.titleCase('97463') === '97463' && OU.titleCase('Short Mtn') === 'Short Mtn', 'outages: region names title-cased');
+    const ew = OU.parseEweb({ features: [{ attributes: { incidentid: 'E1', custcnt: 340, ostart: '11/28/2026 1:05 PM', etor: '11/28/2026 6:00 PM', name: 'River Rd', cause: 'Tree on line', status: 'Crew assigned', remarks: 'Crew on site' },
+      geometry: { rings: [[[-123.10, 44.08], [-123.08, 44.08], [-123.08, 44.10], [-123.10, 44.10]]] } }] });
+    check(ew.out === 340 && ew.incidents[0].cause === 'Tree on line' && Math.abs(ew.incidents[0].lat - 44.09) < 0.01 && ew.incidents[0].area === 'River Rd', 'outages: EWEB incident (customers, cause, area, location)');
+    check(OU.status([lane], []).level === 'ok' && OU.status([ew], []).level === 'alert' && OU.status([OU.parseNisc(OU.COOPS[1], { outages: [{ nbrOut: 12, x: 0, y: 0 }] }, [0, 0])], []).level === 'watch' &&
+      OU.status([], [{ stillOut: true, type: 'Auto', table: 'Transmission Line Interruptions' }]).level === 'alert', 'outages: card levels (ok / watch / alert, unplanned BPA line trip)');
+    const FB = require('./scripts/fetch-bpa-outages.js');
+    const dir = '<div class="tablelabel">Transmission Line Interruptions (2 outage(s))</div><div><table class="tableformat" border=1><thead class="tableheader"><th>Out Datetime<br>(PPT)</th><th>In Datetime<br>(PPT)</th><th>Name</th><th>Kilovolt</th><th>Duration<br>(minutes)</th><th>Outage<br>Type</th><th>Cause</th><th>Responsible<br>System</th><th>Megawatt<br>Loss</th><th>O&amp;M<br>District</th><th>OMS<br>Outage ID</th><th>OARS<br>Outage ID</th></thead><tbody>' +
+      '<tr><td>10/12/2026&nbsp;09:33</td><td>&nbsp;</td><td>Cal Young-Santa Clara 115kV line</td><td>115.0</td><td>still out</td><td>Plan</td><td>Maintenance</td><td>BPA</td><td>&nbsp;</td><td>EUG</td><td>x</td><td>236001</td></tr>' +
+      '<tr><td>11/26/2026&nbsp;11:27</td><td>11/26/2026&nbsp;11:32</td><td>Shelton-Fairmount No 3 230kV line</td><td>230.0</td><td>5</td><td>Auto</td><td>Unknown</td><td>BPA</td><td>&nbsp;</td><td>OLY</td><td>y</td><td>236002</td></tr></tbody></table>';
+    const rows = FB.parse(dir);
+    check(rows.length === 2 && rows[0].stillOut && rows[0].district === 'EUG' && rows[0].kv === 115 && rows[0].out === '2026-10-12T16:33:00.000Z' && !rows[1].stillOut && rows[1].in === '2026-11-26T19:32:00.000Z', 'bpa-outages: report table parsed (still out, Pacific times)');
+    check(FB.isLocal(rows[0]) && !FB.isLocal(rows[1]) && FB.isLocal({ district: 'TRI', name: 'Alvey-Dixonville No 1 230kV line' }), 'bpa-outages: Eugene district and Willamette names kept');
+  }
+
   // Incremental refresh: splice a short fresh fetch onto the stored series
   {
     const D = require('./js/data.js');

@@ -1,7 +1,6 @@
 name: Probe outage sources (temporary)
 
-# One-off discovery job (round 2): data fields, CORS and samples for the outage feeds found in round 1.
-# Runs only on the dev branch; removed before anything is merged to main.
+# Round 4: run the new outage code against the live sources. Dev branch only; removed before merge.
 on:
   push:
     branches: [claude/hourly-pool-data-retrieval-1m4bt8]
@@ -15,31 +14,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Probe
-        shell: bash
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: BPA transmission interruptions (local rows)
+        run: node scripts/fetch-bpa-outages.js --stdout | head -c 6000
+      - name: Live utility outages through js/outages.js
         run: |
-          set +e +o pipefail
-          UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'
-          echo "########## round 3: NISC full summary + config, coordinate scheme"
-          for slug in epud laneelectric; do
-            echo "=== $slug summary"; curl -sS -m 25 "https://outagemap-data.cloud.coop/$slug/Hosted_Outage_Map/summary.json" | head -c 4200; echo
-            echo "=== $slug config (map/extent keys)"; curl -sS -m 25 "https://outagemap-data.cloud.coop/$slug/Hosted_Outage_Map/config.json" | python3 -c "
-          import json,sys
-          d=json.load(sys.stdin)
-          def walk(o,p=''):
-            if isinstance(o,dict):
-              for k,v in o.items():
-                if k in ('logo',): continue
-                walk(v,p+'.'+k)
-            elif isinstance(o,list) and o and not isinstance(o[0],(dict,list)): print(p,o[:6])
-            elif isinstance(o,list):
-              for i,v in enumerate(o[:3]): walk(v,p+'[%d]'%i)
-            else:
-              if any(w in p.lower() for w in ('extent','spatial','region','zoom','center','boundary','coord','proj')): print(p,o)
-          walk(d)"
-          done
-          echo "=== NISC app: how outage x/y are placed"
-          curl -sS -m 25 -A "$UA" https://epud.outagemap.coop/main.aae40e3a65bf642f.js -o /tmp/m.js; wc -c /tmp/m.js
-          grep -oE '.{160}(boundaryExtent|outageExtent|\.x\+|xmin\+|fullExtent).{200}' /tmp/m.js | head -8
-          echo "=== BPA DIR CORS headers"
-          curl -sS -m 25 -A "$UA" -H 'Origin: https://pioneermushrooms.github.io' -D - -o /dev/null https://transmission.bpa.gov/Business/Operations/Outages/DIR/Fri.HTM | tr -d '\r' | grep -iE '^(HTTP/|access-control|content-type|last-modified)'
+          node -e "
+          global.self = global; const H = require('./js/data.js'); const O = require('./js/outages.js');
+          O.load({ bpaUrl: 'https://raw.githubusercontent.com/pioneermushrooms/willamette-hydro/main/data/bpa.json' }).then((r) => {
+            r.utilities.forEach((u) => console.log(u.name, u.error ? 'ERROR ' + u.error : ('out ' + u.out + ' of ' + u.served + ', incidents ' + u.incidents.length + ', regions ' + JSON.stringify(u.regions) + '\n  sample ' + JSON.stringify(u.incidents.slice(0, 3)))));
+            const s = O.status(r.utilities, []); console.log('STATUS', s.level, 'customers out', s.out, 'worst', JSON.stringify(s.worst));
+          }, (e) => { console.error('load failed', e); process.exit(1); });
+          "

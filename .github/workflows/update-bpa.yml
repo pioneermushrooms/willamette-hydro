@@ -29,15 +29,20 @@ jobs:
       - name: Fetch BPA balancing-authority data
         run: node scripts/fetch-bpa.js
 
+      # BPA Daily Interruptions Report (transmission outages near the Willamette projects).
+      # Failure here must not block the hydro update.
+      - name: Fetch BPA transmission interruptions
+        run: node scripts/fetch-bpa-outages.js || echo "bpa-outages fetch failed (kept previous file)"
+
       - name: Commit and push if changed
         run: |
-          if git diff --quiet -- data/bpa.json && [ -z "$(git ls-files --others --exclude-standard data/bpa.json)" ]; then
-            echo "data/bpa.json unchanged"
+          if git diff --quiet -- data/bpa.json data/bpa-outages.json && [ -z "$(git ls-files --others --exclude-standard data/bpa.json data/bpa-outages.json)" ]; then
+            echo "data unchanged"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/bpa.json
+          git add data/bpa.json data/bpa-outages.json 2>/dev/null || git add data/bpa.json
           git commit -m "Update BPA hydro data"
           for i in 1 2 3; do
             git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}" && exit 0
