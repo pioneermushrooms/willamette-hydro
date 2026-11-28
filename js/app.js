@@ -253,15 +253,15 @@
     var snowP = H.snotel ? H.snotel.load().catch(function () { return null; }) : Promise.resolve(null);
     // Weather loads on its own so a slow forecast service never holds up the agency data.
     if (H.weather) {
-      H.weather.load().then(function (r) { if (r && (!r.error || !state.wx || state.wx.error)) state.wx = r; renderWx(); });
+      H.weather.load().then(function (r) { if (r && (!r.error || !state.wx || state.wx.error)) state.wx = r; renderWx(); trackEvents(); });
       H.weather.loadSnotel().then(function (r) { if (r && (!r.error || !state.wxSno || state.wxSno.error)) state.wxSno = r; renderWx(); });
     }
-    if (H.outages) H.outages.load().then(function (r) { state.pw = r; renderHazards(); renderMapHazards(); });
+    if (H.outages) H.outages.load().then(function (r) { state.pw = r; renderHazards(); renderMapHazards(); trackEvents(); });
     if (H.hazards) H.hazards.load().then(function (r) {
       // Keep the last good half when one source fails on a later poll.
       if (state.hz && r.firesError && !state.hz.firesError) { r.fires = state.hz.fires; r.firesError = null; r.firesStale = true; }
       if (state.hz && r.alertsError && !state.hz.alertsError) { r.alerts = state.hz.alerts; r.alertsError = null; }
-      state.hz = r; renderHazards();
+      state.hz = r; renderHazards(); trackEvents();
     });
     // Full 7-day load at start and hourly (picks up agency revisions); otherwise only the last
     // 3 hours, spliced onto what is already loaded, so frequent polls stay light.
@@ -284,6 +284,7 @@
       state.nextPollAt = Date.now() + POLL_MS;
       state.pollTimer = setTimeout(poll, POLL_MS);
       renderAll(true);
+      trackEvents();
     });
   }
 
@@ -1389,7 +1390,77 @@
     }
     h += powerCard();
     setHTML(box, h);
+    var open = box.querySelector('.sc[open]');
+    if (open) placeCard(open);
     renderMapHazards();
+  }
+
+  // An open card's body floats over the page below (CSS .sc-body), right under its card and as wide
+  // as the row of cards; nothing below moves. One open at a time; outside click or Escape closes it.
+  function placeCard(d) {
+    var box = $('#status-cards');
+    if (box && d) box.style.setProperty('--sc-top', Math.round(d.getBoundingClientRect().bottom - box.getBoundingClientRect().top + 6) + 'px');
+  }
+  function openCard(key) {
+    var box = $('#status-cards'), d = box && box.querySelector('.sc[data-card="' + key + '"]');
+    if (!d) return;
+    box.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'start' });
+    d.open = true;
+  }
+  function initStatusCards() {
+    var box = $('#status-cards');
+    if (!box) return;
+    box.addEventListener('toggle', function (ev) {
+      var d = ev.target;
+      if (!d.classList || !d.classList.contains('sc') || !d.open) return;
+      box.querySelectorAll('.sc[open]').forEach(function (o) { if (o !== d) o.open = false; });
+      placeCard(d);
+      // A card low on the screen (phones): bring its overlay into view.
+      var body = d.querySelector('.sc-body');
+      if (body && body.getBoundingClientRect().bottom > window.innerHeight) {
+        window.scrollBy({ top: Math.min(body.getBoundingClientRect().bottom - window.innerHeight + 12, d.getBoundingClientRect().top - 72), behavior: REDUCED ? 'auto' : 'smooth' });
+      }
+    }, true);
+    document.addEventListener('click', function (ev) {
+      var o = box.querySelector('.sc[open]');
+      if (o && !o.contains(ev.target)) o.open = false;
+    });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Escape') return;
+      var o = box.querySelector('.sc[open]');
+      if (!o) return;
+      o.open = false;
+      var sm = o.querySelector('summary');
+      if (sm) sm.focus();
+    });
+    window.addEventListener('resize', function () { var o = box.querySelector('.sc[open]'); if (o) placeCard(o); });
+  }
+
+  // ---- Live event feed (js/events.js detect, js/notify.js toasts + bell panel) ---------------
+
+  var evPrev = null;
+  // Called after each data source lands: compares with the previous snapshot. The first snapshot
+  // (and the first load of each source) only seeds; events.js skips sources missing in either.
+  function trackEvents() {
+    if (!H.events || !H.notify) return;
+    var next = { at: Date.now(), wx: state.wx, hz: state.hz, pw: state.pw, nwps: state.nwps, snap: state.snap };
+    var ev = evPrev ? H.events.detect(evPrev, next, next.at) : [];
+    evPrev = next;
+    if (ev.length) H.notify.push(ev);
+  }
+  // Toast / feed click: select the project or gauge, or open the matching status card.
+  function openEvent(e) {
+    var away = H.router && H.router.current() !== 'overview';
+    if (away) H.router.go('overview');
+    setTimeout(function () {
+      if (e.entityId && byId[e.entityId]) {
+        select(e.entityId, true);
+        var ws = $('#workspace');
+        if (ws) ws.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'start' });
+      } else if (e.kind === 'power') openCard('power');
+      else if (e.kind === 'fire' || e.fire) openCard('fire');
+      else if (e.kind === 'alert') openCard('alerts');
+    }, away ? 80 : 0);
   }
 
   // ---- Snowpack (NRCS SNOTEL) --------------------------------------------------
@@ -2269,6 +2340,8 @@
   setInterval(function () { if (state.snap && !state.fetching) renderAll(false); }, 60000);
   renderMapBase();
   bindCards();
+  initStatusCards();
+  if (H.notify) H.notify.init({ open: openEvent });
   initTrends();
   renderAll(true);
   poll();

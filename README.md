@@ -186,13 +186,24 @@ Every local script and stylesheet in `index.html` is loaded as `?v=<hash of js/ 
 
 ## Area status cards (`js/hazards.js`)
 
-A row of small cards under the totals; each shows one status line with an icon (green / amber / red / grey) and expands on click (an open card spans the row):
+A row of small cards under the totals; each shows one status line with an icon (green / amber / red / grey) and opens on click. An open card's details float over the page below it (as wide as the row, up to 70 % of the screen tall, scrolling inside), so nothing underneath moves; one card is open at a time, and clicking elsewhere or pressing Escape closes it:
 
 - **Wildfire:** NIFC WFIGS current incidents in a box around the basin (`BOX` in `js/hazards.js`), kept within 60 mi of a project: name, wildfire/prescribed, acres, % contained, cause, discovered, distance and direction from the nearest project, plus NWS Red Flag Warnings / Fire Weather Watches. Red when a wildfire is within 25 mi or a Red Flag Warning is in effect. Expanded: table and links to Watch Duty, InciWeb and the raw query. The fires themselves are drawn on the Basin map (flame: red wildfire, amber prescribed burn, sized by acres; hover, focus or tap for name, size, containment, cause, discovered and distance from the nearest project). The schematic is not to scale, so `H.hazards.toSchematic(lat, lon)` places a point with a least-squares affine fit through the 10 dams (`js/weather.js` BASINS point → node position), plus a correction that fades out within ~12 mi of a dam so a fire next to a project is drawn next to its node; fires beyond the schematic sit on its edge with a chevron pointing outward. `drawHazardMarkers(kind, items)` in `js/app.js` takes `{ lat, lon, title, lines[] }` items and also draws a power-outage marker (bolt with a slash) for a future `state.mapLayers.outage` list. Watch Duty has no public API, so it is linked, not embedded.
 - **NWS alerts:** api.weather.gov active alerts for Oregon whose area names Lane, Linn, Douglas or a Willamette/Cascade zone (fire-weather alerts go on the wildfire card).
 - **Power:** live outages from EWEB (ArcGIS outage layer), Lane Electric, Emerald PUD and Blachly-Lane (NISC outage maps, `outagemap-data.cloud.coop/<slug>/Hosted_Outage_Map/summary.json`; x/y are metres from the SW corner of `config.json` `boundaryExtent`, Web Mercator), all CORS-readable (`js/outages.js`), plus BPA transmission/feeder/transformer interruptions in BPA's Eugene district or naming a Willamette powerhouse, copied by `scripts/fetch-bpa-outages.js` into `data/bpa-outages.json` (in `update-bpa.yml`). Outages of ≥ 2 customers (or with a cause/notes) are drawn on the Basin map as crossed-bolt markers with a hover/tap tooltip (customers, area, cause, notes, since, estimated restore); single-customer outages stay off the map. Bolt icon when clear, crossed-out bolt when outages exceed the thresholds (amber ≥ 10 in one outage or ≥ 25 total; red ≥ 250 / ≥ 500 or an unplanned BPA line trip still out). Pacific Power, SUB and Consumers Power publish no readable data (linked). All endpoints were verified from GitHub Actions on 2026-11-28.
 
 Both live sources are fetched by the browser every poll (cached 10 min). Not verified from this repo's sandbox; `node check.js --live` will exercise them.
+
+## Live event feed (`js/events.js`, `js/notify.js`)
+
+"Tell me when something happens": after each data source lands, `trackEvents()` in `js/app.js` compares a snapshot of the page's state (`{ at, wx, hz, pw, nwps, snap }`) with the previous one through the pure `H.events.detect(prev, next, now)`, which returns `{ id, time, kind, level, title, detail, entityId }` events:
+
+- **Rain** (weather model, `H.weather.summarize` per basin; Lookout Point and Dexter share one basin): rain started (last hour, next-24-h forecast, forecast end), rain stopped (event total), past 6 h crossing 0.5 in and 1 in, next-24-h forecast newly ≥ 1 in. **Wind:** gusts reaching NWS advisory or warning level (`H.weather.windLevel`).
+- **Fire:** a new WFIGS incident (wildfire or prescribed, acres, containment, distance and direction from the nearest project), size doubling, containment up ≥ 25 points. **Alerts:** an NWS alert issued or ended (by event + area), fire-weather alerts flagged.
+- **Power:** a new outage of ≥ 10 customers (utility, customers, area, cause, estimated restore), one restored, a utility's total crossing 100 / 500, a new unplanned BPA line trip still out.
+- **Forecasts:** a new NWS/NWRFC river forecast issued for a gauge (issued time, 7-day peak stage, when, category). **Releases:** the gage below a dam moving ≥ 20 % and ≥ 50 cfs against its reading ~30 min earlier (once per change).
+
+No events on the first load (each source's first arrival only seeds), ids are stable (incident id, rain-event start, reading time, forecast issue time) and the seen ids plus the last 200 events are kept in `localStorage` (`wvhd:events`), so a reload does not re-announce anything. Changes that happened while the page was closed are not reported. `js/notify.js` shows the events: toasts bottom-right (top on phones; alerts stay until dismissed, others go after 12 s; click selects the project or gauge, or opens the matching status card), the bell next to the clock with the unread count and a feed panel (filters by kind, mark all read), and opt-in desktop notifications (browser Notification API; permission is asked only when the box is ticked; only while the tab is open and in the background). Thresholds are this site's choices, not agency criteria.
 
 ## Derivation & Sources (`#/sources`)
 
@@ -328,6 +339,8 @@ js/data.js                      static config (stations, projects, series, limit
 js/app.js                       Overview rendering: clock, feed status, totals, SVG map, gauges, cards, trend chart, polling
 js/cwms-levels.js               CWMS location levels: fetch + 24 h cache + seasonal evaluator + unit conversion
 js/nwps.js                      NOAA NWPS flood categories + NWS forecasts
+js/events.js                    live event feed: pure detect(prev, next, now) + remembered feed (localStorage)
+js/notify.js                    event toasts, header bell + feed panel, desktop notifications
 js/router.js                    hash router (#/overview, #/teacup, #/tables, #/docs)
 js/teacup-core.js               pure Teacup helpers (percent full, rule delta, next target changes, ruler scale)
 js/views/*.js                   non-overview views (teacup, tables, docs)
