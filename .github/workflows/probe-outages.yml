@@ -1,0 +1,58 @@
+name: Probe outage sources (temporary)
+
+# One-off discovery job: prints what each local utility's outage page and BPA's
+# Daily Interruptions Report expose (headers incl. CORS, embedded data URLs), so the
+# outage panel can be built on verified endpoints. Runs only on the dev branch.
+on:
+  push:
+    branches: [claude/hourly-pool-data-retrieval-1m4bt8]
+    paths: ['.github/workflows/probe-outages.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe
+        shell: bash
+        run: |
+          UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'
+          probe() {
+            url="$1"
+            echo "=================================================================="
+            echo "URL: $url"
+            curl -sS -L -m 25 -A "$UA" -H 'Origin: https://pioneermushrooms.github.io' -D /tmp/h -o /tmp/b "$url" || echo "CURL FAILED"
+            echo "--- status/headers:"; grep -iE '^(HTTP/|content-type|access-control|location|server)' /tmp/h | tr -d '\r'
+            echo "--- size: $(wc -c < /tmp/b)"
+            echo "--- data hints:"
+            grep -oiE "(kubra\.io[^\"' <>]{0,160}|stormcenter[^\"' <>]{0,120}|[a-z0-9-]+\.outagemap\.coop[^\"' <>]{0,80}|outagemap-data\.cloud\.coop[^\"' <>]{0,120}|experience\.arcgis\.com[^\"' <>]{0,80}|arcgis\.com/[^\"' <>]{0,140}|FeatureServer[^\"' <>]{0,80}|MapServer[^\"' <>]{0,80}|iframe[^>]{0,200}|https?://[^\"' <>]*outage[^\"' <>]{0,120}|[^\"' <>]{0,80}\.json[^\"' <>]{0,40})" /tmp/b | sort -u | head -60
+          }
+          probe 'https://www.eweb.org/outagemap'
+          probe 'https://www.eweb.org/outage'
+          probe 'https://www.arcgis.com/sharing/rest/content/items/0079e80569c44bceb54678c484360ab4/data?f=json'
+          probe 'https://www.pacificpower.net/outages-safety.html'
+          probe 'https://www.pacificpower.net/outages-safety/outage-map.html'
+          probe 'https://www.laneelectric.com/outages/outage-map/'
+          probe 'https://www.laneelectric.com/'
+          probe 'https://www.epud.org/'
+          probe 'https://www.epud.org/outages/'
+          probe 'https://outage.cpi.coop/'
+          probe 'https://www.blachlylane.coop/outages-safety/outage-center/outage-map/'
+          probe 'https://www.subutil.com/'
+          echo "=================================================================="
+          echo "BPA Daily Interruptions Report"
+          for d in Mon Tue Wed Thu Fri Sat Sun; do
+            u="https://transmission.bpa.gov/Business/Operations/Outages/DIR/$d.HTM"
+            code=$(curl -sS -m 25 -A "$UA" -o /tmp/dir_$d -w '%{http_code}' "$u")
+            echo "$u -> $code $(wc -c < /tmp/dir_$d) bytes"
+          done
+          echo "--- Today's page, tags stripped (first 120 lines):"
+          today=$(date -u +%a)
+          sed -e 's/<[^>]*>/ /g' /tmp/dir_$today | tr -s ' \t' | grep -v '^\s*$' | head -120
+          echo "--- raw HTML head (first 60 lines):"
+          head -60 /tmp/dir_$today
+          echo "--- lines mentioning Willamette-area names:"
+          cat /tmp/dir_* | sed -e 's/<[^>]*>/ /g' | tr -s ' \t' | grep -iE 'lookout|dexter|hills creek|cougar|green peter|foster|detroit|big cliff|alvey|lane|eugene|springfield|santiam|lebanon|albany|marion|jasper|goshen|fern|oakridge|thurston|leaburg|walterville|blue river|mckenzie' | head -60
