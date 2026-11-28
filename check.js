@@ -468,6 +468,87 @@ console.log('tdg / snotel / odeq');
     'odeq: target drawn for Jasper only (not Goshen)');
 }
 
+// ---- 2f. Live event feed: detect(prev, next, now) (js/events.js) ---------------------------
+console.log('events');
+{
+  const EV = require('./js/events.js'), Hr = 3600e3, NOW = Date.UTC(2026, 10, 28, 18);
+  // Hourly basin series from NOW - 48 h to NOW + 24 h; wet(i) gives in/hr for the hour ending NOW + i h.
+  const wxSeries = (wet) => { const t = [], p = [], ws = [], wg = [], wd = []; for (let i = -48; i <= 24; i++) { t.push(NOW + i * Hr); p.push(wet(i)); ws.push(8); wg.push(15); wd.push(200); } return { t, p, ws, wg, wd, fz: t.map(() => 5000), temp: t.map(() => 45), wc: [], day: [], cc: [] }; };
+  const wx = (s, code) => ({ fetchedAt: NOW, error: null, basins: { [code || 'BLU']: s } });
+  const snapOf = (o) => Object.assign({ at: NOW, wx: null, hz: null, pw: null, nwps: null, snap: null }, o);
+  const dry = wxSeries(() => 0), raining = wxSeries((i) => (i >= -1 && i <= 8 ? 0.12 : 0));
+  check(EV.detect(null, snapOf({ wx: wx(raining) }), NOW).length === 0, 'events: no events on the first load (no previous snapshot)');
+  check(EV.detect(snapOf({}), snapOf({ wx: wx(raining) }), NOW).length === 0, 'events: a source seen for the first time is seeded silently');
+  const st = EV.detect(snapOf({ wx: wx(dry) }), snapOf({ wx: wx(raining) }), NOW);
+  const rs = st.filter((e) => e.kind === 'rain' && /^rain:start:BLU:/.test(e.id))[0];
+  check(rs && rs.title === 'Rain started above Blue River' && /0\.12 in last hour/.test(rs.detail) && /forecast 0\.96 in next 24 h/.test(rs.detail) && rs.entityId === 'blue-river' && rs.time === NOW, 'events: rain started (amount last hour, next-24-h forecast, where)' + (rs ? ' — ' + rs.detail : ''));
+  check(EV.detect(snapOf({ wx: wx(raining) }), snapOf({ wx: wx(raining) }), NOW).length === 0, 'events: unchanged data -> no events');
+  const wetThen = wxSeries((i) => (i >= -14 && i <= -7 ? 0.1 : 0));
+  const sp = EV.detect(snapOf({ at: NOW - 6 * Hr, wx: wx(wetThen) }), snapOf({ wx: wx(wetThen) }), NOW).filter((e) => /^rain:stop:BLU:/.test(e.id))[0];
+  check(sp && sp.title === 'Rain stopped above Blue River' && /^0\.80 in this event/.test(sp.detail), 'events: rain stopped, with the event total' + (sp ? ' — ' + sp.detail : ''));
+  const lopDex = EV.detect(snapOf({ wx: wx(dry, 'LOP') }), snapOf({ wx: wx(raining, 'LOP') }), NOW).filter((e) => /^rain:start:/.test(e.id));
+  check(lopDex.length === 1 && /Lookout Point \/ Dexter/.test(lopDex[0].title), 'events: basins shared by two projects report once');
+  const heavy = wxSeries((i) => (i > -6 && i <= 0 ? 0.2 : 0)), lighter = wxSeries((i) => (i > -6 && i <= 0 ? 0.05 : 0));
+  const hv = EV.detect(snapOf({ wx: wx(lighter) }), snapOf({ wx: wx(heavy) }), NOW);
+  check(hv.some((e) => /^rain:p6:0\.5:BLU/.test(e.id)) && hv.some((e) => /^rain:p6:1:BLU/.test(e.id) && e.level === 'alert'), 'events: heavy-rain milestones (past 6 h crosses 0.5 and 1 in)');
+  const windy = wxSeries(() => 0); windy.wg = windy.wg.map(() => 50); windy.ws = windy.ws.map(() => 25);
+  const wn = EV.detect(snapOf({ wx: wx(dry) }), snapOf({ wx: wx(windy) }), NOW).filter((e) => e.kind === 'wind')[0];
+  check(wn && wn.level === 'watch' && /advisory/.test(wn.title) && /Gusts 50 mph/.test(wn.detail), 'events: wind gusts reach advisory level');
+  // Fires
+  const hz = (fires, alerts) => ({ fetchedAt: NOW, fires: fires || [], alerts: alerts || [], firesError: null, alertsError: null });
+  const fire = { id: '2026-ORWIF-001', name: 'Tidbits Fire', type: 'wildfire', acres: 120, contained: 5, cause: 'Lightning', lat: 44.2, lon: -122.3, near: { code: 'BLU', name: 'Blue River', mi: 3.2, dir: 'NE' } };
+  const nf = EV.detect(snapOf({ hz: hz([]) }), snapOf({ hz: hz([fire]) }), NOW);
+  check(nf.length === 1 && nf[0].kind === 'fire' && nf[0].title === 'New wildfire: Tidbits Fire' && /120 ac · 5% contained · 3 mi NE of Blue River/.test(nf[0].detail) && nf[0].level === 'alert' && nf[0].entityId === 'blue-river', 'events: new wildfire (acres, containment, distance/direction from nearest project)');
+  check(EV.detect(snapOf({ hz: hz([fire]) }), snapOf({ hz: hz([fire]) }), NOW).length === 0 && EV.detect(snapOf({ hz: Object.assign(hz([]), { firesError: 'x' }) }), snapOf({ hz: hz([fire]) }), NOW).length === 0, 'events: known fire or failed previous fire request -> no event');
+  const grown = EV.detect(snapOf({ hz: hz([fire]) }), snapOf({ hz: hz([Object.assign({}, fire, { acres: 400, contained: 40 })]) }), NOW);
+  check(grown.some((e) => /grew to 400 ac/.test(e.title)) && grown.some((e) => /40% contained/.test(e.title)), 'events: fire growth and containment change');
+  const rw = EV.detect(snapOf({ hz: hz([], []) }), snapOf({ hz: hz([], [{ event: 'Red Flag Warning', area: 'Lane County Cascades', fire: true, onset: NOW, ends: NOW + 12 * Hr }]) }), NOW)[0];
+  const rwOff = EV.detect(snapOf({ hz: hz([], [{ event: 'Wind Advisory', area: 'Lane County', onset: NOW }]) }), snapOf({ hz: hz([], []) }), NOW)[0];
+  check(rw && rw.kind === 'alert' && rw.fire && /Red Flag Warning issued \(fire weather\)/.test(rw.title) && rw.level === 'alert' && rwOff && /Wind Advisory ended/.test(rwOff.title), 'events: NWS alert issued (fire weather flagged) and ended');
+  // Power
+  const util = (inc) => ({ key: 'epud', name: 'Emerald PUD', served: 22000, incidents: inc, regions: [], out: inc.reduce((a, x) => a + x.n, 0) });
+  const pw = (inc, bpa) => ({ fetchedAt: NOW, utilities: [util(inc)], bpa: bpa ? { items: bpa } : null });
+  const o12 = { id: 'A1', n: 12, cause: 'Tree on line', area: 'Creswell' }, o4 = { id: 'B2', n: 4 };
+  const po = EV.detect(snapOf({ pw: pw([]) }), snapOf({ pw: pw([o12, o4]) }), NOW);
+  check(po.length === 1 && po[0].kind === 'power' && po[0].title === 'Power outage: Emerald PUD, 12 customers' && /Creswell · Tree on line/.test(po[0].detail), 'events: new outage >= 10 customers (utility, customers, area, cause); < 10 ignored');
+  const rest = EV.detect(snapOf({ pw: pw([o12, o4]) }), snapOf({ pw: pw([]) }), NOW);
+  check(rest.length === 1 && rest[0].title === 'Power restored: Emerald PUD, 12 customers', 'events: outage >= 10 restored (small one silent)');
+  const tot = EV.detect(snapOf({ pw: pw([o12]) }), snapOf({ pw: pw([o12, { id: 'D4', n: 60 }, { id: 'E5', n: 50 }]) }), NOW);
+  const big = EV.detect(snapOf({ pw: pw([o12]) }), snapOf({ pw: pw([o12, { id: 'C3', n: 520 }]) }), NOW);
+  check(tot.some((e) => /^pw:total:epud:100:/.test(e.id)) && !tot.some((e) => /^pw:total:epud:500:/.test(e.id)) &&
+    big.length === 1 && big[0].level === 'alert' && /520 customers/.test(big[0].title), 'events: utility total crosses 100 (one large new outage reports itself, not a second total line)');
+  const rainF = EV.detect(snapOf({ wx: wx(dry) }), snapOf({ wx: wx(wxSeries((i) => (i >= -1 && i <= 12 ? 0.12 : 0))) }), NOW);
+  check(rainF.some((e) => /^rain:start:/.test(e.id)) && !rainF.some((e) => /^rain:f24:/.test(e.id)), 'events: rain start already carries the 24-h forecast (no second line)');
+  const trip = { id: '9', table: 'Transmission Line Interruptions', name: 'Lookout Point-Alvey No 1 115kV line', kv: 115, type: 'Auto', cause: 'Lightning', stillOut: true, out: '2026-11-28T17:40:00.000Z' };
+  const bt = EV.detect(snapOf({ pw: pw([], []) }), snapOf({ pw: pw([], [trip, Object.assign({}, trip, { id: '10', type: 'Plan' })]) }), NOW);
+  check(bt.length === 1 && /BPA line tripped: Lookout Point-Alvey/.test(bt[0].title) && bt[0].level === 'alert', 'events: new unplanned BPA line trip (planned ignored)');
+  // NWS river forecast
+  const gauge = (issued) => ({ 'mckenzie-vida': { lid: 'VIDO3', gauge: { lid: 'VIDO3', name: 'McKenzie River near Vida', thresholds: null, forecast: { issued, t: [NOW + 3 * Hr, NOW + 33 * Hr, NOW + 60 * Hr], stage: [5.1, 6.2, 5.8], flow: [8000, 10500, 9800] } }, error: null } });
+  const issuedA = Date.UTC(2026, 10, 28, 11, 40), issuedB = Date.UTC(2026, 10, 28, 17, 40);
+  const fc = EV.detect(snapOf({ nwps: gauge(issuedA) }), snapOf({ nwps: gauge(issuedB) }), NOW);
+  check(fc.length === 1 && fc[0].kind === 'forecast' && fc[0].title === 'New NWS forecast for McKenzie near Vida' && /^Issued 9:40 AM · peak 6\.2 ft Sun 7 PM/.test(fc[0].detail) && fc[0].entityId === 'mckenzie-vida', 'events: new NWS river forecast (issued, peak stage and when)' + (fc[0] ? ' — ' + fc[0].detail : ''));
+  check(EV.detect(snapOf({ nwps: gauge(issuedB) }), snapOf({ nwps: gauge(issuedB) }), NOW).length === 0, 'events: same forecast issue -> no event');
+  // Release change at the below-dam gage
+  const gage = (vals, t0) => ({ t: vals.map((_, i) => t0 + i * 15 * 60e3), v: vals });
+  const proj = (s) => ({ projects: { 'cottage-grove': { gage: s } }, stations: {} });
+  const T0 = NOW - 2 * Hr;
+  const before = gage([56, 56, 56, 56, 56, 56], T0), after = gage([56, 56, 56, 56, 56, 56, 148], T0);
+  const rl = EV.detect(snapOf({ snap: proj(before) }), snapOf({ snap: proj(after) }), NOW);
+  check(rl.length === 1 && rl[0].kind === 'release' && rl[0].title === 'COTO up 56 → 148 cfs (Cottage Grove release)' && rl[0].entityId === 'cottage-grove' && rl[0].level === 'watch', 'events: release change at the below-dam gage (>= 20% and >= 50 cfs in ~30 min)');
+  const later = gage([56, 56, 56, 56, 56, 56, 148, 150], T0);
+  check(EV.detect(snapOf({ snap: proj(after) }), snapOf({ snap: proj(later) }), NOW).length === 0, 'events: a release change is reported once, not again on the next reading');
+  const small = gage([56, 56, 56, 56, 56, 56, 90], T0), pct = gage([2000, 2000, 2000, 2000, 2000, 2000, 2100], T0);
+  check(EV.detect(snapOf({ snap: proj(before) }), snapOf({ snap: proj(small) }), NOW).length === 0 && EV.detect(snapOf({ snap: proj(gage([2000, 2000, 2000, 2000, 2000, 2000], T0)) }), snapOf({ snap: proj(pct) }), NOW).length === 0, 'events: small changes (< 50 cfs, or < 20%) ignored');
+  // Remembered ids: the same event is not announced twice
+  const store = { seen: [], events: [], readAt: 0, read: {}, desktop: false, off: [] };
+  const f1 = EV.remember(store, nf), f2 = EV.remember(store, EV.detect(snapOf({ hz: hz([]) }), snapOf({ hz: hz([fire]) }), NOW + 60e3));
+  check(f1.length === 1 && f2.length === 0 && store.events.length === 1 && store.seen.length === 1, 'events: de-duplicated by stable id across polls');
+  const ehtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8'), eapp = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8');
+  check(/id="ev-bell"/.test(ehtml) && /id="ev-panel"/.test(ehtml) && /id="toasts"/.test(ehtml) && ehtml.indexOf('js/events.js') < ehtml.indexOf('js/notify.js') && ehtml.indexOf('js/notify.js') < ehtml.indexOf('js/app.js') &&
+    (eapp.match(/trackEvents\(\);/g) || []).length >= 4, 'events: bell, panel, toasts wired; detection runs after each data source');
+  check(!/\.sc\[open\]\s*\{[^}]*grid-column/.test(fs.readFileSync(path.join(__dirname, 'css', 'style.css'), 'utf8')), 'status cards: an open card no longer spans the row (its body is an overlay)');
+}
+
 // ---- 2g. Hourly Snapshot + long-range history (fixtures) ---------------------------------
 console.log('snapshot / history');
 {
