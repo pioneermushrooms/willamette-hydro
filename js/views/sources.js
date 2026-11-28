@@ -100,6 +100,13 @@
           '<p><b>BPA transmission</b>: BPA’s Daily Interruptions Report (lines, customer feeders and transformers; planned or automatic; cause; still out), filtered to BPA’s Eugene district and the Willamette powerhouses, copied into the site every 30 minutes by a GitHub Action because BPA’s site cannot be read from a browser. BPA updates the report daily.</p>' +
           '<p>Card levels are this site’s choice: amber when one outage affects ≥ 10 customers or ≥ 25 are out in total; red at ≥ 250 in one outage, ≥ 500 in total, or an unplanned BPA line trip still out. Not covered: Pacific Power, Springfield Utility Board and Consumers Power publish no readable outage data; the card links to their maps.</p>',
         src: [['EWEB outage layer', 'https://services7.arcgis.com/6AM8yPAeyXiPc9eF/arcgis/rest/services/PublicOutageMap_Public_View/FeatureServer/0'], ['Lane Electric outage data', 'https://outagemap-data.cloud.coop/laneelectric/Hosted_Outage_Map/summary.json'], ['Emerald PUD outage data', 'https://outagemap-data.cloud.coop/epud/Hosted_Outage_Map/summary.json'], ['BPA Daily Interruptions Report', 'https://transmission.bpa.gov/Business/Operations/Outages/default.aspx']] }
+    ] },
+    { title: 'Tables, calculator and BPA', items: [
+      { q: 'Rating tables', kind: 'published',
+        a: '<p>Reservoir elevation–storage, elevation–area, spillway and outlet ratings from USACE CWMS; stage–discharge ratings for river gauges from USGS (exsa files). Shown as published.</p>',
+        src: [['USGS rating file (example)', 'https://nwis.waterdata.usgs.gov/nwisweb/get_ratings?site_no=14166000&file_type=exsa']] },
+      { q: 'Storage / Drawdown Calculator', kind: 'derived',
+        a: '<p>A planning aid. It steps storage forward with <b>S + (inflow − outflow) × 0.082645 × hours</b> (ac-ft; 1 cfs for 1 h = 0.082645 ac-ft) and converts with the USACE elevation–storage rating. Gate openings come from the CWMS gate ratings; gage-height ramp limits use the USGS rating of the gage below the dam. Verify against the water control manual and current operating orders.</p>' },
       { q: 'BPA-wide hydro', kind: 'reported',
         a: '<p>Total hydro generation in BPA’s balancing authority (the Columbia basin, federal and other), not Willamette-specific. Copied from BPA’s public file every 30 minutes by a GitHub Action, unchanged.</p>',
         src: [['BPA balancing-authority file', 'https://transmission.bpa.gov/business/operations/Wind/baltwg.txt']] }
