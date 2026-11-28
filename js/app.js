@@ -1525,6 +1525,9 @@
   var RANGE_H = { '24h': 24, '7d': 168, '30d': 30 * 24, '6m': 182 * 24, '1y': 365 * 24, year: 365 * 24, years: 365 * 24 };
   var RANGE_TAG = { '24h': 'LAST 24 H', '7d': 'LAST 7 D', '30d': 'LAST 30 D', '6m': 'LAST 6 MO', '1y': 'LAST 1 YR', year: 'CALENDAR YEAR', years: 'PAST YEARS' };
   function isLong(r) { return r === '30d' || r === '6m' || r === '1y' || r === 'year'; }
+  // Reservoirs: the time axis continues this far past "now" (hours) as a hatched forecast zone, where the
+  // strips show the model's rain forecast and the NWRFC inflow forecast (the pool itself has none).
+  var FC_ZONE_H = { '24h': 72, '7d': 72, '30d': 168 };
   var fYearNum = new Intl.DateTimeFormat('en-US', { timeZone: TZ, year: 'numeric' });
   function curYear() { return +fYearNum.format(new Date()); }
 
@@ -1588,6 +1591,8 @@
     var long = isLong(state.range), hist = long ? histFor(e) : null, hLoading = !!(hist && hist.loading);
     var now = Date.now(), end = now, start = now - RANGE_H[state.range] * HOUR;
     if (state.range === 'year') { start = H.history.pacificMidnight(curYear(), 1, 1); end = H.history.pacificMidnight(curYear() + 1, 1, 1); }
+    var fz = res && FC_ZONE_H[state.range] ? { from: now, to: now + FC_ZONE_H[state.range] * HOUR, h: FC_ZONE_H[state.range] } : null;
+    if (fz) end = fz.to;
     var s, ref = null, unit, dec, title, src, param = null, g = null;
     if (res) {
       var d = projData(e);
@@ -1597,6 +1602,7 @@
         ? (hist && hist.src ? hist.src + (hist.pool && hist.pool.liveFrom ? stamp(hist.pool.liveFrom) + ' (hourly)' : '') : 'loading history…') +
           '; dashed: ' + e.series.rule.name + ' (USACE rule curve, daily, linearly joined).' + (hist && hist.note ? ' ' + hist.note : '')
         : 'USACE CWMS (NWDP) ' + e.series.elev.name + '; dashed: ' + e.series.rule.name + ' (USACE rule curve, daily, linearly joined).';
+      if (fz) src += ' Hatched: the next ' + (fz.h % 24 ? fz.h + ' h' : fz.h / 24 + ' days') + ' (forecast zone). The pool has no published forecast; the strips below show the model rain forecast and, where NWRFC publishes one, its inflow forecast.';
     } else {
       var sd = stData(e);
       param = state.riverParam === 'temp' ? 'temp' : e.params.indexOf('flow') >= 0 && state.riverParam === 'flow' ? 'flow' : 'stage';
@@ -1709,7 +1715,7 @@
       lv: lv, stats: stats, target: target, levels: levels,
       tt: tt, tv: tv, tLabel: tLabel, tNote: tNote,
       param: param, fc: fc, issued: issued, bands: bands, fcNote: fcNote, peak: g && g.peak, long: long,
-      fullStart: fullStart, fullEnd: fullEnd, zoomed: zoomed,
+      fullStart: fullStart, fullEnd: fullEnd, zoomed: zoomed, fz: fz,
       loading: long ? hLoading : !state.snap, histError: long && hist && !hist.loading ? hist.error : null };
   }
 
@@ -1731,7 +1737,7 @@
       ps.querySelector('[data-param="temp"]').disabled = M.e.params.indexOf('tempC') < 0;
     }
     $('#chart-title').textContent = M.title;
-    $('#trend-tag').textContent = RANGE_TAG[state.range] + (M.long ? ' · HISTORY + LIVE' : ' · LIVE SERIES') +
+    $('#trend-tag').textContent = RANGE_TAG[state.range] + (M.fz ? ' + ' + (M.fz.h % 24 ? M.fz.h + ' H' : M.fz.h / 24 + ' D') + ' AHEAD' : '') + (M.long ? ' · HISTORY + LIVE' : ' · LIVE SERIES') +
       (state.snap && state.snap.fetchedAt ? ' · checked ' + fmtClock.format(state.snap.fetchedAt).replace(/^24/, '00').slice(0, 5) : '');
     setHTML($('#chart-src'), 'Source: ' + H.linkSources(M.src));
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H2);
@@ -1771,7 +1777,7 @@
 
     var s = '<defs><linearGradient id="chart-grad" x1="0" y1="0" x2="0" y2="1">' +
       '<stop offset="0" stop-color="#39d0e0" stop-opacity="0.22"/><stop offset="1" stop-color="#39d0e0" stop-opacity="0"/></linearGradient>' +
-      '<clipPath id="plot-clip"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath></defs>';
+      '<clipPath id="plot-clip"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath>' + fzHatch('fc-hatch') + '</defs>';
 
     s += '<g class="grid axis">';
     nt.ticks.forEach(function (v, k) {
@@ -1834,6 +1840,7 @@
     if (M.end > M.now + HOUR) {
       var xn = x(M.now);
       s += '<rect class="future" x="' + xn.toFixed(1) + '" y="' + mt + '" width="' + (ml + pw - xn).toFixed(1) + '" height="' + ph + '"/>';
+      if (M.fz) s += fzZone(xn, ml, pw, mt, ph, 'fc-hatch', true);
     }
     s += '<path class="area" d="' + d + 'L' + x(M.t[n - 1]).toFixed(1) + ' ' + (mt + ph) + 'L' + x(M.t[0]).toFixed(1) + ' ' + (mt + ph) + 'Z"/>';
     if (M.rt.length > 1) {
@@ -1865,10 +1872,10 @@
       s += '<path class="fc-line" d="' + fd + '"/>';
     }
     s += '</g>';
-    if (M.end > M.now + HOUR) {
+    if (M.end > M.now + HOUR && x(M.now) >= ml) {
       var xnow = x(M.now).toFixed(1);
       s += '<line class="now-line" x1="' + xnow + '" x2="' + xnow + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
-      s += '<text class="now-label" x="' + (+xnow + 4) + '" y="' + (mt + ph - 6) + '">' + (M.fc.t.length > 1 ? 'NOW · NWS FORECAST →' : 'TODAY') + '</text>';
+      s += '<text class="now-label" x="' + (+xnow + 4) + '" y="' + (mt + ph - 6) + '">' + (M.fc.t.length > 1 ? 'NOW · NWS FORECAST →' : M.fz ? 'NOW' : 'TODAY') + '</text>';
     }
     s += '<circle class="now" cx="' + x(M.t[n - 1]).toFixed(1) + '" cy="' + y(M.v[n - 1]).toFixed(1) + '" r="4.5"/>';
     s += '<g id="cross" style="display:none"><line class="cross" id="cross-line" y1="' + mt + '" y2="' + (mt + ph) + '"/><circle class="cross-dot" id="cross-dot" r="5"/>' +
@@ -1888,6 +1895,7 @@
       (M.tt.length ? '<span><i class="tgt"></i>' + esc(M.tLabel) + '</span>' : '') + (M.tNote ? '<span class="na">' + esc(M.tNote) + '</span>' : '') +
       (M.rt.length > 1 ? '<span><i class="ref"></i>USACE rule curve</span>' : M.res ? '<span class="na">Rule curve: no data</span>' : '') +
       (M.fc.t.length > 1 ? '<span><i class="fc"></i>NWS/NWRFC forecast (via NOAA NWPS), issued ' + stamp(M.issued) + '</span>' : '') +
+      (M.fz && M.end > M.now ? '<span><i class="lg-fz"></i>Forecast zone (no pool forecast; rain and inflow forecasts below)</span>' : '') +
       (M.bands.length ? '<span><i class="fb"></i>NWS flood categories</span>' : '') +
       (M.fcNote ? '<span class="na">' + esc(M.fcNote) + '</span>' : '') +
       (M.stats ? '<span><i class="lg-p95"></i>30-yr p05–p95</span><span><i class="lg-p75"></i>p25–p75</span><span><i class="lg-mean"></i>30-yr mean</span>' : '') +
@@ -1986,7 +1994,12 @@
       if (i < 0) i = 0;
       if (i < g.M.t.length - 1 && Math.abs(g.M.t[i + 1] - t) < Math.abs(g.M.t[i] - t)) i++;
       var span = g.M.end - g.M.start;
-      if (Math.abs(g.M.t[i] - t) > Math.max(3 * HOUR, span / 60)) {
+      if (g.M.fz && t > g.M.now && Math.abs(g.M.t[i] - t) > Math.max(3 * HOUR, span / 60)) {
+        // Forecast zone: no pool forecast; the rule curve where it is published (rain/inflow on the strips).
+        var rf = g.M.rt.length ? H.interpolate({ t: g.M.rt, v: g.M.rv }, t) : null;
+        html = stamp(t) + '<br><span class="fz-tag">FORECAST ZONE</span> +' + fmt((t - g.M.now) / HOUR, 0) + ' h' +
+          (rf != null ? '<br>rule curve ' + fmt(rf, 1) + ' ft' : '') + '<br><span class="na">no pool forecast</span>';
+      } else if (Math.abs(g.M.t[i] - t) > Math.max(3 * HOUR, span / 60)) {
         // No reading near the cursor (e.g. in the future part of the window): cursor only.
         html = stamp(t) + '<br><span class="na">no reading</span>';
       } else {
@@ -2069,6 +2082,17 @@
     H.pastYears.render(box, { p: e, code: e.code, lv: lv, levels: levels, stats: layerOn('stats') }, function () { if (state.range === 'years') renderYearsView(); });
   }
 
+  // Forecast zone right of "now" (reservoirs): a hatch pattern (one per SVG) and the zone itself.
+  function fzHatch(id) {
+    return '<pattern id="' + id + '" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="fz-hl" x1="0" y1="0" x2="0" y2="7"/></pattern>';
+  }
+  function fzZone(xn, ml, pw, mt, ph, id, label) {
+    var x0 = Math.max(ml, xn), w = ml + pw - x0;
+    if (w <= 0) return '';
+    return '<rect class="fz-zone" x="' + x0.toFixed(1) + '" y="' + mt + '" width="' + w.toFixed(1) + '" height="' + ph + '" fill="url(#' + id + ')"/>' +
+      (label && w > 80 ? '<text class="fz-label" x="' + (x0 + 5).toFixed(1) + '" y="' + (mt + 11) + '">FORECAST →</text>' : '');
+  }
+
   // 30-yr bands, published target and level lines on the main chart (inside its clip group).
   function layerSVG(M, x, y, ml, pw, mt, ph) {
     var out = '';
@@ -2138,7 +2162,7 @@
     if (!sd || (!sd.loading && !sd.refreshing && Date.now() - sd.at > 10 * 60 * 1000)) {
       // Refresh in the background: keep the current lines on screen until the new ones land.
       state.strips[ck] = sd = sd && !sd.error ? Object.assign({}, sd, { refreshing: true }) : { loading: true };
-      L.load(e, def.key, M.fullStart, Math.min(M.fullEnd, Date.now()), e.kind === 'reservoir' ? projData(e) : null).then(function (r) {
+      L.load(e, def.key, M.fullStart, Math.min(M.fullEnd, Date.now()), e.kind === 'reservoir' ? projData(e) : null, M.fz ? M.fz.to : null).then(function (r) {
         r.at = Date.now(); state.strips[ck] = r;
         if (state.geom && state.geom.M.e === e) { renderLayerBar(state.geom.M); renderStrips(); }
       });
@@ -2162,25 +2186,36 @@
     var M = g.M, unit = esc(def.unit);
     if (def.key === 'flows' && M.long && sd.lines && M.e.kind === 'reservoir') {
       var dl = projData(M.e) || {};
-      sd = Object.assign({}, sd, { lines: sd.lines.map(function (l) { var lv = l.cls === 'st-out' ? dl.out : dl.inflow, r = withLive(l, lv); return r === l ? l : Object.assign({}, l, { t: r.t, v: r.v }); }) });
+      sd = Object.assign({}, sd, { lines: sd.lines.map(function (l) { if (l.fc) return l; var lv = l.cls === 'st-out' ? dl.out : dl.inflow, r = withLive(l, lv); return r === l ? l : Object.assign({}, l, { t: r.t, v: r.v }); }) });
     }
     // Each line's newest reading, so a series that reports later (hourly vs 15-min) is visible as such.
-    var lastOf = function (l) { return l.t.length ? ' <span class="st-last mono" title="Newest reading of this series">' + esc(fmtClock.format(l.t[l.t.length - 1]).replace(/^24/, '00').slice(0, 5)) + '</span>' : ''; };
-    var keys = sd.lines && sd.lines.length ? sd.lines.map(function (l) { return '<span class="st-key">' + (sd.lines.length > 1 ? '<i class="' + l.cls + '"></i>' + esc(l.label) : '<span class="st-lab-1">latest</span>') + lastOf(l) + '</span>'; }).join('') : '';
-    var head = '<div class="st-head"><b>' + esc(def.label) + '</b> <span class="st-unit">' + unit + '</span>' + keys + '<span class="st-read mono"></span></div>';
-    var wrap = function (inner, src) { return '<div class="strip" data-strip="' + def.key + '">' + head + inner + (src ? '<p class="st-src">' + H.linkSources(src) + '</p>' : '') + '</div>'; };
+    var lastOf = function (l) { return !l.fc && l.t.length ? ' <span class="st-last mono" title="Newest reading of this series">' + esc(fmtClock.format(l.t[l.t.length - 1]).replace(/^24/, '00').slice(0, 5)) + '</span>' : ''; };
+    // Forecast lines name their issue time and link to the forecaster's page.
+    var keyLabel = function (l) {
+      var lab = esc(l.issued ? l.label.replace(/\)$/, ', issued ' + stamp(l.issued) + ')') : l.label);
+      return l.page ? '<a class="st-klink" href="' + esc(l.page) + '" target="_blank" rel="noopener">' + lab + ' ↗</a>' : lab;
+    };
+    var keys = sd.lines && sd.lines.length ? sd.lines.map(function (l) { return '<span class="st-key">' + (sd.lines.length > 1 ? '<i class="' + l.cls + '"></i>' + keyLabel(l) : '<span class="st-lab-1">latest</span>') + lastOf(l) + '</span>'; }).join('') : '';
+    var note = sd.note ? '<span class="na st-note">' + esc(sd.note) + '</span>' : '';
+    var hint = def.key === 'precip' && M.e.kind === 'reservoir' && H.runoff ? '<span class="st-hint">drag across the bars: rain total, volume, pool rise</span>' : '';
+    var head = '<div class="st-head"><b>' + esc(def.label) + '</b> <span class="st-unit">' + unit + '</span>' + keys + note + hint + '<span class="st-read mono"></span></div>';
+    var wrap = function (inner, src, extra) { return '<div class="strip" data-strip="' + def.key + '">' + head + inner + (src ? '<p class="st-src">' + H.linkSources(src) + '</p>' : '') + (extra || '') + '</div>'; };
     if (sd.loading) return wrap('<p class="na loading st-msg">loading…</p>');
     if (sd.empty) return wrap('<p class="na st-msg">' + (sd.error ? 'unavailable (' + esc(sd.error) + ')' : 'not reported for this window') + '</p>', sd.src);
     var vals = [];
     sd.lines.forEach(function (l) { l.t.forEach(function (t, i) { if (t >= M.start && t <= M.end) vals.push(l.v[i]); }); });
     if (!vals.length) return wrap('<p class="na st-msg">no readings in this window</p>', sd.src);
     if (def.ref) vals.push(def.ref);
-    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo || Math.abs(hi) * 0.05 || 1) * 0.12;
-    var nt = niceTicks(lo - pad, hi + pad, 3), yMin = Math.min(nt.ticks[0], lo - pad), yMax = Math.max(nt.ticks[nt.ticks.length - 1], hi + pad);
+    var bars = sd.lines.some(function (l) { return l.bars; });
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (bars) { lo = 0; hi = Math.max(hi, 0.02); }   // rain bars stand on zero
+    var pad = (hi - lo || Math.abs(hi) * 0.05 || 1) * 0.12;
+    var nt = niceTicks(bars ? 0 : lo - pad, hi + pad, 3), yMin = bars ? 0 : Math.min(nt.ticks[0], lo - pad), yMax = Math.max(nt.ticks[nt.ticks.length - 1], hi + pad);
     var Hs = 104, mt = 6, mb = 24, ph = Hs - mt - mb, W = g.W, ml = g.ml, pw = g.pw;
     var x = function (t) { return ml + ((t - M.start) / (M.end - M.start)) * pw; }, y = function (v) { return mt + (1 - (v - yMin) / (yMax - yMin)) * ph; };
     var dec = nt.step < 1 ? (nt.step < 0.1 ? 2 : 1) : 0;
-    var svg = '<svg class="st-svg" viewBox="0 0 ' + W + ' ' + Hs + '" width="100%" height="' + Hs + '" aria-hidden="true"><defs><clipPath id="st-clip-' + def.key + '"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath></defs><g class="axis">';
+    var svg = '<svg class="st-svg" viewBox="0 0 ' + W + ' ' + Hs + '" width="100%" height="' + Hs + '" aria-hidden="true"><defs><clipPath id="st-clip-' + def.key + '"><rect x="' + ml + '" y="' + mt + '" width="' + pw + '" height="' + ph + '"/></clipPath>' +
+      (M.fz ? fzHatch('st-hatch-' + def.key) : '') + '</defs><g class="axis">';
     // The strip shares the main chart's left margin; labels too wide for it go just inside the plot.
     var inside = nt.ticks.some(function (v) { return 6.6 * fmt(v, dec).length + 12 > ml; });
     nt.ticks.forEach(function (v) {
@@ -2196,18 +2231,42 @@
     });
     svg += '<line class="st-xaxis" x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + (mt + ph) + '" y2="' + (mt + ph) + '"/>';
     svg += '</g><g clip-path="url(#st-clip-' + def.key + ')">';
+    var xn = x(M.now), fzOn = M.fz && M.end > M.now;
+    if (fzOn) svg += fzZone(xn, ml, pw, mt, ph, 'st-hatch-' + def.key, false);
     if (def.ref) svg += '<line class="st-ref" x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(def.ref).toFixed(1) + '" y2="' + y(def.ref).toFixed(1) + '"/><text class="st-ref-lab" x="' + (ml + pw - 4) + '" y="' + (y(def.ref) - mt < 12 ? y(def.ref) + 11 : y(def.ref) - 3).toFixed(1) + '" text-anchor="end">' + esc(def.refLabel) + '</text>';
     sd.lines.forEach(function (l) {
-      var i0 = Math.max(0, lastIndexBefore(M.start, l.t)), i1 = Math.min(l.t.length - 1, lastIndexBefore(M.end, l.t) + 1), step = Math.max(1, Math.ceil((i1 - i0 + 1) / 700)), d = '';
+      var i0 = Math.max(0, lastIndexBefore(M.start, l.t)), i1 = Math.min(l.t.length - 1, lastIndexBefore(M.end, l.t) + 1), d = '';
+      if (l.bars) {
+        // One bar per value, spanning the hour (or day) it totals: (t − step, t].
+        var bstep = l.t.length > 1 ? l.t[1] - l.t[0] : HOUR, y0 = y(0);
+        for (var b = i0; b <= i1; b++) {
+          if (!(l.v[b] > 0)) continue;
+          var xa = x(l.t[b] - bstep), xb = x(l.t[b]), bw = Math.max(0.8, xb - xa - (xb - xa > 3 ? 1 : 0));
+          d += 'M' + xa.toFixed(1) + ' ' + y0.toFixed(1) + 'V' + Math.min(y0 - 0.8, y(l.v[b])).toFixed(1) + 'h' + bw.toFixed(1) + 'V' + y0.toFixed(1) + 'Z';
+        }
+        svg += '<path class="st-bars ' + l.cls + '" d="' + d + '"/>';
+        return;
+      }
+      var step = Math.max(1, Math.ceil((i1 - i0 + 1) / 700));
       for (var i = i0; i <= i1; i += step) d += (d ? 'L' : 'M') + x(l.t[i]).toFixed(1) + ' ' + y(l.v[i]).toFixed(1);
       svg += '<path class="st-line ' + l.cls + '" d="' + d + '"/>';
     });
-    svg += '</g><line class="st-cursor" y1="' + mt + '" y2="' + (mt + ph) + '" style="display:none"/>' + curTSVG(null, Hs - 7) + '</svg>';
+    var extra = '';
+    if (def.key === 'precip' && M.e.kind === 'reservoir') {
+      // Drag selection (rain total → volume → runoff → pool rise); kept across refreshes until cleared.
+      var ps = prSel && prSel.id === M.e.id ? prSel : null, sa = ps ? Math.max(ml, x(ps.a)) : 0, sb = ps ? Math.min(ml + pw, x(ps.b)) : 0;
+      svg += '<rect class="pr-sel" y="' + mt + '" height="' + ph + '" x="' + sa.toFixed(1) + '" width="' + Math.max(0, sb - sa).toFixed(1) + '"' + (ps && sb > sa ? '' : ' style="display:none"') + '/>';
+      if (ps) extra = prSummaryHTML(M.e, sd, M, W, x);
+    }
+    svg += '</g>';
+    if (fzOn && xn >= ml && xn <= ml + pw) svg += '<line class="st-now" x1="' + xn.toFixed(1) + '" x2="' + xn.toFixed(1) + '" y1="' + mt + '" y2="' + (mt + ph) + '"/>';
+    svg += '<line class="st-cursor" y1="' + mt + '" y2="' + (mt + ph) + '" style="display:none"/>' + curTSVG(null, Hs - 7) + '</svg>';
     state.stripView.push({ def: def, sd: sd });
-    return wrap(svg, sd.src);
+    return wrap(svg, sd.src, extra);
   }
 
-  // Cursor + "value at cursor" readout on every strip (t = null hides them).
+  // Cursor + "value at cursor" readout on every strip (t = null hides them). In the forecast zone
+  // only the forecast lines are read out (and before "now" only the observed ones).
   function syncStrips(t) {
     var g = state.geom, box = $('#trend-strips');
     if (!box || !g || !state.stripView) return;
@@ -2218,19 +2277,143 @@
       placeCurT(el.querySelector('.cur-t'), x, t);
       if (t == null) { cur.style.display = 'none'; rd.textContent = ''; return; }
       cur.setAttribute('x1', x.toFixed(1)); cur.setAttribute('x2', x.toFixed(1)); cur.style.display = '';
-      var tol = Math.max(2 * HOUR, (g.M.end - g.M.start) / 150);
-      var vals = view.sd.lines.map(function (l) {
-        var i = lastIndexBefore(t, l.t);
-        if (i < 0) i = 0;
-        if (i < l.t.length - 1 && Math.abs(l.t[i + 1] - t) < Math.abs(l.t[i] - t)) i++;
-        var ok = Math.abs(l.t[i] - t) <= Math.max(tol, 36 * HOUR * (l.t.length > 1 && l.t[1] - l.t[0] >= 20 * HOUR ? 1 : 0));
-        return (view.sd.lines.length > 1 ? l.label + ' ' : '') + (ok ? fmt(l.v[i], view.def.dec) + ' ' + view.def.unit : '—');
+      var tol = Math.max(2 * HOUR, (g.M.end - g.M.start) / 150), ahead = !!g.M.fz && t > g.M.now;
+      var lines = view.sd.lines.filter(function (l) { return ahead ? l.fc : !l.fc; });
+      var vals = !lines.length ? [ahead ? 'no forecast' : '—'] : lines.map(function (l) {
+        var v = null;
+        if (l.fc && !l.bars) v = H.interpolate(l, t);   // forecast lines (~6-hourly) read linearly between their points
+        else {
+          var i = lastIndexBefore(t, l.t);
+          if (i < 0) i = 0;
+          if (i < l.t.length - 1 && Math.abs(l.t[i + 1] - t) < Math.abs(l.t[i] - t)) i++;
+          if (Math.abs(l.t[i] - t) <= Math.max(tol, 36 * HOUR * (l.t.length > 1 && l.t[1] - l.t[0] >= 20 * HOUR ? 1 : 0))) v = l.v[i];
+        }
+        return (view.sd.lines.length > 1 ? l.label + ' ' : '') + (v != null ? fmt(v, view.def.dec) + ' ' + view.def.unit : '—');
       });
       // "Fri 03:00 · Outflow 900 cfs · Computed inflow 640 cfs"
-      var html = '<span class="st-rt">' + esc(curLabel(t, true)) + '</span> · ' + esc(vals.join(' · '));
+      var html = '<span class="st-rt">' + esc(curLabel(t, true)) + '</span>' + (ahead ? ' <span class="fz-tag">FORECAST</span>' : '') + ' · ' + esc(vals.join(' · '));
       rd.innerHTML = html;
       var sv = el.querySelector('.st-svg');   // float the readout at the top of the plot, below the (wrapping) header
       if (sv) rd.style.top = Math.round(sv.getBoundingClientRect().top - el.getBoundingClientRect().top + 2) + 'px';
+    });
+  }
+
+  // ---- Basin rain selection: drag across the precipitation strip ---------------------------------
+  // Shows the basin-mean rain in the span, its volume on the basin, the estimated runoff into the pool
+  // (empirical runoff ratio, js/runoff.js) and the pool rise that would cause at today's pool.
+
+  var prSel = null;                 // { id, a, b } (ms); survives the 3-minute refresh until cleared
+  var prRatio = {}, prRating = {};  // per project code
+
+  function prRatioFor(e) {
+    var c = prRatio[e.code];
+    if (!c || (!c.loading && Date.now() - c.at > 6 * HOUR)) {
+      prRatio[e.code] = c = c && !c.loading ? c : { loading: true };
+      H.runoff.loadRatio(e).then(function (r) { prRatio[e.code] = r; renderStrips(); });
+    }
+    return c;
+  }
+
+  function prRatingFor(e) {
+    if (e.code === 'DEX') return { none: 'Dexter publishes no elevation–storage rating' };
+    if (!H.ratings) return { none: 'ratings not loaded' };
+    var c = prRating[e.code];
+    if (c) return c;
+    prRating[e.code] = c = { loading: true };
+    var def = H.ratings.cwmsDefs('storage', e.code)[0];
+    H.ratings.load(def).then(function (en) {
+      var d = en.data;
+      if (d.kind !== '1d') throw new Error('unexpected rating shape');
+      prRating[e.code] = { xs: d.xs, ys: d.ys, id: def.id };
+    }).catch(function (err) { prRating[e.code] = { error: err.message || 'failed', at: Date.now() }; }).then(renderStrips);
+    return c;
+  }
+
+  function prSummaryHTML(e, sd, M, W, x) {
+    var Rn = H.runoff, b = H.weather && H.weather.BASINS[e.code];
+    if (!Rn || !b) return '';
+    var r = Rn.spanRain(sd.lines, prSel.a, prSel.b, M.now), vol = Rn.rainVolume(r.total, b.area);
+    var rr = prRatioFor(e), rt = prRatingFor(e), ratio = rr.loading ? null : rr.ratio, run = ratio == null ? null : vol * ratio;
+    var hrs = Math.round((r.n * r.step) / HOUR), fcH = Math.round((r.nFc * r.step) / HOUR);
+    var from = r.from != null ? r.from : prSel.a, to = r.to != null ? r.to : prSel.b;
+    var dd = function (label, v, cls) { return '<div' + (cls ? ' class="' + cls + '"' : '') + '><dt>' + label + '</dt><dd>' + v + '</dd></div>'; };
+    var rise;
+    var el = H.latest((projData(e) || {}).elev);
+    if (rt.none) rise = '<span class="na">n/a (' + esc(rt.none) + ')</span>';
+    else if (rt.loading) rise = '<span class="na loading">loading rating…</span>';
+    else if (rt.error) rise = '<span class="na">rating unavailable (' + esc(rt.error) + ')</span>';
+    else if (!el) rise = '<span class="na">no current pool reading</span>';
+    else if (run == null) rise = '<span class="na loading">…</span>';
+    else {
+      var pr = Rn.poolRise(rt.xs, rt.ys, el.v, run);
+      rise = pr.error ? '<span class="na">' + esc(pr.error) + '</span>'
+        : '≈ ' + signed(pr.dElev, Math.abs(pr.dElev) < 0.1 ? 2 : 1) + ' ft <span class="pr-sub">(' + fmt(el.v, 1) + ' → ' + fmt(pr.elev1, 1) + ' ft)</span>';
+    }
+    var ratioTxt = rr.loading ? '<span class="na loading">runoff ratio: deriving from the last ' + Rn.WINDOW_DAYS + ' days of rain and inflow…</span>'
+      : rr.fallback ? 'runoff ratio ' + fmt(rr.ratio, 2) + ' (default: ' + esc(rr.reason || 'no usable record') + '; deriving one needs ≥ ' + Rn.MIN_RAIN_IN + ' in of event rain)'
+        : 'runoff ratio ≈ ' + fmt(rr.ratio, 2) + ' (derived from last ' + rr.window + ' days: ' + fmt(rr.rainIn, 1) + ' in rain, ' + fmt(rr.runoffAcft, 0) + ' ac-ft runoff' +
+          (rr.clamped ? '; raw ' + fmt(rr.raw, 2) + ', clamped to ' + Rn.CLAMP.join('–') : '') + ')';
+    // Float beside the selection (left of it when it sits in the right half); full width on phones.
+    var xa = x(prSel.a) / W * 100, xb = x(prSel.b) / W * 100, pos;
+    if (W < 560) pos = 'left:6px;right:6px';
+    else if ((xa + xb) / 2 > 50) pos = 'right:clamp(6px,' + (100 - xa).toFixed(1) + '%,calc(100% - 386px))';
+    else pos = 'left:clamp(6px,' + xb.toFixed(1) + '%,calc(100% - 386px))';
+    return '<div class="pr-sum' + (W < 560 ? ' pr-full' : '') + '" role="status" style="' + pos + '"><div class="pr-h"><b>Selected rain</b> <span class="mono pr-span">' + esc(curLabel(from, false)) + ' – ' + esc(curLabel(to, false)) + ' · ' + hrs + ' h' +
+      (fcH ? ' (' + fcH + ' h forecast)' : '') + '</span><button type="button" class="btn pr-x" data-prsel="clear" title="Clear the selection (Esc)">Clear</button></div>' +
+      '<dl class="pr-dl mono">' +
+      dd('Basin-mean rain', fmt(r.total, 2) + ' in' + (r.nFc ? ' <span class="pr-fc">incl. ' + fmt(r.fcst, 2) + ' in forecast</span>' : '')) +
+      dd('Rain on the basin', fmt(vol, 0) + ' ac-ft <span class="pr-sub">(' + fmt(b.area, 0) + ' sq mi × 53.33)</span>') +
+      dd('Runoff into pool', run == null ? '<span class="na loading">…</span>' : '≈ ' + fmt(run, 0) + ' ac-ft') +
+      dd('Pool rise', rise) + '</dl>' +
+      '<p class="pr-note">' + ratioTxt + '. Pool rise: at the current pool, if outflow stays equal to the pre-event inflow (all storm runoff stored; USACE elevation–storage rating). ' +
+      '<b>Rough estimate</b>: model rain, not gauges; soil moisture and snow change how much runs off. <a href="#/sources">How this is estimated ▸</a></p></div>';
+  }
+
+  function initPrecipSelect() {
+    var box = $('#trend-strips'), drag = null;
+    if (!box || !H.runoff) return;
+    var tAt = function (sv, clientX) {
+      var g = state.geom, r = sv.getBoundingClientRect();
+      if (!g) return null;
+      var px = Math.max(g.ml, Math.min(g.ml + g.pw, (clientX - r.left) * (g.W / r.width)));
+      return g.M.start + ((px - g.ml) / g.pw) * (g.M.end - g.M.start);
+    };
+    var show = function (sv, a, b) {
+      var g = state.geom, rc = sv.querySelector('.pr-sel');
+      if (!g || !rc) return;
+      var xa = g.ml + ((Math.min(a, b) - g.M.start) / (g.M.end - g.M.start)) * g.pw, xb = g.ml + ((Math.max(a, b) - g.M.start) / (g.M.end - g.M.start)) * g.pw;
+      rc.setAttribute('x', xa.toFixed(1)); rc.setAttribute('width', Math.max(0, xb - xa).toFixed(1)); rc.style.display = '';
+    };
+    box.addEventListener('pointerdown', function (ev) {
+      var sv = ev.target.closest && ev.target.closest('.strip[data-strip="precip"] svg.st-svg'), g = state.geom;
+      if (!sv || !g || g.M.e.kind !== 'reservoir' || (ev.button != null && ev.button > 0)) return;
+      var r = sv.getBoundingClientRect(), px = (ev.clientX - r.left) * (g.W / r.width);
+      if (px < g.ml || px > g.ml + g.pw) return;
+      drag = { sv: sv, id: ev.pointerId, x0: ev.clientX, t0: tAt(sv, ev.clientX), moved: false };
+    });
+    box.addEventListener('pointermove', function (ev) {
+      if (!drag || ev.pointerId !== drag.id) return;
+      if (!drag.moved && Math.abs(ev.clientX - drag.x0) > 6) {
+        drag.moved = true;
+        try { drag.sv.setPointerCapture(drag.id); } catch (e) { /* ignore */ }
+      }
+      if (drag.moved) show(drag.sv, drag.t0, tAt(drag.sv, ev.clientX));
+    });
+    box.addEventListener('pointerup', function (ev) {
+      if (!drag || ev.pointerId !== drag.id) return;
+      var d = drag, t1 = tAt(d.sv, ev.clientX), g = state.geom;
+      drag = null;
+      if (!d.moved || !g) return;
+      // Whole hours: a bar counts when its centre is inside the span.
+      prSel = { id: g.M.e.id, a: Math.floor(Math.min(d.t0, t1) / HOUR) * HOUR, b: Math.ceil(Math.max(d.t0, t1) / HOUR) * HOUR };
+      renderStrips();
+    });
+    box.addEventListener('pointercancel', function () { if (drag) { drag = null; renderStrips(); } });
+    box.addEventListener('click', function (ev) {
+      if (ev.target.closest && ev.target.closest('[data-prsel="clear"]')) { prSel = null; renderStrips(); }
+    });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && prSel) { prSel = null; renderStrips(); }
     });
   }
 
@@ -2296,6 +2479,7 @@
     svg.addEventListener('pointermove', onPointer);
     svg.addEventListener('pointerdown', onPointer);
     svg.addEventListener('pointerleave', hideCross);
+    initPrecipSelect();
 
     var lastW = $('#chart-wrap').clientWidth, pending = 0;
     var onResize = function () {
