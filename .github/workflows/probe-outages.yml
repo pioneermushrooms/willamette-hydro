@@ -20,47 +20,26 @@ jobs:
         run: |
           set +e +o pipefail
           UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'
-          O='Origin: https://pioneermushrooms.github.io'
-          hdr() { curl -sS -m 25 -A "$UA" -H "$O" -D - -o /tmp/b "$1" | tr -d '\r' | grep -iE '^(HTTP/|content-type|access-control-allow-origin|last-modified|cache-control)'; echo "size $(wc -c < /tmp/b)"; }
-          echo "########## EWEB ArcGIS outage layer"
-          E='https://services7.arcgis.com/6AM8yPAeyXiPc9eF/arcgis/rest/services/PublicOutageMap_Public_View/FeatureServer/0'
-          hdr "$E?f=json"; python3 -c "import json;d=json.load(open('/tmp/b'));print('name',d.get('name'),'geom',d.get('geometryType'));print([ (f['name'],f['type']) for f in d.get('fields',[])])"
-          hdr "$E/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=json&resultRecordCount=3"; head -c 2500 /tmp/b; echo
-          hdr "$E/query?where=1%3D1&returnCountOnly=true&f=json"; cat /tmp/b; echo
-          R='https://services7.arcgis.com/6AM8yPAeyXiPc9eF/arcgis/rest/services/CustomersRestored_Public_View/FeatureServer/0'
-          curl -sS -m 25 "$R?f=json" | python3 -c "import json,sys;d=json.load(sys.stdin);print('restored layer',d.get('name'),[f['name'] for f in d.get('fields',[])])"
-          echo "########## NISC Hosted Outage Map (outagemap.coop)"
-          for slug in laneelectric epud blachlylane; do
-            echo "=== $slug"
-            curl -sS -m 25 -A "$UA" "https://$slug.outagemap.coop/" -o /tmp/p; echo "page $(wc -c < /tmp/p)"; grep -oE '(src|href)="[^"]+\.(js|json)[^"]*"' /tmp/p | head -8
-            for f in summary.json config.json data.json; do
-              u="https://outagemap-data.cloud.coop/$slug/Hosted_Outage_Map/$f"; echo "--- $u"; hdr "$u"; head -c 1200 /tmp/b; echo
-            done
+          echo "########## round 3: NISC full summary + config, coordinate scheme"
+          for slug in epud laneelectric; do
+            echo "=== $slug summary"; curl -sS -m 25 "https://outagemap-data.cloud.coop/$slug/Hosted_Outage_Map/summary.json" | head -c 4200; echo
+            echo "=== $slug config (map/extent keys)"; curl -sS -m 25 "https://outagemap-data.cloud.coop/$slug/Hosted_Outage_Map/config.json" | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          def walk(o,p=''):
+            if isinstance(o,dict):
+              for k,v in o.items():
+                if k in ('logo',): continue
+                walk(v,p+'.'+k)
+            elif isinstance(o,list) and o and not isinstance(o[0],(dict,list)): print(p,o[:6])
+            elif isinstance(o,list):
+              for i,v in enumerate(o[:3]): walk(v,p+'[%d]'%i)
+            else:
+              if any(w in p.lower() for w in ('extent','spatial','region','zoom','center','boundary','coord','proj')): print(p,o)
+          walk(d)"
           done
-          echo "########## Pacific Power"
-          for u in https://www.pacificpower.net/outages-safety/about-outage-map.html https://www.pacificpower.net/outage-map.html https://www.pacificpower.net/outages-safety/report-outage-check-status.html; do
-            echo "--- $u"; curl -sS -L -m 25 -A "$UA" "$u" -o /tmp/p -w '%{http_code}\n'
-            grep -oiE "(kubra[^\"' <>]{0,140}|stormcenter[^\"' <>]{0,140}|outagemap[^\"' <>]{0,140}|outage-map[^\"' <>]{0,100}|iframe[^>]{0,160}|data-src=\"[^\"]{0,160}\")" /tmp/p | sort -u | head -20
-          done
-          echo "########## Consumers Power outage.cpi.coop (full page)"
-          curl -sS -m 25 -A "$UA" https://outage.cpi.coop/ | head -c 2600; echo
-          echo "########## SUB outages page"
-          curl -sS -L -m 25 -A "$UA" https://www.subutil.com/outages/ -o /tmp/p -w '%{http_code}\n'
-          grep -oiE "(kubra[^\"' <>]{0,140}|outagemap[^\"' <>]{0,140}|arcgis[^\"' <>]{0,140}|iframe[^>]{0,200}|\.json[^\"' <>]{0,60})" /tmp/p | sort -u | head -20
-          sed -e 's/<[^>]*>/ /g' /tmp/p | tr -s ' \t\n' | grep -iE 'outage' | head -15
-          echo "########## BPA DIR: all rows, all days (district | name | type | cause | out | in)"
-          for d in Mon Tue Wed Thu Fri Sat Sun; do curl -sS -m 25 -A "$UA" -o /tmp/dir_$d "https://transmission.bpa.gov/Business/Operations/Outages/DIR/$d.HTM"; done
-          python3 - <<'PY'
-          import re, glob, html
-          for f in sorted(glob.glob('/tmp/dir_*')):
-            s = open(f, encoding='latin-1').read()
-            hdr = re.search(r'Outages modified in iTOA ([^<]+)', s)
-            print('==', f, hdr.group(1)[:90] if hdr else '')
-            for lab, tbl in re.findall(r'class="tablelabel">([^<]+)</div>.*?<table[^>]*>(.*?)</table>', s, re.S):
-              print('  [' + lab.strip() + ']')
-              for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', tbl, re.S)[:40]:
-                c = [html.unescape(re.sub(r'<[^>]+>', ' ', x)).replace('\xa0', ' ').strip() for x in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
-                if len(c) >= 10: print('   ', c[9], '|', c[2], '|', c[5], '|', c[6], '|', c[0], '->', c[1])
-          PY
-          echo "--- table labels and row counts"
-          grep -ohE 'class="tablelabel">[^<]+' /tmp/dir_* | sort | uniq -c
+          echo "=== NISC app: how outage x/y are placed"
+          curl -sS -m 25 -A "$UA" https://epud.outagemap.coop/main.aae40e3a65bf642f.js -o /tmp/m.js; wc -c /tmp/m.js
+          grep -oE '.{160}(boundaryExtent|outageExtent|\.x\+|xmin\+|fullExtent).{200}' /tmp/m.js | head -8
+          echo "=== BPA DIR CORS headers"
+          curl -sS -m 25 -A "$UA" -H 'Origin: https://pioneermushrooms.github.io' -D - -o /dev/null https://transmission.bpa.gov/Business/Operations/Outages/DIR/Fri.HTM | tr -d '\r' | grep -iE '^(HTTP/|access-control|content-type|last-modified)'
