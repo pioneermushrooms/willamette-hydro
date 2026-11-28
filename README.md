@@ -103,6 +103,10 @@ The page never moves the view on its own during a refresh. Across a reload (your
 - Toasts stack at the bottom-left (newest at the bottom, at most 5) and fade away on their own (12 s, alerts 25 s; hover pauses). Clicking one opens its project without clearing anything. Opening the bell acknowledges everything: toasts and desktop notifications close and all events are marked read.
 - Desktop notifications (opt-in in the bell panel) show whenever the page is open, with a test notification when turned on; at most 5 per batch and 5 open at once. Some browsers (e.g. Android Chrome without an installed app) do not allow page notifications; the panel says so.
 
+### Trend Recorder readouts
+
+Hovering shows one time label, on the main chart's axis, and a value box beside the cursor on every chart (main chart and strips, same style; values only). Under each strip a summary line gives the current numbers instead of the source (the source is on the strip title's tooltip and the Sources page): latest outflow and inflow with their times; rain in the last 4 h and 24 h and the next 24 h. The below-dam gage is not drawn on the inflow/outflow strip because USACE's outflow is that gage reading (the lines coincide); it is in the project header.
+
 ### Gage below the dam
 
 Each project with a USGS gage directly below it (`BELOW_GAGE` in `js/data.js`: HCRO 14145500, DEXO 14150000, FALO 14151000, COTO 14153500, DORO 14155500, CGRO 14159500, BLUO 14162200, Fern Ridge: Long Tom nr Alvadore 14169000; names verified against USGS 2026-11-28; over 24 h every one matched the USACE outflow reading for reading, median difference ≤ 0.2 %, with USACE posting ~15 min later) shows that gage's discharge as a header cell ("COTO gage 148 cfs"), and the inflow/outflow strip draws it as a dashed green line. It is fetched in the same USGS request as the river gauges. Reason: USACE's computed outflow follows the gage but is posted 15–35 min after each reading (vs 5–15 for USGS), so a release change shows on the gage first. Not listed: LOP (flows into Dexter; its USACE outflow is an hourly average about 40 min old), GPR (nearest gage is below Foster and does not match).

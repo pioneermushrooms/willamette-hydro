@@ -2021,7 +2021,7 @@
     }
     if (fi > 0) {
       tc = g.M.fc.t[fi]; cy = g.y(g.M.fc.v[fi]);
-      html = stamp(tc) + '<br><b>' + fmt(g.M.fc.v[fi], g.M.dec) + ' ' + g.M.unit + '</b><br>NWS forecast';
+      html = '<b>' + fmt(g.M.fc.v[fi], g.M.dec) + ' ' + g.M.unit + '</b><br>NWS forecast';
     } else {
       var i = lastIndexBefore(t, g.M.t);
       if (i < 0) i = 0;
@@ -2030,11 +2030,11 @@
       if (g.M.fz && t > g.M.now && Math.abs(g.M.t[i] - t) > Math.max(3 * HOUR, span / 60)) {
         // Forecast zone: no pool forecast; the rule curve where it is published (rain/inflow on the strips).
         var rf = g.M.rt.length ? H.interpolate({ t: g.M.rt, v: g.M.rv }, t) : null;
-        html = stamp(t) + '<br><span class="fz-tag">FORECAST ZONE</span> +' + fmt((t - g.M.now) / HOUR, 0) + ' h' +
+        html = '<span class="fz-tag">FORECAST</span> +' + fmt((t - g.M.now) / HOUR, 0) + ' h' +
           (rf != null ? '<br>rule curve ' + fmt(rf, 1) + ' ft' : '') + '<br><span class="na">no pool forecast</span>';
       } else if (Math.abs(g.M.t[i] - t) > Math.max(3 * HOUR, span / 60)) {
         // No reading near the cursor (e.g. in the future part of the window): cursor only.
-        html = stamp(t) + '<br><span class="na">no reading</span>';
+        html = '<span class="na">no reading</span>';
       } else {
         tc = g.M.t[i]; cy = g.y(g.M.v[i]);
         if (g.M.res && g.M.rt.length) {
@@ -2049,7 +2049,7 @@
             if (tvv != null) extra += '<br>ODEQ target ' + fmt(tvv, 1) + ' °F';
           }
         }
-        html = stamp(g.M.t[i]) + '<br><b>' + fmt(g.M.v[i], g.M.dec) + ' ' + g.M.unit + '</b>' + extra;
+        html = '<b>' + fmt(g.M.v[i], g.M.dec) + ' ' + g.M.unit + '</b>' + extra;
       }
     }
     cx = g.x(tc);
@@ -2215,6 +2215,25 @@
     setHTML(box, defs.map(function (def) { return stripHTML(def, stripData(e, def, M), g); }).join(''));
   }
 
+  // One line under each strip with the numbers that matter now (the source is on the strip title's tooltip
+  // and on the Sources page): latest inflow/outflow, or rain in the last 4 h / 24 h and the next 24 h.
+  function stripSummary(def, sd) {
+    if (!sd || !sd.lines || !sd.lines.length) return '';
+    var now = Date.now(), obs = sd.lines.filter(function (l) { return !l.fc; }), fc = sd.lines.filter(function (l) { return l.fc; });
+    var sum = function (l, a, b) { var x = 0, n = 0; for (var i = 0; i < l.t.length; i++) if (l.t[i] > a && l.t[i] <= b) { x += l.v[i]; n++; } return n ? x : null; };
+    var cell = function (lab, val) { return '<span class="st-sv"><span class="st-sl">' + esc(lab) + '</span> <b class="mono">' + val + '</b></span>'; };
+    if (def.key === 'precip') {
+      var p = obs[0], f = fc[0], out = [];
+      if (p) { var s4 = sum(p, now - 4 * HOUR, now), s24 = sum(p, now - 24 * HOUR, now); out.push(cell('Last 4 h', s4 == null ? '—' : fmt(s4, 2) + ' in'), cell('Last 24 h', s24 == null ? '—' : fmt(s24, 2) + ' in')); }
+      if (f) { var n24 = sum(f, now, now + 24 * HOUR); if (n24 != null) out.push(cell('Next 24 h', fmt(n24, 2) + ' in')); }
+      return out.join('');
+    }
+    return obs.map(function (l) {
+      var i = l.t.length - 1;
+      return i < 0 ? '' : cell(l.label.replace(/^Computed inflow$/, 'Inflow'), fmt(l.v[i], def.dec) + ' ' + esc(def.unit) + ' <span class="st-at">' + esc(fmtClock.format(l.t[i]).replace(/^24/, '00').slice(0, 5)) + '</span>');
+    }).join('');
+  }
+
   function stripHTML(def, sd, g) {
     var M = g.M, unit = esc(def.unit);
     if (def.key === 'flows' && M.long && sd.lines && M.e.kind === 'reservoir') {
@@ -2231,8 +2250,8 @@
     var keys = sd.lines && sd.lines.length ? sd.lines.map(function (l) { return '<span class="st-key">' + (sd.lines.length > 1 ? '<i class="' + l.cls + '"></i>' + keyLabel(l) : '<span class="st-lab-1">latest</span>') + lastOf(l) + '</span>'; }).join('') : '';
     var note = sd.note ? '<span class="na st-note">' + esc(sd.note) + '</span>' : '';
     var hint = def.key === 'precip' && M.e.kind === 'reservoir' && H.runoff ? '<span class="st-hint">drag across the bars: rain total, volume, pool rise</span>' : '';
-    var head = '<div class="st-head"><b>' + esc(def.label) + '</b> <span class="st-unit">' + unit + '</span>' + keys + note + hint + '<span class="st-read mono"></span></div>';
-    var wrap = function (inner, src, extra) { return '<div class="strip" data-strip="' + def.key + '">' + head + inner + (src ? '<p class="st-src">' + H.linkSources(src) + '</p>' : '') + (extra || '') + '</div>'; };
+    var head = '<div class="st-head"><b' + (sd.src ? ' title="Source: ' + esc(sd.src) + '"' : '') + '>' + esc(def.label) + '</b> <span class="st-unit">' + unit + '</span>' + keys + note + hint + '<span class="st-read mono"></span></div>';
+    var wrap = function (inner, src, extra) { var sm = stripSummary(def, sd); return '<div class="strip" data-strip="' + def.key + '">' + head + inner + (sm ? '<p class="st-sum">' + sm + '</p>' : '') + (extra || '') + '</div>'; };
     if (sd.loading) return wrap('<p class="na loading st-msg">loading…</p>');
     if (sd.empty) return wrap('<p class="na st-msg">' + (sd.error ? 'unavailable (' + esc(sd.error) + ')' : 'not reported for this window') + '</p>', sd.src);
     var vals = [];
@@ -2307,7 +2326,7 @@
     box.querySelectorAll('.strip').forEach(function (el) {
       var view = state.stripView.filter(function (v) { return v.def.key === el.getAttribute('data-strip'); })[0], cur = el.querySelector('.st-cursor'), rd = el.querySelector('.st-read');
       if (!view || !cur || !rd) return;
-      placeCurT(el.querySelector('.cur-t'), x, t);
+      var ct = el.querySelector('.cur-t'); if (ct) ct.style.display = 'none';   // the time is shown once, on the main chart's axis
       if (t == null) { cur.style.display = 'none'; rd.textContent = ''; return; }
       cur.setAttribute('x1', x.toFixed(1)); cur.setAttribute('x2', x.toFixed(1)); cur.style.display = '';
       var tol = Math.max(2 * HOUR, (g.M.end - g.M.start) / 150), ahead = !!g.M.fz && t > g.M.now;
@@ -2323,11 +2342,17 @@
         }
         return (view.sd.lines.length > 1 ? l.label + ' ' : '') + (v != null ? fmt(v, view.def.dec) + ' ' + view.def.unit : '—');
       });
-      // "Fri 03:00 · Outflow 900 cfs · Computed inflow 640 cfs"
-      var html = '<span class="st-rt">' + esc(curLabel(t, true)) + '</span>' + (ahead ? ' <span class="fz-tag">FORECAST</span>' : '') + ' · ' + esc(vals.join(' · '));
-      rd.innerHTML = html;
-      var sv = el.querySelector('.st-svg');   // float the readout at the top of the plot, below the (wrapping) header
-      if (sv) rd.style.top = Math.round(sv.getBoundingClientRect().top - el.getBoundingClientRect().top + 2) + 'px';
+      // Values only (the time is on the main chart's axis): "Outflow 900 cfs · Inflow 640 cfs"
+      rd.innerHTML = (ahead ? '<span class="fz-tag">FORECAST</span> ' : '') + vals.map(function (v) { return '<b>' + esc(v.replace(/^Computed inflow /, 'Inflow ').replace(/^Rain per (hour|day) \(model\) /, 'Rain ').replace(/^Forecast \(model\) /, 'Forecast ').replace(/^Inflow forecast \([^)]*\) /, 'Inflow forecast ')) + '</b>'; }).join('<br>');
+      var sv = el.querySelector('.st-svg');   // a box beside the cursor at the top of the plot, like the main chart's
+      if (sv) {
+        var sr = sv.getBoundingClientRect(), er = el.getBoundingClientRect(), k = sr.width / g.W, px = (sr.left - er.left) + x * k;
+        rd.style.top = Math.round(sr.top - er.top + 4) + 'px';
+        rd.style.right = 'auto';
+        var w = rd.offsetWidth, left = px + 12;
+        if (left + w > er.width - 4) left = px - w - 12;
+        rd.style.left = Math.max(4, Math.round(left)) + 'px';
+      }
     });
   }
 

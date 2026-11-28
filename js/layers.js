@@ -162,9 +162,9 @@
           var lines = [];
           if (r[0].s && r[0].s.t.length) lines.push({ label: 'Outflow', t: r[0].s.t, v: r[0].s.v, cls: 'st-out' });
           if (r[1].s && r[1].s.t.length) lines.push({ label: 'Computed inflow', t: r[1].s.t, v: r[1].s.v, cls: 'st-in' });
-          // Measured flow at the gage below the dam (live 7-day series only).
-          if (useLive && e.gage && live.gage && live.gage.t.length) lines.push({ label: e.gage.short + ' gage (USGS)', t: live.gage.t, v: live.gage.v, cls: 'st-gage' });
-          return { lines: lines, src: 'USACE CWMS ' + e.series.out.name + ', ' + e.series.inflow.name + (useLive ? '' : ' (' + (r[0].how || '') + ')') + (useLive && e.gage && live.gage ? '; USGS ' + e.gage.site + ' discharge' : '') };
+          // (The below-dam USGS gage is not drawn here: USACE's outflow is that gage reading, so the two lines
+          // coincide; the gage is in the project header, where it shows a release change sooner.)
+          return { lines: lines, src: 'USACE CWMS ' + e.series.out.name + ', ' + e.series.inflow.name + (useLive ? '' : ' (' + (r[0].how || '') + ')') };
         });
       if (fcTo && H.inflowFc) p = p.then(function (r) { return H.inflowFc.load().then(function (f) { return withInflowFc(e, r, f, start, fcTo); }); });
     } else if (res && (key === 'temp' || key === 'turb')) {

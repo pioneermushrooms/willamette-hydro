@@ -1580,3 +1580,15 @@ main, .site-footer { max-width: 1680px; }
    shade (and keeps its text bright) to read as part of the card. */
 .ws-tab.on { background: var(--panel-2); border-color: var(--bezel-hi); border-bottom-color: var(--panel-2); color: var(--amber); box-shadow: 0 -3px 12px rgba(0,0,0,0.3); }
 .ws-tab.on::after { background: var(--panel-2); }
+
+/* One value box style on every chart: the main chart's box and each strip's readout match */
+.tooltip, .strip .st-read { padding: 5px 9px; font: 12px/1.4 var(--mono); color: var(--text-2); background: rgba(10,11,13,0.95);
+  border: 1px solid var(--bezel-hi); border-radius: 4px; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,0.45); }
+.tooltip b, .strip .st-read b { color: var(--amber); font-weight: 700; }
+.strip .st-read { max-width: none; }
+/* Under each strip: the numbers that matter now */
+.st-sum { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 2px 10px 4px; font-size: 12px; color: var(--muted); }
+.st-sv { white-space: nowrap; }
+.st-sl { text-transform: uppercase; letter-spacing: 0.06em; font-size: 10.5px; }
+.st-sv b { color: var(--text); font-weight: 600; }
+.st-at { color: var(--muted); font-weight: 400; font-size: 11px; }
