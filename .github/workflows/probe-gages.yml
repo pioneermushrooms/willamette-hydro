@@ -22,11 +22,11 @@ jobs:
           import json, urllib.request, datetime, statistics
           now = datetime.datetime.now(datetime.UTC)
           B = (now - datetime.timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%SZ'); E = now.strftime('%Y-%m-%dT%H:%M:%SZ')
-          P = [('HCR','HCR.Flow-Out.Ave.1Hour.1Hour.CBT-REV','14145500'), ('LOP','LOP.Flow-Out.Ave.1Hour.1Hour.CBT-REV',None),
+          P = [('HCR','HCR.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV','14145500'), ('LOP','LOP.Flow-Out.Ave.1Hour.1Hour.CBT-REV',None),
                ('DEX','DEX.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV','14150000'), ('FAL','FAL.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV','14151000'),
                ('COT','COT.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV','14153500'), ('DOR','DOR.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV','14155500'),
                ('CGR','CGR.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV','14159500'), ('BLU','BLU.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV','14162200'),
-               ('GPR','GPR.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV',None), ('FRN','FRN.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV','14169000')]
+               ('GPR','GPR.Flow-Out.Ave.1Hour.1Hour.CBT-REV','14187200'), ('FRN','FRN.Flow-Out.Inst.0.0.MIXED-COMPUTED-REV','14169000')]
           def get(url, hdr=None):
             r = urllib.request.Request(url, headers=hdr or {'User-Agent': 'probe'})
             return json.load(urllib.request.urlopen(r, timeout=40))
