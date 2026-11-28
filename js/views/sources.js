@@ -26,7 +26,7 @@
   var GROUPS = [
     { title: 'The basics', items: [
       { q: 'Is any of this made up, simulated or filled in?', kind: null,
-        a: '<p>No. Every number is fetched by <b>your browser</b>, directly from the public agency service, each time the page loads and every 5 minutes after that. Nothing is invented: if a request fails or a series is empty, the page says <i>no data</i> rather than guessing. The site’s own test suite checks that no random or seeded data generator exists in the code.</p>' +
+        a: '<p>No. Every number is fetched by <b>your browser</b>, directly from the public agency service, each time the page loads and every 3 minutes after that. Nothing is invented: if a request fails or a series is empty, the page says <i>no data</i> rather than guessing. The site’s own test suite checks that no random or seeded data generator exists in the code.</p>' +
           '<p>The one exception to “fetched by your browser” is the BPA-wide hydro total: BPA’s file cannot be read from a browser, so a scheduled GitHub Action copies it into the site every 30 minutes, unchanged.</p>' },
       { q: 'How can I check a number myself?', kind: null,
         a: '<p>Click the small <b>↗</b> next to any value. It opens the exact agency series it came from, e.g. the raw USACE CWMS series for the last 24 hours (your browser may show it as XML) or the USGS page for that gauge and parameter. The newest value there should match the one here.</p>' +
@@ -45,8 +45,9 @@
         a: '<p>Nobody measures reservoir inflow directly. USACE computes it: <b>inflow = outflow + change in storage ÷ time</b>, with storage from the pool reading and the lake’s elevation–storage table. The series (<code>…Flow-In.Ave.15Minutes.6Hours…</code>) is a new value every 15 minutes, each the <b>average of the past 6 hours</b>, so it lags fast changes by about 3 hours compared with outflow.</p>' +
           '<p>Small pool-reading blips (wind, waves, sensor) become large inflow swings, especially on small lakes: 0.01 ft on a 1,000-acre lake over 15 minutes is about 480 cfs. That is how a value like −200 cfs appears. The site shows it as published; the Calculator uses a 24-hour mean, never below 0.</p>',
         src: [['Example: Blue River inflow', CWMS_TS + 'BLU.Flow-In.Ave.15Minutes.6Hours.MIXED-COMPUTED-REV']] },
-      { q: 'Outflow', kind: 'computed',
-        a: '<p>Total release from the dam, from USACE CWMS. At most projects it is <code>…Flow-Out.Inst.0.0.MIXED-COMPUTED-REV</code>, computed by USACE from gate openings and pool level with the gate ratings; at the two hydropower projects flagged in the code it is an hourly average (<code>…Flow-Out.Ave.1Hour.1Hour.CBT-REV</code>). For a measured check, compare with the USGS gage below the dam on the Tables page.</p>' },
+      { q: 'Outflow, and why it can lag a release change', kind: 'computed',
+        a: '<p>Total release from the dam, from USACE CWMS. At most projects it is <code>…Flow-Out.Inst.0.0.MIXED-COMPUTED-REV</code>, computed by USACE; at the two hydropower projects flagged in the code it is an hourly average (<code>…Flow-Out.Ave.1Hour.1Hour.CBT-REV</code>).</p>' +
+          '<p>At projects with a USGS gage right below the dam (e.g. Cottage Grove: COTO, USGS 14153500) USACE’s outflow follows that gage reading for reading, but USACE posts it later: about 15–35 minutes after the reading, versus 5–15 for USGS. Add up to 3 minutes for this page’s own refresh and a release change can take 20–40 minutes to show as “Outflow”. So the header also shows the <b>gage below the dam</b> (COTO, DORO, DEXO, BLUO, CGRO, HCRO, FALO), straight from USGS, and the inflow/outflow strip draws it as a dashed green line. HCRO and FALO include some tributary inflow below the dam.</p>' },
       { q: 'Storage', kind: 'computed',
         a: '<p>Acre-feet in the reservoir, from USACE CWMS <code>…Stor.Inst.0.0.MIXED-COMPUTED-REV</code>: the pool elevation converted with the USACE elevation–storage rating. Dexter publishes no storage.</p>' },
       { q: 'Rule curve', kind: 'published',

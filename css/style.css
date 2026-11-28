@@ -1379,3 +1379,4 @@ main, .site-footer { max-width: 1680px; }
   padding: 2px 7px; background: rgba(10,11,13,0.92); border: 1px solid var(--bezel-hi); border-radius: 3px; font-size: 11.5px; line-height: 1.35; }
 .strip .st-read:empty { display: none; }
 .st-svg .axis text.st-yin { text-anchor: start; paint-order: stroke; stroke: #0a0c0e; stroke-width: 3px; }
+.st-gage { --st: #199e70; } .st-line.st-gage { stroke-dasharray: 5 3; }

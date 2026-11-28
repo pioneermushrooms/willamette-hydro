@@ -25,7 +25,7 @@
   var DAY = 24 * HOUR;
 
   var SETTINGS = {
-    pollMinutes: 5,
+    pollMinutes: 3,
     historyDays: 7,
     staleHours: 3,        // older than this -> STALE (amber)
     veryStaleHours: 12,   // older than this -> red
@@ -132,9 +132,24 @@
       map: { x: 352, y: 176, lx: -12, ly: 4, anchor: 'end' } }
   ];
 
+  // USGS gage directly below each dam (measured flow; USGS usually posts it sooner than the CWMS
+  // outflow, which USACE computes from it at these projects). Site names verified against USGS
+  // 2026-11-28. HCRO and FALO include tributary inflow below the dam (Salt Creek area, Winberry Creek).
+  // Not listed: LOP (flows into Dexter), GPR (the nearest gage is below Foster), FRN (no gage at the dam).
+  var BELOW_GAGE = {
+    HCR: { site: '14145500', short: 'HCRO', name: 'MF Willamette abv Salt Crk nr Oakridge', note: 'includes some tributary inflow below the dam' },
+    DEX: { site: '14150000', short: 'DEXO', name: 'Middle Fork Willamette nr Dexter' },
+    FAL: { site: '14151000', short: 'FALO', name: 'Fall Creek blw Winberry Creek', note: 'includes Winberry Creek' },
+    COT: { site: '14153500', short: 'COTO', name: 'Coast Fork Willamette blw Cottage Grove Dam' },
+    DOR: { site: '14155500', short: 'DORO', name: 'Row River nr Cottage Grove' },
+    CGR: { site: '14159500', short: 'CGRO', name: 'South Fork McKenzie nr Rainbow' },
+    BLU: { site: '14162200', short: 'BLUO', name: 'Blue River at Blue River' }
+  };
+
   projects.forEach(function (p) {
     var c = p.code;
     p.kind = 'reservoir';
+    p.gage = BELOW_GAGE[c] || null;
     // Only series verified to return public data are listed.
     p.series = {
       elev: { name: c + '.Elev-Forebay.Inst.0.0.MIXED-REV', unit: 'ft' },
@@ -243,7 +258,7 @@
 
   // hours (optional): only the last N hours (incremental refresh).
   function usgsUrl(days, hours) {
-    var sites = stations.map(function (s) { return s.site; }).join(',');
+    var sites = stations.map(function (s) { return s.site; }).concat(projects.filter(function (p) { return p.gage; }).map(function (p) { return p.gage.site; })).join(',');
     return USGS_IV + '?format=json&sites=' + sites + '&parameterCd=00060,00065,00010&period=' + (hours ? 'PT' + Math.ceil(hours) + 'H' : 'P' + (days || SETTINGS.historyDays) + 'D');
   }
 
@@ -390,6 +405,8 @@
         snap.stations[st.id] = parsed[st.site] || {};
         Object.keys(snap.stations[st.id]).forEach(function (k) { if (snap.stations[st.id][k].t.length) snap.sources.usgs.series++; });
       });
+      // Below-dam gage discharge on each project (same request).
+      projects.forEach(function (p) { if (p.gage && snap.projects[p.id]) snap.projects[p.id].gage = (parsed[p.gage.site] || {}).flow || null; });
       snap.sources.usgs.ok = true;
     }, function (err) {
       stations.forEach(function (st) { snap.stations[st.id] = {}; });

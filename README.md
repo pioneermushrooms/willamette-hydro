@@ -92,6 +92,10 @@ Overview is: feed status → four totals tiles → **workspace** → Snowpack.
 
 The page never moves the view on its own during a refresh. Across a reload (yours, or the quiet one after a deploy while the tab is hidden) it remembers the section at the top of the screen and returns to it once data is drawn, holding it there while content above settles (browser scroll restoration is turned off because it landed on the cards).
 
+### Gage below the dam
+
+Each project with a USGS gage directly below it (`BELOW_GAGE` in `js/data.js`: HCRO 14145500, DEXO 14150000, FALO 14151000, COTO 14153500, DORO 14155500, CGRO 14159500, BLUO 14162200; names verified against USGS 2026-11-28) shows that gage's discharge as a header cell ("COTO gage 148 cfs"), and the inflow/outflow strip draws it as a dashed green line. It is fetched in the same USGS request as the river gauges. Reason: USACE's computed outflow follows the gage but is posted 15–35 min after each reading (vs 5–15 for USGS), so a release change shows on the gage first. Not listed: LOP (flows into Dexter), GPR (nearest gage is below Foster), FRN.
+
 ### Source links on every value
 
 Each displayed value has a small **↗** next to its label (cards, detail panel, Hourly Snapshot, Teacup, Calculator live line). It opens the exact series the value came from:
@@ -192,7 +196,7 @@ A plain-language FAQ (`js/views/sources.js`): is anything made up, how to check 
 
 ## No flicker on refresh
 
-Background updates (every 5 min, and the 1-minute age refresh) redraw quietly: the chart's draw-in animation plays only when you pick a point or range; long-range history refreshes in the background every 30 min and keeps the old chart on screen until the new data lands; strips keep their lines while refreshing; and the list, header, "More", totals, feed badges, map, snowpack, strips, chart stats and the chart itself are updated **in place** (`setHTML` in `js/app.js` patches only the text and attributes that changed), so boxes are never rebuilt and animations never restart.
+Background updates (every 3 min, and the 1-minute age refresh) redraw quietly: the chart's draw-in animation plays only when you pick a point or range; long-range history refreshes in the background every 30 min and keeps the old chart on screen until the new data lands; strips keep their lines while refreshing; and the list, header, "More", totals, feed badges, map, snowpack, strips, chart stats and the chart itself are updated **in place** (`setHTML` in `js/app.js` patches only the text and attributes that changed), so boxes are never rebuilt and animations never restart.
 
 The header has one time box: Pacific time, plus "● LIVE · data checked hh:mm · next m:ss" (the old second box showed the last fetch time, which looked like a second, wrong clock).
 

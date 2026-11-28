@@ -212,6 +212,12 @@
         else if (next.since && k !== 'rule') b[k] = H.spliceSeries(a[k], b[k], keepFrom);
       });
     });
+    H.projects.forEach(function (p) {
+      if (!p.gage) return;
+      var a = prev.projects[p.id] || {}, b = next.projects[p.id] || (next.projects[p.id] = {});
+      if (!next.sources.usgs.ok || b.gage == null) { if (a.gage) b.gage = a.gage; }
+      else if (next.since) b.gage = H.spliceSeries(a.gage, b.gage, keepFrom);
+    });
     if (!next.sources.usgs.ok) next.stations = prev.stations;
     else if (next.since) H.stations.forEach(function (st) {
       var a = prev.stations[st.id] || {}, b = next.stations[st.id] || (next.stations[st.id] = {});
@@ -933,7 +939,10 @@
     if (isRes) {
       var w = wxSummary(e), rain = !H.weather || !H.weather.BASINS[e.code] ? '' :
         kv('Rain 24 h <span class="hint">model · basin above the dam</span>', !state.wx ? LOADING : w ? inch(w.past24) : NA, w ? 'in' : '', '', w ? 'Past 24 h, mean of two model points for this basin (not a gauge). Next 24 h: ' + inch(w.next24) + ' in.' : '');
-      h += reservoirReadouts(e, false, rain);
+      var gd = projData(e), gl = gd && H.latest(gd.gage), co = gd && H.latest(gd.out);
+      var gage = !e.gage ? '' : kv(esc(e.gage.short) + ' gage' + H.srcLink({ usgs: e.gage.site, param: '00060' }), !state.snap ? LOADING : gl ? fmt(gl.v, 0) : NA, gl ? 'cfs' : '', '',
+        gl ? 'Measured by USGS ' + e.gage.site + ' (' + esc(e.gage.name) + ') at ' + esc(stamp(gl.t)) + (co ? '; USACE outflow last reported ' + esc(stamp(co.t)) : '') + '. USGS usually posts it sooner than the USACE outflow.' + (e.gage.note ? ' Note: ' + esc(e.gage.note) + '.' : '') : '');
+      h += reservoirReadouts(e, false, gage + rain);
       if (w) h += '<p class="ws-wx">' + wxState(w) + '</p>' + (w.wind ? '<p class="ws-wx">' + windText(w, false) + '</p>' : '');
     } else {
       h += stationReadouts(e, false, floodKv(e));

@@ -7,7 +7,7 @@
   <meta name="description" content="Willamette Valley Hydro Dispatch: a dashboard of South Willamette Valley reservoirs and rivers using live, provisional data from USGS and USACE. Not an official agency site.">
   <title>Willamette Valley Hydro Dispatch · Live USGS &amp; USACE data (provisional)</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111315'/%3E%3Cpath d='M2 11c2-2 4 2 6 0s4 2 6 0' stroke='%2339d0e0' stroke-width='2' fill='none'/%3E%3Ccircle cx='8' cy='5' r='2' fill='%23ffb000'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/style.css?v=814b43eb7a">
+  <link rel="stylesheet" href="css/style.css?v=64ced94c8c">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -34,7 +34,7 @@
         <span class="readout-label">Pacific Time</span>
         <span class="readout-value mono" id="clock">--:--:--</span>
         <span class="readout-sub mono" id="clock-date">---</span>
-        <span class="readout-sub mono readout-live"><span class="live-dot pending" id="live-dot" aria-hidden="true"></span><span id="live-label">CONNECTING</span> · data checked <span id="last-fetch">--:--</span> · <span id="next-poll">every 5 min</span></span>
+        <span class="readout-sub mono readout-live"><span class="live-dot pending" id="live-dot" aria-hidden="true"></span><span id="live-label">CONNECTING</span> · data checked <span id="last-fetch">--:--</span> · <span id="next-poll">every 3 min</span></span>
       </div>
     </div>
   </header>
@@ -165,30 +165,30 @@
     </div>
     <p>River data: <a href="https://waterservices.usgs.gov/" rel="noopener">USGS NWIS Instantaneous Values</a> (provisional data subject to revision). Flood categories and river forecasts: <a href="https://water.noaa.gov/" rel="noopener">NOAA National Water Prediction Service</a> (NWS/NWRFC). Reservoir data: <a href="https://cwms-data.usace.army.mil/cwms-data/" rel="noopener">USACE CWMS Data API</a>, office NWDP, also viewable at <a href="https://water.sec.usace.army.mil/" rel="noopener">water.sec.usace.army.mil</a>. Regional hydro: <a href="https://transmission.bpa.gov/business/operations/Wind/baltwg.txt" rel="noopener">BPA balancing-authority totals</a>, copied every 30 minutes.</p>
     <p>Values marked “derived” are calculated by this site. Status lights are this site’s own classification. Do not use this page for safety, navigation, recreation or operational decisions; consult the official sources.</p>
-    <p class="mono small">MIT License · static site · browser polls USGS/USACE every 5 min</p>
+    <p class="mono small">MIT License · static site · browser polls USGS/USACE every 3 min</p>
   </footer>
 
-  <script src="js/data.js?v=814b43eb7a"></script>
-  <script src="js/history.js?v=814b43eb7a"></script>
-  <script src="js/cwms-levels.js?v=814b43eb7a"></script>
-  <script src="js/nwps.js?v=814b43eb7a"></script>
-  <script src="js/tdg.js?v=814b43eb7a"></script>
-  <script src="js/snotel.js?v=814b43eb7a"></script>
-  <script src="js/weather.js?v=814b43eb7a"></script>
-  <script src="js/hazards.js?v=814b43eb7a"></script>
-  <script src="js/outages.js?v=814b43eb7a"></script>
-  <script src="js/teacup-core.js?v=814b43eb7a"></script>
-  <script src="js/zoom.js?v=814b43eb7a"></script>
-  <script src="js/layers.js?v=814b43eb7a"></script>
-  <script src="js/pastyears.js?v=814b43eb7a"></script>
-  <script src="js/ratings.js?v=814b43eb7a"></script>
-  <script src="js/drawdown.js?v=814b43eb7a"></script>
-  <script src="js/views/tables.js?v=814b43eb7a"></script>
-  <script src="js/views/calc.js?v=814b43eb7a"></script>
-  <script src="js/views/sources.js?v=814b43eb7a"></script>
-  <script src="js/views/docs.js?v=814b43eb7a"></script>
-  <script src="js/router.js?v=814b43eb7a"></script>
-  <script src="js/app.js?v=814b43eb7a"></script>
-  <script src="js/update-check.js?v=814b43eb7a"></script>
+  <script src="js/data.js?v=64ced94c8c"></script>
+  <script src="js/history.js?v=64ced94c8c"></script>
+  <script src="js/cwms-levels.js?v=64ced94c8c"></script>
+  <script src="js/nwps.js?v=64ced94c8c"></script>
+  <script src="js/tdg.js?v=64ced94c8c"></script>
+  <script src="js/snotel.js?v=64ced94c8c"></script>
+  <script src="js/weather.js?v=64ced94c8c"></script>
+  <script src="js/hazards.js?v=64ced94c8c"></script>
+  <script src="js/outages.js?v=64ced94c8c"></script>
+  <script src="js/teacup-core.js?v=64ced94c8c"></script>
+  <script src="js/zoom.js?v=64ced94c8c"></script>
+  <script src="js/layers.js?v=64ced94c8c"></script>
+  <script src="js/pastyears.js?v=64ced94c8c"></script>
+  <script src="js/ratings.js?v=64ced94c8c"></script>
+  <script src="js/drawdown.js?v=64ced94c8c"></script>
+  <script src="js/views/tables.js?v=64ced94c8c"></script>
+  <script src="js/views/calc.js?v=64ced94c8c"></script>
+  <script src="js/views/sources.js?v=64ced94c8c"></script>
+  <script src="js/views/docs.js?v=64ced94c8c"></script>
+  <script src="js/router.js?v=64ced94c8c"></script>
+  <script src="js/app.js?v=64ced94c8c"></script>
+  <script src="js/update-check.js?v=64ced94c8c"></script>
 </body>
 </html>
