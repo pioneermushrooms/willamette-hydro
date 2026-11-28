@@ -1,6 +1,6 @@
 name: Probe inflow forecasts (temporary)
 
-# Diagnostic: which reservoir inflow forecast series CWMS publishes per project, how far ahead, how often issued.
+# Round 2: reservoir inflow forecasts from NOAA (NWPS gauges in the basin; NWRFC station pages).
 on:
   push:
     branches: [claude/hourly-pool-data-retrieval-1m4bt8]
@@ -18,31 +18,31 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import json, urllib.request, urllib.parse, datetime
-          now = datetime.datetime.now(datetime.UTC)
-          H = {'Accept': 'application/json;version=2', 'User-Agent': 'probe'}
-          def get(u, h=H):
-            return json.load(urllib.request.urlopen(urllib.request.Request(u, headers=h), timeout=40))
-          for code in ['HCR','LOP','DEX','FAL','GPR','CGR','BLU','FRN','COT','DOR']:
-            try:
-              cat = get('https://cwms-data.usace.army.mil/cwms-data/catalog/TIMESERIES?office=NWDP&page-size=100&like=' + urllib.parse.quote(code + r'\.Flow-In\..*FCST.*'))
-              names = [e['name'] for e in cat.get('entries', [])]
-            except Exception as e:
-              names = []; print(code, 'catalog error', e)
-            print('==', code, names)
-            for n in names:
-              B = (now - datetime.timedelta(days=2)).strftime('%Y-%m-%dT%H:%M:%SZ'); E = (now + datetime.timedelta(days=12)).strftime('%Y-%m-%dT%H:%M:%SZ')
-              try:
-                d = get('https://cwms-data.usace.army.mil/cwms-data/timeseries?office=NWDP&unit=EN&page-size=5000&begin=%s&end=%s&name=%s' % (B, E, urllib.parse.quote(n)))
-                v = [x for x in d.get('values', []) if x[1] is not None]
-                fut = [x for x in v if x[0] > now.timestamp()*1000]
-                f = lambda x: datetime.datetime.fromtimestamp(x[0]/1000, datetime.UTC).strftime('%m-%d %H:%M')
-                print('   ', n, '| pts', len(v), 'future', len(fut), '| first', f(v[0]) if v else '-', 'last', f(v[-1]) if v else '-', '| sample', [(f(x), round(x[1])) for x in fut[:6:2]], '| version-date', d.get('version-date'), d.get('date-version-type'))
-              except Exception as e:
-                print('   ', n, 'error', e)
-          print('== versions endpoint for COT RFC-VERSIONED (if any)')
+          import json, urllib.request, re
+          def get(u, js=True):
+            r = urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': 'probe', 'Accept': '*/*'}), timeout=40)
+            b = r.read(); h = dict(r.headers)
+            return (json.loads(b) if js else b.decode('utf-8', 'replace')), h
           try:
-            d = get('https://cwms-data.usace.army.mil/cwms-data/timeseries?office=NWDP&unit=EN&name=COT.Flow-In.Inst.~6Hours.0.RFC-VERSIONED-FCST&begin=%s&end=%s' % ((now - datetime.timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%SZ'), (now + datetime.timedelta(days=12)).strftime('%Y-%m-%dT%H:%M:%SZ')))
-            print({k: d.get(k) for k in ('version-date','date-version-type','total')})
-          except Exception as e: print('err', e)
+            d, h = get('https://api.water.noaa.gov/nwps/v1/gauges?bbox.xmin=-123.8&bbox.ymin=43.3&bbox.xmax=-121.7&bbox.ymax=44.7&srid=EPSG_4326')
+            gs = d.get('gauges', d if isinstance(d, list) else [])
+            print('NWPS gauges in box:', len(gs), '| CORS', h.get('Access-Control-Allow-Origin'))
+            for g in gs:
+              print('  ', g.get('lid'), '|', g.get('name'), '|', (g.get('status') or {}).get('forecast', {}).get('primary'), (g.get('status') or {}).get('forecast', {}).get('secondary'))
+          except Exception as e:
+            print('NWPS list error', e)
+          for lid in ['LOPO3','DEXO3','HCRO3','FALO3','CGRO3','BLUO3','FRNO3','COTO3','DORO3','GPRO3','CGLO3','LKPO3','FCLO3','BLRO3']:
+            try:
+              d, h = get('https://api.water.noaa.gov/nwps/v1/gauges/%s/stageflow/forecast' % lid)
+              data = d.get('data', [])
+              print(lid, 'forecast pts', len(data), 'issued', d.get('issuedTime'), 'units', d.get('primaryUnits'), d.get('secondaryUnits'), 'first', data[:1], 'last', data[-1:])
+            except Exception as e:
+              print(lid, 'err', str(e)[:80])
+          for sid in ['COTO3','LOPO3','CGRO3','BLUO3','FRNO3']:
+            for u in ['https://www.nwrfc.noaa.gov/station/flowplot/textPlot.cgi?id=%s&pe=QI' % sid, 'https://www.nwrfc.noaa.gov/river/station/flowplot/flowplot.cgi?lid=%s' % sid]:
+              try:
+                t, h = get(u, js=False)
+                print('NWRFC', u, len(t), 'CORS', h.get('Access-Control-Allow-Origin'), '|', re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', t))[:400])
+              except Exception as e:
+                print('NWRFC', u, 'err', str(e)[:80])
           PY
