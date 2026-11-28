@@ -141,9 +141,10 @@
         }).join('');
     var perm = canDesktop() ? Notification.permission : 'unsupported';
     els.desk.checked = !!st.desktop && perm === 'granted';
-    els.desk.disabled = perm === 'unsupported' || perm === 'denied';
+    els.desk.disabled = false;   // always clickable: a blocked or unsupported state is explained on click
+    if (els.deskTest) els.deskTest.hidden = !(st.desktop && perm === 'granted');
     els.deskNote.textContent = perm === 'unsupported' ? 'Not supported by this browser.'
-      : perm === 'denied' ? 'Blocked for this site. Allow notifications in the browser’s site settings (padlock icon left of the address), then reload.'
+      : perm === 'denied' ? 'Blocked for this site. Allow notifications in the browser’s site settings (padlock icon left of the address › Notifications › Allow), then tick this again.'
         : st.deskErr ? st.deskErr
           : st.desktop && perm === 'granted' ? 'On: events also pop up on your desktop while this page is open (any tab or window).' : 'Pop up events on your desktop while this page is open.';
     els.readAll.disabled = !unread();
@@ -187,22 +188,48 @@
       if (ev.target.closest('.ev-close')) closePanel(true);
       if (ev.target.closest('.ev-readall')) markRead();
     });
+    // Turning desktop notifications on: ask the browser (this click is the user gesture it needs), then
+    // say exactly what came back, so a blocked or dismissed prompt is visible instead of a silent untick.
+    var deskMsg = function (txt) { st.deskErr = txt; els.deskNote.textContent = txt; };
+    var testNote = function () {
+      var n = note('Desktop notifications are on', 'Rain, wind, fires, alerts, outages, forecasts and release changes will pop up here while Hydro Dispatch is open.', 'wvhd-test-' + Date.now());
+      return !!n;
+    };
     els.desk.addEventListener('change', function () {
-      if (!els.desk.checked) { st.desktop = false; E.saveStore(st); renderPanel(); return; }
-      if (!canDesktop()) { els.desk.checked = false; return; }
-      var called = false;
-      var done = function (p) {
-        if (called) return; called = true;
-        st.desktop = p === 'granted'; st.deskErr = null;
-        if (st.desktop && !note('Desktop notifications are on', 'Rain, wind, fires, alerts, outages, forecasts and release changes will pop up here while Hydro Dispatch is open.', 'wvhd-test'))
-          { st.desktop = false; st.deskErr = 'This browser would not show a notification from the page (on Android Chrome it needs an installed app). Toasts in the page still work.'; }
+      if (!els.desk.checked) { st.desktop = false; st.deskErr = null; E.saveStore(st); renderPanel(); return; }
+      if (!canDesktop()) {
+        els.desk.checked = false;
+        deskMsg(/iPhone|iPad|iPod/.test(navigator.userAgent) ? 'iPhone/iPad Safari only allows notifications for sites added to the Home Screen (Share › Add to Home Screen), then opened from there.' : 'This browser has no notification support for web pages.');
+        return;
+      }
+      deskMsg('Asking the browser for permission… (look for a prompt near the address bar)');
+      var settled = false;
+      var finish = function (p) {
+        if (settled) return; settled = true;
+        p = p || Notification.permission;
+        if (p === 'granted') {
+          if (testNote()) { st.desktop = true; st.deskErr = null; }
+          else { st.desktop = false; st.deskErr = 'Permission is granted, but the browser refused to show a notification from the page (Android Chrome needs an installed app). Pop-ups inside the page still work.'; }
+        } else if (p === 'denied') {
+          st.desktop = false; st.deskErr = 'The browser blocked notifications for this site. Allow them in site settings (the padlock or settings icon left of the address › Notifications › Allow), then tick this again.';
+        } else {
+          st.desktop = false; st.deskErr = 'No answer from the browser: the prompt was dismissed or hidden (Chrome may show a small crossed-out bell in the address bar instead). Click that icon and choose Allow, or tick this again.';
+        }
         E.saveStore(st); renderPanel();
       };
-      if (Notification.permission === 'granted') done('granted');
-      else {
-        try { var r = Notification.requestPermission(done); if (r && r.then) r.then(done, function () { done(Notification.permission); }); }
-        catch (err) { Notification.requestPermission().then(done); }   // promise-only browsers
+      if (Notification.permission === 'granted') { finish('granted'); return; }
+      try {
+        var r = Notification.requestPermission(function (p) { finish(p); });
+        if (r && typeof r.then === 'function') r.then(finish, function () { finish(); });
+      } catch (err) {
+        try { Notification.requestPermission().then(finish, function () { finish(); }); } catch (e2) { finish(); }
       }
+      // Some browsers never call back when the prompt is suppressed; report after a while.
+      setTimeout(function () { if (!settled) finish(Notification.permission); }, 15000);
+    });
+    if (els.deskTest) els.deskTest.addEventListener('click', function () {
+      if (!canDesktop() || Notification.permission !== 'granted') { deskMsg('Turn desktop notifications on first.'); return; }
+      deskMsg(testNote() ? 'Test sent. If nothing appeared, check that your system allows notifications from this browser (Windows: Settings › System › Notifications; macOS: System Settings › Notifications) and that Do Not Disturb / Focus is off.' : 'The browser refused to show the notification.');
     });
     document.addEventListener('click', function (ev) { if (isOpen() && !els.panel.contains(ev.target) && ev.target !== els.bell) closePanel(); });
     document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && isOpen()) closePanel(true); });
@@ -238,6 +265,7 @@
     els.list = els.panel.querySelector('.ev-list');
     els.desk = els.panel.querySelector('#ev-desktop');
     els.deskNote = els.panel.querySelector('.ev-desk-note');
+    els.deskTest = document.getElementById('ev-desk-test');
     els.readAll = els.panel.querySelector('.ev-readall');
     bind();
     renderBell();
