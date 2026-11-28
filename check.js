@@ -466,6 +466,48 @@ console.log('tdg / snotel / odeq');
     check(ww.speed === 12 && ww.gust === 25 && ww.from === 'SW' && ww.past24.gust === 25 && ww.next24.gust === 60 && ww.next24.t === T0 + 4 * Hr && ww.next24.level === 'warning', 'weather: wind now, past and next-24 h peak gusts');
   }
 
+  // Rain -> runoff -> pool rise (js/runoff.js), NWRFC inflow forecast file (js/inflowfc.js)
+  {
+    const RO = require('./js/runoff.js'), IF = require('./js/inflowfc.js'), WX = require('./js/weather.js'), Hr = 3600e3, Dy = 24 * Hr, D0 = Date.UTC(2026, 9, 1);
+    check(Math.abs(RO.rainVolume(1, 100) - 5333) < 1e-9 && Math.abs(RO.rainVolume(0.5, 389) - 0.5 * 389 * 53.33) < 1e-9, 'runoff: rain volume = in × sq mi × 53.33 ac-ft');
+    // Hourly bars (value = total for the hour ending at t); forecast line after now.
+    const now = D0 + 10 * Hr, past = { t: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((h) => D0 + h * Hr), v: [0, 0.1, 0.1, 0.1, 0, 0, 0, 0, 0.2, 0.2] };
+    const fut = { t: [11, 12, 13].map((h) => D0 + h * Hr), v: [0.3, 0.3, 0], fc: true };
+    const sr = RO.spanRain([past, fut], D0 + 1 * Hr, D0 + 12 * Hr, now);
+    check(Math.abs(sr.total - 1.3) < 1e-9 && Math.abs(sr.fcst - 0.6) < 1e-9 && sr.n === 11 && sr.nFc === 2 && sr.from === D0 + Hr && sr.to === D0 + 12 * Hr, 'runoff: span rain total and forecast share (bar centres inside the span)');
+    const dl = RO.daily([D0 + Hr, D0 + 24 * Hr, D0 + 25 * Hr], [0.1, 0.2, 0.3], 'sum', 1, 1);
+    check(dl.t.join() === [D0, D0 + Dy].join() && Math.abs(dl.v[0] - 0.3) < 1e-9 && Math.abs(dl.v[1] - 0.3) < 1e-9, 'runoff: hourly sums stamped at hour end fall into the right day');
+    // 40 days, baseflow 500 cfs; 2 in on days 10-11 -> 0.5 ratio over 100 sq mi = 5,333 ac-ft = 2,688.7 cfs-days.
+    const mkDays = (f) => { const s = { t: [], v: [] }; for (let d = 0; d < 40; d++) { s.t.push(D0 + d * Dy); s.v.push(f(d)); } return s; };
+    const ex = 5333 / 1.9835, excess = { 10: 0.4 * ex, 11: 0.3 * ex, 12: 0.2 * ex, 13: 0.1 * ex };
+    const rain = mkDays((d) => (d === 10 || d === 11 ? 1 : 0.02)), inflow = mkDays((d) => 500 + (excess[d] || 0));
+    const r1 = RO.deriveRatio(rain, inflow, 100);
+    check(!r1.fallback && r1.events === 1 && Math.abs(r1.rainIn - 2) < 1e-9 && Math.abs(r1.ratio - 0.5) < 1e-6 && Math.abs(r1.runoffAcft - 5333) < 1e-6, 'runoff: ratio from a synthetic event = runoff above baseflow / rain volume (0.5) — got ' + r1.ratio);
+    const r2 = RO.deriveRatio(rain, mkDays((d) => 500 + (excess[d] || 0) * 4), 100);
+    check(!r2.fallback && r2.clamped && r2.ratio === 0.9 && r2.raw > 1.9, 'runoff: ratio clamped to 0.9');
+    const r3 = RO.deriveRatio(mkDays((d) => (d === 10 ? 0.5 : 0)), inflow, 100);
+    check(r3.fallback && r3.ratio === 0.4 && /0\.5 in/.test(r3.reason), 'runoff: under 1 in of event rain -> default 0.4 with a reason');
+    const r4 = RO.deriveRatio(mkDays((d) => (d === 38 || d === 39 ? 1 : 0)), inflow, 100);
+    check(r4.fallback && r4.events === 0 && r4.skipped === 1, 'runoff: an event still running off at the end of the record is skipped');
+    check(RO.deriveRatio(null, inflow, 100).fallback, 'runoff: no record -> default');
+    const pr = RO.poolRise([100, 200], [0, 10000], 150, 500);
+    check(Math.abs(pr.stor0 - 5000) < 1e-9 && Math.abs(pr.dElev - 5) < 1e-9 && Math.abs(pr.elev1 - 155) < 1e-9, 'runoff: pool rise from a linear elevation–storage rating (100 ac-ft/ft)');
+    check(RO.poolRise([100, 200], [0, 10000], 150, 6000).error && RO.poolRise([100, 200], [0, 10000], 250, 10).error && RO.poolRise(null, null, 1, 1).error, 'runoff: above the rating / outside it / no rating -> error');
+    // Inflow forecast file
+    const fj = { fetchedAt: '2026-11-28T00:00:00Z', errors: ['DEX DEXO3: no forecast rows'], projects: { COT: { lid: 'COTO3', name: 'X (COTO3)', issued: '2026-11-27T21:50:00.000Z', obs: [[2, 200], [1, 210]], fcst: [[D0 + 6 * Hr, 428.5], [D0, 400], [D0 + 12 * Hr, null]], page: 'https://www.nwrfc.noaa.gov/river/station/flowplot/flowplot.cgi?lid=COTO3' }, FAL: { lid: 'FALO3', fcst: [] } } };
+    const fp = IF.parse(fj);
+    check(fp.projects.COT && fp.projects.COT.t.join() === [D0, D0 + 6 * Hr].join() && fp.projects.COT.v[1] === 428.5 && fp.projects.COT.issued === Date.UTC(2026, 10, 27, 21, 50) && fp.projects.COT.obs.t[0] === 1 && !fp.projects.FAL, 'inflow forecast: file parsed (sorted, nulls dropped, empty projects left out)');
+    const H1 = require('./js/data.js'); H1.levels = require('./js/cwms-levels.js'); H1.history = require('./js/history.js');
+    const LY2 = require('./js/layers.js'), cot = H1.projects.find((p) => p.code === 'COT'), hcr = H1.projects.find((p) => p.code === 'HCR');
+    const wf = LY2.withInflowFc(cot, { lines: [], src: 'x' }, fp, D0 - Dy, D0 + 3 * Dy);
+    check(wf.lines.length === 1 && wf.lines[0].fc && /st-fcl/.test(wf.lines[0].cls) && wf.lines[0].issued === fp.projects.COT.issued && /NWRFC/.test(wf.src), 'inflow forecast: dashed forecast line added to the inflow / outflow strip');
+    const wn = LY2.withInflowFc(hcr, { lines: [], src: 'x' }, fp, D0, D0 + Dy);
+    check(!wn.lines.length && /No NWRFC inflow forecast for Hills Creek/.test(wn.note), 'inflow forecast: missing project -> strip note — ' + wn.note);
+    check(WX.fcDaysFor(Date.now() + 3 * Dy, Date.now()) === 4 && WX.fcDaysFor(Date.now(), Date.now()) === 1 && WX.fcDaysFor(Date.now() + 40 * Dy, Date.now()) === 16, 'weather: forecast days for a window reaching into the future');
+    const appF = fs.readFileSync(path.join(__dirname, 'js', 'app.js'), 'utf8'), idxF = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+    check(/FC_ZONE_H = \{ '24h': 72, '7d': 72, '30d': 168 \}/.test(appF) && /initPrecipSelect\(\)/.test(appF) && idxF.indexOf('js/inflowfc.js') > idxF.indexOf('js/data.js') && idxF.indexOf('js/runoff.js') < idxF.indexOf('js/app.js') && idxF.indexOf('js/inflowfc.js') < idxF.indexOf('js/app.js'), 'trend recorder: forecast zone and rain selection wired; inflowfc/runoff scripts before app');
+  }
+
   // ODEQ 2006 TMDL target: monthly steps (interpolate-string F), degC -> degF
   const odeq = LV.compact({ levels: [{ 'location-level-id': 'DEX.Temp-Water.Inst.0.ODEQ-2006TMDL-Target', 'level-units-id': 'C', 'level-date': '2012-01-01T08:00:00Z',
     'interval-origin': '2012-01-01T08:00:00Z', 'interval-months': 12, 'interpolate-string': 'F',

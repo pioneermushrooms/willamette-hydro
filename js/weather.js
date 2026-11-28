@@ -282,10 +282,11 @@
   }
 
   // Strip series for one project over [start, end]: hourly (≤ 92 days back) or daily (archive).
+  // An `end` in the future also returns the forecast hours up to it (at most 16 days ahead).
   function loadRange(code, start, end) {
-    var back = Math.ceil((Date.now() - start) / DAY) + 1;
+    var now = Date.now(), back = Math.ceil((now - start) / DAY) + 1;
     if (back <= 92) {
-      return H.http.fetchJson(url([code], back, 1), {}, 45000, 2).then(function (j) {
+      return H.http.fetchJson(url([code], back, fcDaysFor(end, now)), {}, 45000, 2).then(function (j) {
         var s = parse(j, [code])[code];
         return { s: s, hourly: true, src: 'Open-Meteo weather model, hourly precipitation, basin mean of ' + BASINS[code].pts.length + ' points (model, not gauges)' };
       });
@@ -296,6 +297,9 @@
       return { s: s, hourly: false, src: 'Open-Meteo archive (ERA5 reanalysis), daily precipitation, basin mean (model; ~5-day lag)' };
     });
   }
+
+  // forecast_days for a window ending at `end`: 1 (today) when it ends now, else enough to reach it.
+  function fcDaysFor(end, now) { return end > now ? Math.min(16, Math.ceil((end - now) / DAY) + 1) : 1; }
 
   function pageUrl(code) {
     var p = BASINS[code] && BASINS[code].pts[1];
@@ -310,7 +314,7 @@
     BASE: BASE, BASINS: BASINS, CODES: CODES, WET: WET, DRY_GAP: DRY_GAP, ACFT_PER_IN_SQMI: ACFT_PER_IN_SQMI,
     url: url, archiveUrl: archiveUrl, parse: parse, summarize: summarize, sumBetween: sumBetween, condition: condition, windLevel: windLevel, compass: compass,
     snotelUrl: snotelUrl, parseSnotel: parseSnotel, accumDiff: accumDiff, stationsFor: stationsFor, pstMs: pstMs,
-    load: load, loadSnotel: loadSnotel, loadRange: loadRange, pageUrl: pageUrl, nwsUrl: nwsUrl,
+    load: load, loadSnotel: loadSnotel, loadRange: loadRange, fcDaysFor: fcDaysFor, pageUrl: pageUrl, nwsUrl: nwsUrl,
     _clear: function () { cache = null; snoCache = null; }
   };
 });

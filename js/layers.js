@@ -12,6 +12,9 @@
  *               TDG below the dam   USACE CWMS DEXO / CGRO %-Saturation-TDG (js/tdg.js)
  *   rivers      whichever of flow, stage, water temp, turbidity is not on the main chart (USGS IV/DV)
  * Series that a site does not publish show "not reported" in their strip rather than failing.
+ * Reservoirs on 24 H / 7 D / 30 D: the time axis runs past "now" into a forecast zone; basin rain
+ * shows the model's forecast hours there (faded) and inflow / outflow the NWRFC inflow forecast
+ * (dashed, data/inflow-fcst.json via js/inflowfc.js) where NWRFC publishes one.
  *
  * Long windows use reduced data: CWMS as 6-hour means beyond 35 days, USGS daily means beyond
  * 120 days (the IV service limit). Results are cached for 10 minutes per point, layer and window.
@@ -140,12 +143,15 @@
   function liveCovers(s, start) { return s && s.t && s.t.length && s.t[0] <= start + 2 * HOUR; }
 
   /*
-   * Data for one strip over [start, end]. Resolves { lines: [{ label, t, v, cls }], src, empty }.
+   * Data for one strip over [start, end]. Resolves { lines: [{ label, t, v, cls, fc, bars, issued }], src, note, empty }.
    * e: project or station; key: strip key; live: the entity's live 7-day data (snapshot) or null;
-   * mainParam: for rivers, the parameter already on the main chart.
+   * until: end of the forecast zone right of "now" (reservoirs), or null. With it the precipitation strip
+   * also returns the forecast hours (a second line, fc: true) and inflow / outflow adds the NWRFC inflow
+   * forecast (js/inflowfc.js; dashed, fc: true) or a note that there is none for this project.
    */
-  function load(e, key, start, end, live) {
-    var ck = e.id + '|' + key + '|' + Math.round(start / (5 * 60000)) + '|' + Math.round(end / (5 * 60000)), c = cache[ck];
+  function load(e, key, start, end, live, until) {
+    var fcTo = until && until > Date.now() ? until : null;
+    var ck = e.id + '|' + key + '|' + Math.round(start / (5 * 60000)) + '|' + Math.round(end / (5 * 60000)) + (fcTo ? '|f' + Math.round(fcTo / HOUR) : ''), c = cache[ck];
     if (c && Date.now() - c.at < TTL) return c.p;
     var p, res = e.kind === 'reservoir';
     var one = function (r, label, cls, src) { return { lines: r.s && r.s.t.length ? [{ label: label, t: r.s.t, v: r.s.v, cls: cls }] : [], src: src + (r.how ? ' (' + r.how + ')' : '') }; };
@@ -160,6 +166,7 @@
           if (useLive && e.gage && live.gage && live.gage.t.length) lines.push({ label: e.gage.short + ' gage (USGS)', t: live.gage.t, v: live.gage.v, cls: 'st-gage' });
           return { lines: lines, src: 'USACE CWMS ' + e.series.out.name + ', ' + e.series.inflow.name + (useLive ? '' : ' (' + (r[0].how || '') + ')') + (useLive && e.gage && live.gage ? '; USGS ' + e.gage.site + ' discharge' : '') };
         });
+      if (fcTo && H.inflowFc) p = p.then(function (r) { return H.inflowFc.load().then(function (f) { return withInflowFc(e, r, f, start, fcTo); }); });
     } else if (res && (key === 'temp' || key === 'turb')) {
       var bd = BELOW_DAM[e.code];
       p = bd ? usgs(bd.site, key, start, end).then(function (r) { return one(r, key === 'temp' ? 'Water temp' : 'Turbidity', 'st-a', 'USGS ' + bd.site + ' ' + bd.name + ', ' + PCODE[key]); })
@@ -168,10 +175,16 @@
       p = TDG[e.code] ? cwms({ name: TDG[e.code], unit: '%' }, start, end).then(function (r) { return one(r, 'TDG', 'st-a', 'USACE CWMS ' + TDG[e.code]); })
         : Promise.resolve({ lines: [], src: 'No public TDG series below ' + e.name + ' (published for Dexter and Cougar only).' });
     } else if (res && key === 'precip') {
-      p = H.weather.loadRange(e.code, start, end).then(function (r) {
-        var s = r.s, now = Date.now();
-        if (s) { var k = 0; while (k < s.t.length && s.t[k] <= now) k++; s = { t: s.t.slice(0, k), p: s.p.slice(0, k) }; }   // past hours only
-        return { lines: s && s.t.length ? [{ label: r.hourly ? 'Rain per hour (model)' : 'Rain per day (model)', t: s.t, v: s.p, cls: 'st-a' }] : [], src: r.src };
+      p = H.weather.loadRange(e.code, start, fcTo || end).then(function (r) {
+        var s = r.s, now = Date.now(), lines = [];
+        if (s) {
+          // Past hours solid; forecast hours (only with a forecast zone) as their own, faded line.
+          var k = 0; while (k < s.t.length && s.t[k] <= now) k++;
+          var m = k; if (fcTo) while (m < s.t.length && s.t[m] <= fcTo) m++;
+          if (k) lines.push({ label: r.hourly ? 'Rain per hour (model)' : 'Rain per day (model)', t: s.t.slice(0, k), v: s.p.slice(0, k), cls: 'st-a', bars: true });
+          if (m > k) lines.push({ label: 'Forecast (model)', t: s.t.slice(k, m), v: s.p.slice(k, m), cls: 'st-a st-pfc', bars: true, fc: true });
+        }
+        return { lines: lines, src: r.src + (fcTo && s && s.t.length ? '; faded: forecast hours of the same model' : '') };
       });
     } else if (!res && PCODE[key]) {
       var lbl = { flow: 'Discharge', stage: 'Gage height', temp: 'Water temp', turb: 'Turbidity' }[key];
@@ -180,6 +193,22 @@
     p = p.then(function (r) { r.empty = !r.lines.length; return r; }, function (err) { delete cache[ck]; return { lines: [], src: '', empty: true, error: err.message || 'failed' }; });
     cache[ck] = { at: Date.now(), p: p };
     return p;
+  }
+
+  // Adds the NWRFC inflow forecast (f: js/inflowfc.js result) to an inflow / outflow strip result.
+  function withInflowFc(e, r, f, start, until) {
+    var pf = f && f.projects && f.projects[e.code];
+    if (!pf) {
+      r.note = 'No NWRFC inflow forecast for ' + e.name + (f && f.error ? ' (forecast file unavailable: ' + f.error + ')' : '') + '.';
+      return r;
+    }
+    var t = [], v = [];
+    // Forecast points in the window, plus one either side so the line reaches the edges.
+    pf.t.forEach(function (ft, i) { if ((ft >= start && ft <= until) || (pf.t[i + 1] >= start && ft < start) || (pf.t[i - 1] <= until && ft > until)) { t.push(ft); v.push(pf.v[i]); } });
+    if (t.length < 2) { r.note = 'NWRFC inflow forecast for ' + e.name + ' does not cover this window.'; return r; }
+    r.lines = r.lines.concat([{ label: 'Inflow forecast (NWRFC)', t: t, v: v, cls: 'st-in st-fcl', fc: true, issued: pf.issued, page: pf.page }]);
+    r.src += '; dashed: NWRFC inflow forecast ' + (pf.lid || '') + ' (NW River Forecast Center, copied to this site every 30 min)';
+    return r;
   }
 
   // Why a strip cannot have data for this entity (known without fetching), or null.
@@ -201,6 +230,6 @@
   return {
     LEVELS: LEVELS, TARGETS: TARGETS, BELOW_DAM: BELOW_DAM, TDG: TDG, PCODE: PCODE,
     CHART_TOGGLES: CHART_TOGGLES, STRIPS: STRIPS,
-    isOn: isOn, setOn: setOn, levelValues: levelValues, targetFor: targetFor, unavailable: unavailable, stripsFor: stripsFor, load: load, _cache: cache
+    isOn: isOn, setOn: setOn, levelValues: levelValues, targetFor: targetFor, unavailable: unavailable, stripsFor: stripsFor, load: load, withInflowFc: withInflowFc, _cache: cache
   };
 });
