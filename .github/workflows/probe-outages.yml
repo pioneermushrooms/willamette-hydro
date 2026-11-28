@@ -1,8 +1,7 @@
 name: Probe outage sources (temporary)
 
-# One-off discovery job: prints what each local utility's outage page and BPA's
-# Daily Interruptions Report expose (headers incl. CORS, embedded data URLs), so the
-# outage panel can be built on verified endpoints. Runs only on the dev branch.
+# One-off discovery job (round 2): data fields, CORS and samples for the outage feeds found in round 1.
+# Runs only on the dev branch; removed before anything is merged to main.
 on:
   push:
     branches: [claude/hourly-pool-data-retrieval-1m4bt8]
@@ -21,49 +20,47 @@ jobs:
         run: |
           set +e +o pipefail
           UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'
-          probe() {
-            url="$1"
-            echo "=================================================================="
-            echo "URL: $url"
-            curl -sS -L -m 25 -A "$UA" -H 'Origin: https://pioneermushrooms.github.io' -D /tmp/h -o /tmp/b "$url" || echo "CURL FAILED"
-            echo "--- status/headers:"; grep -iE '^(HTTP/|content-type|access-control|location|server)' /tmp/h | tr -d '\r'
-            echo "--- size: $(wc -c < /tmp/b)"
-            echo "--- data hints:"
-            grep -oiE "(kubra\.io[^\"' <>]{0,160}|stormcenter[^\"' <>]{0,120}|[a-z0-9-]+\.outagemap\.coop[^\"' <>]{0,80}|outagemap-data\.cloud\.coop[^\"' <>]{0,120}|experience\.arcgis\.com[^\"' <>]{0,80}|arcgis\.com/[^\"' <>]{0,140}|FeatureServer[^\"' <>]{0,80}|MapServer[^\"' <>]{0,80}|iframe[^>]{0,200}|https?://[^\"' <>]*outage[^\"' <>]{0,120}|[^\"' <>]{0,80}\.json[^\"' <>]{0,40})" /tmp/b | sort -u | head -60
-          }
-          probe 'https://www.eweb.org/outagemap'
-          probe 'https://www.eweb.org/outages-and-safety/power-outages/power-outage-map'
-          echo "=== EWEB ArcGIS Experience config (data URLs)"
-          curl -sS -m 25 'https://www.arcgis.com/sharing/rest/content/items/0079e80569c44bceb54678c484360ab4/data?f=json' -o /tmp/exb
-          grep -oE '"(url|itemId|portalUrl|webmap|id)":"[^"]{4,200}"' /tmp/exb | sort -u | head -40
-          for it in $(grep -oE '"itemId":"[0-9a-f]{32}"' /tmp/exb | grep -oE '[0-9a-f]{32}' | sort -u | head -6); do
-            echo "--- item $it"
-            curl -sS -m 25 "https://www.arcgis.com/sharing/rest/content/items/$it?f=json" | grep -oE '"(type|title|url)":"[^"]{1,200}"' | head -5
-            curl -sS -m 25 "https://www.arcgis.com/sharing/rest/content/items/$it/data?f=json" | grep -oE '"(url|title|itemId)":"[^"]{4,200}"' | sort -u | head -25
+          O='Origin: https://pioneermushrooms.github.io'
+          hdr() { curl -sS -m 25 -A "$UA" -H "$O" -D - -o /tmp/b "$1" | tr -d '\r' | grep -iE '^(HTTP/|content-type|access-control-allow-origin|last-modified|cache-control)'; echo "size $(wc -c < /tmp/b)"; }
+          echo "########## EWEB ArcGIS outage layer"
+          E='https://services7.arcgis.com/6AM8yPAeyXiPc9eF/arcgis/rest/services/PublicOutageMap_Public_View/FeatureServer/0'
+          hdr "$E?f=json"; python3 -c "import json;d=json.load(open('/tmp/b'));print('name',d.get('name'),'geom',d.get('geometryType'));print([ (f['name'],f['type']) for f in d.get('fields',[])])"
+          hdr "$E/query?where=1%3D1&outFields=*&returnGeometry=true&outSR=4326&f=json&resultRecordCount=3"; head -c 2500 /tmp/b; echo
+          hdr "$E/query?where=1%3D1&returnCountOnly=true&f=json"; cat /tmp/b; echo
+          R='https://services7.arcgis.com/6AM8yPAeyXiPc9eF/arcgis/rest/services/CustomersRestored_Public_View/FeatureServer/0'
+          curl -sS -m 25 "$R?f=json" | python3 -c "import json,sys;d=json.load(sys.stdin);print('restored layer',d.get('name'),[f['name'] for f in d.get('fields',[])])"
+          echo "########## NISC Hosted Outage Map (outagemap.coop)"
+          for slug in laneelectric epud blachlylane; do
+            echo "=== $slug"
+            curl -sS -m 25 -A "$UA" "https://$slug.outagemap.coop/" -o /tmp/p; echo "page $(wc -c < /tmp/p)"; grep -oE '(src|href)="[^"]+\.(js|json)[^"]*"' /tmp/p | head -8
+            for f in summary.json config.json data.json; do
+              u="https://outagemap-data.cloud.coop/$slug/Hosted_Outage_Map/$f"; echo "--- $u"; hdr "$u"; head -c 1200 /tmp/b; echo
+            done
           done
-          probe 'https://www.arcgis.com/sharing/rest/content/items/0079e80569c44bceb54678c484360ab4/data?f=json'
-          probe 'https://www.pacificpower.net/outages-safety.html'
-          probe 'https://www.pacificpower.net/outages-safety/outage-map.html'
-          probe 'https://www.laneelectric.com/outages/outage-map/'
-          probe 'https://www.laneelectric.com/'
-          probe 'https://www.epud.org/'
-          probe 'https://www.epud.org/outages/'
-          probe 'https://www.epud.org/outage-map/'
-          probe 'https://epud.org/outage-center/'
-          probe 'https://outage.cpi.coop/'
-          probe 'https://www.blachlylane.coop/outages-safety/outage-center/outage-map/'
-          probe 'https://www.subutil.com/'
-          echo "=================================================================="
-          echo "BPA Daily Interruptions Report"
-          for d in Mon Tue Wed Thu Fri Sat Sun; do
-            u="https://transmission.bpa.gov/Business/Operations/Outages/DIR/$d.HTM"
-            code=$(curl -sS -m 25 -A "$UA" -o /tmp/dir_$d -w '%{http_code}' "$u")
-            echo "$u -> $code $(wc -c < /tmp/dir_$d) bytes"
+          echo "########## Pacific Power"
+          for u in https://www.pacificpower.net/outages-safety/about-outage-map.html https://www.pacificpower.net/outage-map.html https://www.pacificpower.net/outages-safety/report-outage-check-status.html; do
+            echo "--- $u"; curl -sS -L -m 25 -A "$UA" "$u" -o /tmp/p -w '%{http_code}\n'
+            grep -oiE "(kubra[^\"' <>]{0,140}|stormcenter[^\"' <>]{0,140}|outagemap[^\"' <>]{0,140}|outage-map[^\"' <>]{0,100}|iframe[^>]{0,160}|data-src=\"[^\"]{0,160}\")" /tmp/p | sort -u | head -20
           done
-          echo "--- Today's page, tags stripped (first 120 lines):"
-          today=$(date -u +%a)
-          sed -e 's/<[^>]*>/ /g' /tmp/dir_$today | tr -s ' \t' | grep -v '^\s*$' | head -120
-          echo "--- raw HTML head (first 60 lines):"
-          head -60 /tmp/dir_$today
-          echo "--- lines mentioning Willamette-area names:"
-          cat /tmp/dir_* | sed -e 's/<[^>]*>/ /g' | tr -s ' \t' | grep -iE 'lookout|dexter|hills creek|cougar|green peter|foster|detroit|big cliff|alvey|lane|eugene|springfield|santiam|lebanon|albany|marion|jasper|goshen|fern|oakridge|thurston|leaburg|walterville|blue river|mckenzie' | head -60
+          echo "########## Consumers Power outage.cpi.coop (full page)"
+          curl -sS -m 25 -A "$UA" https://outage.cpi.coop/ | head -c 2600; echo
+          echo "########## SUB outages page"
+          curl -sS -L -m 25 -A "$UA" https://www.subutil.com/outages/ -o /tmp/p -w '%{http_code}\n'
+          grep -oiE "(kubra[^\"' <>]{0,140}|outagemap[^\"' <>]{0,140}|arcgis[^\"' <>]{0,140}|iframe[^>]{0,200}|\.json[^\"' <>]{0,60})" /tmp/p | sort -u | head -20
+          sed -e 's/<[^>]*>/ /g' /tmp/p | tr -s ' \t\n' | grep -iE 'outage' | head -15
+          echo "########## BPA DIR: all rows, all days (district | name | type | cause | out | in)"
+          for d in Mon Tue Wed Thu Fri Sat Sun; do curl -sS -m 25 -A "$UA" -o /tmp/dir_$d "https://transmission.bpa.gov/Business/Operations/Outages/DIR/$d.HTM"; done
+          python3 - <<'PY'
+          import re, glob, html
+          for f in sorted(glob.glob('/tmp/dir_*')):
+            s = open(f, encoding='latin-1').read()
+            hdr = re.search(r'Outages modified in iTOA ([^<]+)', s)
+            print('==', f, hdr.group(1)[:90] if hdr else '')
+            for lab, tbl in re.findall(r'class="tablelabel">([^<]+)</div>.*?<table[^>]*>(.*?)</table>', s, re.S):
+              print('  [' + lab.strip() + ']')
+              for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', tbl, re.S)[:40]:
+                c = [html.unescape(re.sub(r'<[^>]+>', ' ', x)).replace('\xa0', ' ').strip() for x in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
+                if len(c) >= 10: print('   ', c[9], '|', c[2], '|', c[5], '|', c[6], '|', c[0], '->', c[1])
+          PY
+          echo "--- table labels and row counts"
+          grep -ohE 'class="tablelabel">[^<]+' /tmp/dir_* | sort | uniq -c
