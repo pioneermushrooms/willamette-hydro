@@ -1468,3 +1468,9 @@ main, .site-footer { max-width: 1680px; }
   .ev-foot p.hint { display: none; }
   @keyframes toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
 }
+.tile > .tile-sub { left: 6px; right: 6px; width: auto; max-width: none; }
+.ws-head .kv > div > dd.sub { max-width: min(300px, calc(100vw - 48px)); }
+@media (max-width: 420px) {
+  .ws-head .kv > div:nth-child(even) > dd.sub { left: auto; right: 6px; }
+  .ws-head .kv > div:nth-child(odd) > dd.sub { left: 6px; right: auto; }
+}
