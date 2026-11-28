@@ -19,6 +19,7 @@ jobs:
       - name: Probe
         shell: bash
         run: |
+          set +e +o pipefail
           UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'
           probe() {
             url="$1"
@@ -31,7 +32,15 @@ jobs:
             grep -oiE "(kubra\.io[^\"' <>]{0,160}|stormcenter[^\"' <>]{0,120}|[a-z0-9-]+\.outagemap\.coop[^\"' <>]{0,80}|outagemap-data\.cloud\.coop[^\"' <>]{0,120}|experience\.arcgis\.com[^\"' <>]{0,80}|arcgis\.com/[^\"' <>]{0,140}|FeatureServer[^\"' <>]{0,80}|MapServer[^\"' <>]{0,80}|iframe[^>]{0,200}|https?://[^\"' <>]*outage[^\"' <>]{0,120}|[^\"' <>]{0,80}\.json[^\"' <>]{0,40})" /tmp/b | sort -u | head -60
           }
           probe 'https://www.eweb.org/outagemap'
-          probe 'https://www.eweb.org/outage'
+          probe 'https://www.eweb.org/outages-and-safety/power-outages/power-outage-map'
+          echo "=== EWEB ArcGIS Experience config (data URLs)"
+          curl -sS -m 25 'https://www.arcgis.com/sharing/rest/content/items/0079e80569c44bceb54678c484360ab4/data?f=json' -o /tmp/exb
+          grep -oE '"(url|itemId|portalUrl|webmap|id)":"[^"]{4,200}"' /tmp/exb | sort -u | head -40
+          for it in $(grep -oE '"itemId":"[0-9a-f]{32}"' /tmp/exb | grep -oE '[0-9a-f]{32}' | sort -u | head -6); do
+            echo "--- item $it"
+            curl -sS -m 25 "https://www.arcgis.com/sharing/rest/content/items/$it?f=json" | grep -oE '"(type|title|url)":"[^"]{1,200}"' | head -5
+            curl -sS -m 25 "https://www.arcgis.com/sharing/rest/content/items/$it/data?f=json" | grep -oE '"(url|title|itemId)":"[^"]{4,200}"' | sort -u | head -25
+          done
           probe 'https://www.arcgis.com/sharing/rest/content/items/0079e80569c44bceb54678c484360ab4/data?f=json'
           probe 'https://www.pacificpower.net/outages-safety.html'
           probe 'https://www.pacificpower.net/outages-safety/outage-map.html'
@@ -39,6 +48,8 @@ jobs:
           probe 'https://www.laneelectric.com/'
           probe 'https://www.epud.org/'
           probe 'https://www.epud.org/outages/'
+          probe 'https://www.epud.org/outage-map/'
+          probe 'https://epud.org/outage-center/'
           probe 'https://outage.cpi.coop/'
           probe 'https://www.blachlylane.coop/outages-safety/outage-center/outage-map/'
           probe 'https://www.subutil.com/'
