@@ -1576,3 +1576,7 @@ main, .site-footer { max-width: 1680px; }
 .ev-desk-test:hover { color: var(--amber); border-color: var(--amber-dim); }
 .ev-desk-test[hidden] { display: none; }
 .ev-desk-note { display: block; margin-top: 4px; line-height: 1.4; }
+/* The panel's background is a gradient that starts at --panel-2 at the top, so the active tab uses that
+   shade (and keeps its text bright) to read as part of the card. */
+.ws-tab.on { background: var(--panel-2); border-color: var(--bezel-hi); border-bottom-color: var(--panel-2); color: var(--amber); box-shadow: 0 -3px 12px rgba(0,0,0,0.3); }
+.ws-tab.on::after { background: var(--panel-2); }
