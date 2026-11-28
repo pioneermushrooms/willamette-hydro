@@ -907,24 +907,7 @@
     return '<dl class="kv">' + h + (extra || '') + '</dl>';
   }
 
-  // Per-series reading table for the details panel.
-  function readingsTable(rows) {
-    return '<table class="readings mono"><thead><tr><th>Series</th><th>Last reading (PT)</th><th>Age</th></tr></thead><tbody>' +
-      rows.map(function (r) {
-        var age = r.t == null ? '' : r.daily ? 'daily value for today' : ago(r.t) + staleTag(r.t);
-        return '<tr><td>' + r.label + '</td><td>' + (r.t == null ? NA : stamp(r.t)) + '</td><td>' + age + '</td></tr>';
-      }).join('') + '</tbody></table>';
-  }
 
-  function sourceLinks(e) {
-    if (e.kind === 'river') {
-      var lid = N && N.LIDS[e.id];
-      return '<p class="src">Source: <a href="' + e.sourceUrl + '" rel="noopener">USGS ' + e.site + ' ↗</a>' +
-        (lid ? ' · <a href="' + N.gaugeUrl(lid) + '" rel="noopener">NWS ' + lid + ' ↗</a>' : '') + '</p>';
-    }
-    return '<p class="src">Source: <a href="' + e.sourceUrl + '" rel="noopener">USACE Access to Water ↗</a> · <a href="' + esc(e.apiUrl) +
-      '" rel="noopener" title="Raw CWMS Data API, last 24 h (browsers receive XML)">CWMS elevation series ↗</a></p>';
-  }
 
   // ---- Detail panel --------------------------------------------------------
 
@@ -985,29 +968,22 @@
   }
 
   // "More about …": everything else for the selected point, collapsed by default (remembered).
+  // "More about …": only what is not already above (header numbers, rain/wind lines, chart strips).
   function renderMore(e) {
     var isRes = e.kind === 'reservoir', h = '';
     $('#ws-more-sum').textContent = 'More about ' + e.name;
     if (isRes) {
       var d = projData(e);
-      h += wxBlock(e);
       h += levelsSection(e);
-      var tdg = tdgChip(e);
-      if (tdg) h += '<section class="ws-sec"><h3>Total dissolved gas below the dam</h3>' + tdg + '</section>';
       var stl = d && H.latest(d.stor), Ss = e.series.stor ? H.srcLink({ cwms: e.series.stor.name, unit: e.series.stor.unit }) : '';
-      h += '<section class="ws-sec"><h3>Storage and readings</h3><dl class="kv ws-kv-more">' +
+      h += '<section class="ws-sec"><h3>Storage</h3><dl class="kv ws-kv-more">' +
         kvVal('Storage' + Ss, e.noStorage ? { html: 'n/a', unit: '', cls: 'na', sub: 'not published' } : val(stl, 0, 'ac-ft')) +
         (e.cons ? kv('Conservation pool', fmt(e.cons.elevBottom, 1) + '–' + fmt(e.cons.elevTop, 1), 'ft', '', 'CWMS bottom / top of conservation' + (e.consFromLevels ? ' (read at runtime)' : '')) : '') +
-        (e.powerPool ? kv('Power pool band', fmt(e.powerPool.elevBottom, 1) + '–' + fmt(e.powerPool.elevTop, 1), 'ft', '', 'run-of-river') : '') + '</dl>' +
-        (d ? readingsTable([
-          { label: 'Pool elevation', t: (H.latest(d.elev) || {}).t },
-          { label: 'Storage', t: e.noStorage ? null : (H.latest(d.stor) || {}).t },
-          { label: 'Outflow', t: (H.latest(d.out) || {}).t },
-          { label: 'Computed inflow', t: (H.latest(d.inflow) || {}).t },
-          { label: 'Rule curve (daily)', t: (H.ruleToday(d.rule) || {}).t, daily: true }
-        ]) : '') + sourceLinks(e) + '</section>';
+        (e.powerPool ? kv('Power pool band', fmt(e.powerPool.elevBottom, 1) + '–' + fmt(e.powerPool.elevTop, 1), 'ft', '', 'run-of-river') : '') + '</dl></section>';
+      h += snowSection(e);
+      var tdg = tdgChip(e);
+      if (tdg) h += '<section class="ws-sec"><h3>Total dissolved gas below the dam</h3>' + tdg + '</section>';
     } else {
-      var sd = stData(e);
       h += '<section class="ws-sec"><h3>NWS flood stages and forecast</h3>' + floodBlock(e, true) + '</section>';
       var oq = ODEQ_AT[e.id] && H.levels && H.levels.peekProjectLevels(ODEQ_AT[e.id].code) ? odeqEntry(e.id) : null;
       if (oq && oq.entry) {
@@ -1015,13 +991,24 @@
         h += '<p class="flood-note">ODEQ 2006 TMDL temperature target for DEX/LOP today: <b>' + (ov == null ? 'none published for today' : fmt(H.cToF(ov), 1) + ' °F (' + fmt(ov, 1) + ' °C)') +
           '</b> <span class="hint">published target at the dam tailwater; Jasper is the nearest gauge, shown for context.</span></p>';
       }
-      h += '<section class="ws-sec"><h3>Readings</h3>' + (sd ? readingsTable(e.params.map(function (k) {
-        return { label: { flow: 'Discharge (00060)', stage: 'Gage height (00065)', tempC: 'Water temp (00010)' }[k], t: (H.latest(sd[k]) || {}).t };
-      })) : '') + '<p class="hint">USGS site ' + esc(e.site) + ' · ' + esc(e.usgsName) + '</p>' + sourceLinks(e) + '</section>';
     }
-    var st = statusOf(e);
-    if (st.reason) h += '<p class="detail-note ' + st.level + '">' + esc(st.reason) + ' <span class="hint">Status derived by this site.</span></p>';
     setHTML($('#ws-more-body'), h);
+  }
+
+  // Measured precipitation at the SNOTEL gauges in the basin, and the model freezing level (rain vs snow).
+  function snowSection(e) {
+    var W = H.weather, w = wxSummary(e), sts = W ? W.stationsFor(e.code) : [], sn = state.wxSno;
+    if (!W || (!sts.length && (!w || w.fzNow == null))) return '';
+    var h = '<section class="ws-sec"><h3>Snow level and measured precipitation</h3>';
+    if (w && w.fzNow != null) h += '<p class="ws-line">Freezing level <b class="mono">' + fmt(Math.round(w.fzNow / 100) * 100) + ' ft</b>' + (w.tempNow != null ? ' · ' + fmt(w.tempNow, 0) + ' °F basin mean' : '') + ' <span class="hint">(model; rain below, snow above)</span></p>';
+    if (sts.length) {
+      h += !sn ? '<p class="na loading">loading SNOTEL…</p>' : '<table class="ws-table"><thead><tr><th>NRCS SNOTEL station</th><th>Elev ft</th><th>6 h in</th><th>24 h in</th></tr></thead><tbody>' + sts.map(function (st) {
+        var a = sn.stations[st.triplet], d6 = W.accumDiff(a, Date.now(), 6), d24 = W.accumDiff(a, Date.now(), 24);
+        return '<tr><th>' + esc(st.name) + ' <a class="src-link" href="https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=' + st.triplet.split(':')[0] + '" target="_blank" rel="noopener" title="NRCS SNOTEL ' + esc(st.name) + '">↗</a></th>' +
+          '<td class="mono">' + fmt(st.elevFt) + '</td><td class="mono">' + (d6 ? fmt(d6.v, 1) : '—') + '</td><td class="mono">' + (d24 ? fmt(d24.v, 1) : '—') + '</td></tr>';
+      }).join('') + '</tbody></table><p class="hint">Measured at high-elevation gauges in this basin (rain and snow water); they usually read wetter than the reservoir.</p>';
+    }
+    return h + '</section>';
   }
 
   // "Levels and targets" (folded in from the old Teacup page): published elevation target today and its
@@ -1166,8 +1153,6 @@
   // ---- Basin precipitation (js/weather.js) ---------------------------------------
 
   var fWx = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', hour: 'numeric' });
-  var fWxDay = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', month: 'numeric', day: 'numeric' });
-  var fH23 = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', hourCycle: 'h23' });
   function wxT(t) { return fWx.format(new Date(t)); }
   function inch(v) { return v == null ? '—' : v < 0.005 ? '0' : fmt(v, 2); }
 
@@ -1248,70 +1233,7 @@
     return '<p class="wx-line"><span class="wx-h">BASIN RAIN <span class="hint">model</span></span> past 24 h <b class="mono">' + inch(w.past24) + ' in</b> · next 24 h <b class="mono">' + inch(w.next24) + ' in</b><br>' + wxState(w) + '</p>';
   }
 
-  // Hourly bars, past 72 h (solid) and forecast 72 h (faded), with a NOW line.
-  function wxChart(s, now) {
-    var t0 = now - 72 * HOUR, t1 = now + 72 * HOUR, W = window.innerWidth < 600 ? 380 : 600, Hh = 130, ml = 34, mr = 6, mt = 8, mb = 20, pw = W - ml - mr, ph = Hh - mt - mb;
-    var idx = []; s.t.forEach(function (t, i) { if (t > t0 && t <= t1 + HOUR) idx.push(i); });
-    if (!idx.length) return '';
-    var hi = Math.max(0.1, Math.max.apply(null, idx.map(function (i) { return s.p[i]; })));
-    var nt = niceTicks(0, hi, 3), top = Math.max(hi, nt.ticks[nt.ticks.length - 1]);
-    var x = function (t) { return ml + ((t - t0) / (t1 - t0)) * pw; }, y = function (v) { return mt + (1 - v / top) * ph; };
-    var bw = Math.max(1, pw / 144 - 1), g = '<g class="axis">';
-    nt.ticks.forEach(function (v) { if (v > top + 1e-9) return; g += '<line x1="' + ml + '" x2="' + (ml + pw) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/><text x="' + (ml - 5) + '" y="' + (y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + fmt(v, nt.step < 0.1 ? 2 : 1) + '</text>'; });
-    // Pacific midnights as day labels.
-    for (var d = Math.ceil(t0 / HOUR) * HOUR; d <= t1; d += HOUR) {
-      if (fH23.format(new Date(d)) !== '00' || x(d) > W - 60) continue;
-      g += '<line class="wx-day" x1="' + x(d).toFixed(1) + '" x2="' + x(d).toFixed(1) + '" y1="' + mt + '" y2="' + (mt + ph) + '"/><text x="' + (x(d) + 3).toFixed(1) + '" y="' + (Hh - 6) + '">' + esc(W < 600 ? fWxDay.format(new Date(d + 12 * HOUR)).split(',')[0] : fWxDay.format(new Date(d + 12 * HOUR))) + '</text>';
-    }
-    g += '</g><g>';
-    idx.forEach(function (i) {
-      var v = s.p[i]; if (v < 0.005) return;
-      var xe = x(s.t[i]), yy = y(v), fc = s.t[i] > now;
-      g += '<rect class="wx-bar' + (fc ? ' fc' : '') + '" x="' + (xe - bw - 0.5).toFixed(1) + '" y="' + yy.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (mt + ph - yy).toFixed(1) + '"><title>' +
-        esc(wxT(s.t[i] - HOUR) + '–' + fHM(s.t[i]) + ': ' + fmt(v, 2) + ' in' + (fc ? ' (forecast)' : ' (model)')) + '</title></rect>';
-    });
-    g += '</g><line class="wx-now" x1="' + x(now).toFixed(1) + '" x2="' + x(now).toFixed(1) + '" y1="' + (mt - 4) + '" y2="' + (mt + ph) + '"/><text class="wx-now-lab" x="' + (x(now) + 3).toFixed(1) + '" y="' + (mt + 4) + '">NOW</text>';
-    return '<svg class="wx-svg" viewBox="0 0 ' + W + ' ' + Hh + '" width="100%" role="img" aria-label="Hourly basin precipitation, past 72 hours and 72-hour forecast">' + g + '</svg>' +
-      '<div class="rt-legend"><span><i class="wx-k"></i>Past hours (model)</span><span><i class="wx-k fc"></i>Forecast</span><span class="hint">in per hour · hover a bar for its value</span></div>';
-  }
-  var fWxH = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric' });
-  function fHM(t) { return fWxH.format(new Date(t)); }
 
-  // Basin precipitation section of "More": totals as one aligned table, then timing, chart, gauges.
-  function wxBlock(p) {
-    var W = H.weather, b = W && W.BASINS[p.code];
-    if (!b) return '';
-    var head = '<h3>Basin rain and wind <span class="hint">≈ ' + fmt(b.area) + ' sq mi above the dam · model</span></h3>';
-    if (!state.wx) return '<section class="ws-sec wx-box">' + head + '<p class="na loading">Loading weather…</p></section>';
-    var s = state.wx.basins[p.code], w = wxSummary(p);
-    if (!w) return '<section class="ws-sec wx-box">' + head + '<p class="na">Weather model unavailable' + (state.wx.error ? ' (' + esc(state.wx.error) + ')' : '') + '.</p></section>';
-    var td = function (v) { return '<td class="mono">' + inch(v) + '</td>'; };
-    var h = '<section class="ws-sec wx-box">' + head +
-      '<table class="ws-table wx-table"><thead><tr><th></th><th>6 h</th><th>24 h</th><th>72 h</th><th>Rain on basin, 24 h</th></tr></thead><tbody>' +
-      '<tr><th>Past</th>' + td(w.past6) + td(w.past24) + td(w.past72) + '<td class="mono">' + fmt(w.vol24) + ' ac-ft · ' + fmt(w.vol24cfs) + ' cfs-day</td></tr>' +
-      '<tr><th>Forecast</th>' + td(w.next6) + td(w.next24) + td(w.next72) + '<td class="mono">' + fmt(w.volNext24) + ' ac-ft · ' + fmt(w.volNext24cfs) + ' cfs-day</td></tr>' +
-      '</tbody></table><p class="wx-unit hint">inches, basin mean</p>' +
-      '<dl class="ws-facts">' +
-      '<div><dt>Now</dt><dd>' + wxState(w) + '</dd></div>' +
-      (w.event ? '<div><dt>' + (w.event.end ? 'Last event' : 'This event') + '</dt><dd><span class="mono">' + inch(w.event.total) + ' in</span> ' + (w.event.openStart ? 'over 3+ days' : 'from ' + wxT(w.event.start)) + (w.event.end ? ' to ' + wxT(w.event.end) : ' so far') + '</dd></div>' : '') +
-      (w.wind ? '<div><dt>Wind</dt><dd>' + windText(w, true) + '</dd></div>' : '') +
-      (w.fzNow != null ? '<div><dt>Freezing level</dt><dd><span class="mono">' + fmt(Math.round(w.fzNow / 100) * 100) + ' ft</span>' + (w.tempNow != null ? ' · ' + fmt(w.tempNow, 0) + ' °F basin mean' : '') + ' · rain below, snow above</dd></div>' : '') +
-      '</dl>' + wxChart(s, Date.now());
-    var sts = W.stationsFor(p.code);
-    if (sts.length) {
-      var sn = state.wxSno;
-      h += '<h4 class="ws-h4">Measured · NRCS SNOTEL (high-elevation gauges, same basin)</h4>' + (!sn ? '<p class="na loading">loading…</p>' :
-        '<table class="ws-table"><thead><tr><th>Station</th><th>Elev ft</th><th>6 h in</th><th>24 h in</th></tr></thead><tbody>' + sts.map(function (st) {
-          var a = sn.stations[st.triplet], d6 = W.accumDiff(a, Date.now(), 6), d24 = W.accumDiff(a, Date.now(), 24);
-          return '<tr><th>' + esc(st.name) + ' <a class="src-link" href="https://wcc.sc.egov.usda.gov/nwcc/site?sitenum=' + st.triplet.split(':')[0] + '" target="_blank" rel="noopener" title="NRCS SNOTEL ' + esc(st.name) + '">↗</a></th>' +
-            '<td class="mono">' + fmt(st.elevFt) + '</td><td class="mono">' + (d6 ? fmt(d6.v, 1) : '—') + '</td><td class="mono">' + (d24 ? fmt(d24.v, 1) : '—') + '</td></tr>';
-        }).join('') + '</tbody></table>');
-    } else h += '<p class="hint">No SNOTEL gauge in this basin on this site; model only.</p>';
-    h += '<p class="hint wx-src">Open-Meteo weather model, mean of ' + b.pts.length + ' points (past hours are model analysis, not rain gauges; forecast to ' + wxT(w.horizon) + '). ' +
-      'Rain on the basin is not runoff: soil, snow and travel time decide how much reaches the pool and when. Basin points and area are approximate. ' +
-      '<a href="' + esc(W.pageUrl(p.code)) + '" target="_blank" rel="noopener">Open-Meteo ↗</a> · <a href="' + esc(W.nwsUrl(p.code)) + '" target="_blank" rel="noopener">NWS forecast for the basin ↗</a></p></section>';
-    return h;
-  }
 
   function renderWx() {
     renderList();
@@ -1773,6 +1695,7 @@
     $('#trend-tag').textContent = RANGE_TAG[state.range] + (M.fz ? ' + ' + (M.fz.h % 24 ? M.fz.h + ' H' : M.fz.h / 24 + ' D') + ' AHEAD' : '') + (M.long ? ' · HISTORY + LIVE' : ' · LIVE SERIES') +
       (state.snap && state.snap.fetchedAt ? ' · checked ' + fmtClock.format(state.snap.fetchedAt).replace(/^24/, '00').slice(0, 5) : '');
     setHTML($('#chart-src'), 'Source: ' + H.linkSources(M.src));
+    $('#chart-title').title = 'Source: ' + M.src;
     svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H2);
     svg.setAttribute('height', H2);
     state.geom = null;

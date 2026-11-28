@@ -1592,3 +1592,7 @@ main, .site-footer { max-width: 1680px; }
 .st-sl { text-transform: uppercase; letter-spacing: 0.06em; font-size: 10.5px; }
 .st-sv b { color: var(--text); font-weight: 600; }
 .st-at { color: var(--muted); font-weight: 400; font-size: 11px; }
+/* Below the chart: the stats row and the source line are redundant (header numbers, title tooltip, Sources page) */
+#chart-stats, #chart-src { display: none !important; }
+#chart-legend { padding: 6px 6px 2px; }
+.ws-line { margin: 0 0 8px; font-size: 13px; }
