@@ -1,6 +1,6 @@
 name: Probe inflow forecasts (temporary)
 
-# Round 2: reservoir inflow forecasts from NOAA (NWPS gauges in the basin; NWRFC station pages).
+# Round 3: run scripts/fetch-inflow-fcst.js against NWRFC (debug rows + parsed output). Dev branch only.
 on:
   push:
     branches: [claude/hourly-pool-data-retrieval-1m4bt8]
@@ -14,35 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Probe
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import json, urllib.request, re
-          def get(u, js=True):
-            r = urllib.request.urlopen(urllib.request.Request(u, headers={'User-Agent': 'probe', 'Accept': '*/*'}), timeout=40)
-            b = r.read(); h = dict(r.headers)
-            return (json.loads(b) if js else b.decode('utf-8', 'replace')), h
-          try:
-            d, h = get('https://api.water.noaa.gov/nwps/v1/gauges?bbox.xmin=-123.8&bbox.ymin=43.3&bbox.xmax=-121.7&bbox.ymax=44.7&srid=EPSG_4326')
-            gs = d.get('gauges', d if isinstance(d, list) else [])
-            print('NWPS gauges in box:', len(gs), '| CORS', h.get('Access-Control-Allow-Origin'))
-            for g in gs:
-              print('  ', g.get('lid'), '|', g.get('name'), '|', (g.get('status') or {}).get('forecast', {}).get('primary'), (g.get('status') or {}).get('forecast', {}).get('secondary'))
-          except Exception as e:
-            print('NWPS list error', e)
-          for lid in ['LOPO3','DEXO3','HCRO3','FALO3','CGRO3','BLUO3','FRNO3','COTO3','DORO3','GPRO3','CGLO3','LKPO3','FCLO3','BLRO3']:
-            try:
-              d, h = get('https://api.water.noaa.gov/nwps/v1/gauges/%s/stageflow/forecast' % lid)
-              data = d.get('data', [])
-              print(lid, 'forecast pts', len(data), 'issued', d.get('issuedTime'), 'units', d.get('primaryUnits'), d.get('secondaryUnits'), 'first', data[:1], 'last', data[-1:])
-            except Exception as e:
-              print(lid, 'err', str(e)[:80])
-          for sid in ['COTO3','LOPO3','CGRO3','BLUO3','FRNO3']:
-            for u in ['https://www.nwrfc.noaa.gov/station/flowplot/textPlot.cgi?id=%s&pe=QI' % sid, 'https://www.nwrfc.noaa.gov/river/station/flowplot/flowplot.cgi?lid=%s' % sid]:
-              try:
-                t, h = get(u, js=False)
-                print('NWRFC', u, len(t), 'CORS', h.get('Access-Control-Allow-Origin'), '|', re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', t))[:400])
-              except Exception as e:
-                print('NWRFC', u, 'err', str(e)[:80])
-          PY
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Raw rows
+        run: node scripts/fetch-inflow-fcst.js --debug
+      - name: Parsed (all projects)
+        run: node scripts/fetch-inflow-fcst.js --stdout | python3 -c "import json,sys; d=json.load(sys.stdin); print('errors', d['errors']); [print(k, v['lid'], v['name'], v['issued'], 'obs', len(v['obs']), v['obs'][-1:], 'fcst', len(v['fcst']), v['fcst'][:2], v['fcst'][-1:]) for k, v in d['projects'].items()]" || node scripts/fetch-inflow-fcst.js --stdout | head -c 3000
